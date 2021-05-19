@@ -80,8 +80,8 @@ audio_path              sounds
 #audio_player           alsa,default
 #audio_source           alsa,default
 #audio_alert            alsa,default
-audio_source		    aufile,sounds/monorobo.wav
-audio_player		    aubridge,nil
+audio_source            aufile,sounds/monorobo.wav
+audio_player            aubridge,nil
 #ausrc_srate            48000
 #auplay_srate           48000
 #ausrc_channels         0
