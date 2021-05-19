@@ -1,15 +1,12 @@
 package main
 
 import (
-	"bytes"
 	_ "embed"
 	"flag"
-	"io/ioutil"
 	"log"
 	"strings"
 
 	gobaresip "github.com/negbie/go-baresip"
-	"github.com/negbie/telefonist/zip"
 )
 
 //go:embed zip/sounds.tar.gz
@@ -21,18 +18,14 @@ var espeakNGData []byte
 func main() {
 	lokiURL := flag.String("loki_url", "http://localhost:3100", "URL to remote Loki server")
 	guiAddr := flag.String("gui_address", "0.0.0.0:8080", "Local GUI listen address")
+	maxCalls := flag.String("max_cc_calls", "20", "Max concurrent calls")
+	rtpAddr := flag.String("rtp_address", "", "RTP listen address")
+	rtpPorts := flag.String("rtp_ports", "10000-20000", "RTP port range")
+	sipAddr := flag.String("sip_address", "", "SIP listen address")
 	debug := flag.Bool("debug", false, "Set debug mode")
 	flag.Parse()
 
-	if err := zip.Decompress(bytes.NewReader(baresipSounds), "."); err != nil {
-		panic(err)
-	}
-	if err := zip.Decompress(bytes.NewReader(espeakNGData), "."); err != nil {
-		panic(err)
-	}
-	if err := ioutil.WriteFile("config", []byte(config), 0644); err != nil {
-		panic(err)
-	}
+	createConfig(*maxCalls, *sipAddr, *rtpAddr, *rtpPorts)
 
 	gb, err := gobaresip.New(
 		gobaresip.SetConfigPath("."),

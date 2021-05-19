@@ -1,5 +1,57 @@
 package main
 
+import (
+	"bytes"
+	"io/ioutil"
+	"strings"
+
+	"github.com/negbie/telefonist/zip"
+)
+
+func createConfig(maxCalls, sipAddr, rtpAddr, rtpPorts string) {
+	if sipAddr != "" {
+		config = strings.Replace(
+			config,
+			"#sip_listen             0.0.0.0:5060",
+			"sip_listen              "+sipAddr,
+			1)
+	}
+
+	if rtpAddr != "" {
+		config = strings.Replace(
+			config,
+			"#net_interface          eth0",
+			"net_interface           "+rtpAddr,
+			1)
+	}
+
+	if rtpPorts != "" {
+		config = strings.Replace(
+			config,
+			"#rtp_ports              10000-20000",
+			"rtp_ports               "+rtpPorts,
+			1)
+	}
+
+	if maxCalls != "" {
+		config = strings.Replace(
+			config,
+			"call_max_calls          1",
+			"call_max_calls          "+maxCalls,
+			1)
+	}
+
+	if err := zip.Decompress(bytes.NewReader(baresipSounds), "."); err != nil {
+		panic(err)
+	}
+	if err := zip.Decompress(bytes.NewReader(espeakNGData), "."); err != nil {
+		panic(err)
+	}
+	if err := ioutil.WriteFile("config", []byte(config), 0644); err != nil {
+		panic(err)
+	}
+}
+
 var config string = `
 #
 # baresip configuration
@@ -20,11 +72,11 @@ sip_tos                 160
 
 # Call
 call_local_timeout      120
-call_max_calls          20
+call_max_calls          1
 call_hold_other_calls   no
 
 # Audio
-#audio_path             /usr/local/share/baresip
+audio_path              sounds
 #audio_player           alsa,default
 #audio_source           alsa,default
 #audio_alert            alsa,default

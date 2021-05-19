@@ -22,7 +22,7 @@ call_max_calls          20
 call_hold_other_calls   no
 
 # Audio
-#audio_path             /usr/local/share/baresip
+audio_path              sounds
 #audio_player           alsa,default
 #audio_source           alsa,default
 #audio_alert            alsa,default
@@ -52,13 +52,13 @@ videnc_format           yuv420p
 # AVT - Audio/Video Transport
 rtp_tos                 184
 rtp_video_tos           136
-#rtp_ports              10000-20000
+rtp_ports               10000-20000
 #rtp_bandwidth          512-1024 # [kbit/s]
 rtcp_mux                no
 jitter_buffer_type      fixed           # off, fixed, adaptive
 jitter_buffer_delay     5-10            # frames
 #jitter_buffer_wish     6               # frames for start
-rtp_stats               yes
+rtp_stats               no
 #rtp_timeout            60
 
 # Network
