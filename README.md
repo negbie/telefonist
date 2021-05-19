@@ -13,6 +13,9 @@ To compile it with Docker run:
 sudo docker run --rm=true -itv $PWD:/mnt golang:buster /mnt/build_bin_docker.sh
 ```
 
+# Releases
+For linux-amd64 I will upload the latest binary [here](https://github.com/negbie/telefonist/releases).
+
 # Setup
 If you run telefonist it will write a baresip accounts, config, contacts and uuid file. The config file will be generated on each start.
 The [accounts](https://github.com/baresip/baresip/wiki/Accounts) file will be generated once and won't be touched if it exist. Please add a SIP account to your accounts file an restart telefonist.
