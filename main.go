@@ -16,29 +16,28 @@ var baresipSounds []byte
 var espeakNGData []byte
 
 func main() {
+	debug := flag.Bool("debug", false, "Set debug mode")
 	lokiURL := flag.String("loki_url", "http://localhost:3100", "URL to remote Loki server")
 	guiAddr := flag.String("gui_address", "0.0.0.0:8080", "Local GUI listen address")
 	maxCalls := flag.String("max_cc_calls", "20", "Max concurrent calls")
-	rtpAddr := flag.String("rtp_address", "", "RTP listen address")
+	rtpNet := flag.String("rtp_interface", "", "RTP interface like eth0")
 	rtpPorts := flag.String("rtp_ports", "10000-20000", "RTP port range")
-	sipAddr := flag.String("sip_address", "", "SIP listen address")
-	debug := flag.Bool("debug", false, "Set debug mode")
+	sipAddr := flag.String("sip_address", "", "SIP listen address like 0.0.0.0:5060")
 	flag.Parse()
 
-	createConfig(*maxCalls, *sipAddr, *rtpAddr, *rtpPorts)
+	createConfig(*maxCalls, *rtpNet, *rtpPorts, *sipAddr)
 
 	gb, err := gobaresip.New(
-		gobaresip.SetConfigPath("."),
 		gobaresip.SetAudioPath("sounds"),
+		gobaresip.SetConfigPath("."),
 		gobaresip.SetDebug(*debug),
 		gobaresip.SetWsAddr(*guiAddr),
 	)
 	if err != nil {
-		log.Println(err)
-		return
+		log.Fatal(err)
 	}
 
-	loki, lerr := NewLokiClient(*lokiURL, 10, 4)
+	loki, lerr := NewLokiClient(*lokiURL, 20, 4)
 	if lerr != nil {
 		log.Println(lerr)
 	}

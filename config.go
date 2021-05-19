@@ -8,7 +8,7 @@ import (
 	"github.com/negbie/telefonist/zip"
 )
 
-func createConfig(maxCalls, sipAddr, rtpAddr, rtpPorts string) {
+func createConfig(maxCalls, rtpNet, rtpPorts, sipAddr string) {
 	if sipAddr != "" {
 		config = strings.Replace(
 			config,
@@ -17,11 +17,11 @@ func createConfig(maxCalls, sipAddr, rtpAddr, rtpPorts string) {
 			1)
 	}
 
-	if rtpAddr != "" {
+	if rtpNet != "" {
 		config = strings.Replace(
 			config,
 			"#net_interface          eth0",
-			"net_interface           "+rtpAddr,
+			"net_interface           "+rtpNet,
 			1)
 	}
 
