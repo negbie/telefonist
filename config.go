@@ -1,4 +1,6 @@
+package main
 
+var config string = `
 #
 # baresip configuration
 #
@@ -58,7 +60,7 @@ rtcp_mux                no
 jitter_buffer_type      fixed           # off, fixed, adaptive
 jitter_buffer_delay     5-10            # frames
 #jitter_buffer_wish     6               # frames for start
-rtp_stats               yes
+rtp_stats               no
 #rtp_timeout            60
 
 # Network
@@ -293,3 +295,4 @@ video_selfview          window # {window,pip}
 #avformat_pass_through    yes
 #avformat_rtsp_transport  udp
 
+`

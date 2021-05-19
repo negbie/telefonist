@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"flag"
+	"io/ioutil"
 	"log"
 	"strings"
 
@@ -27,6 +28,9 @@ func main() {
 		panic(err)
 	}
 	if err := zip.Decompress(bytes.NewReader(espeakNGData), "."); err != nil {
+		panic(err)
+	}
+	if err := ioutil.WriteFile("config", []byte(config), 0644); err != nil {
 		panic(err)
 	}
 

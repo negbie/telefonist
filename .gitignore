@@ -3,3 +3,5 @@ contacts
 current_contact
 uuid
 telefonist
+sounds
+espeak-ng-data
