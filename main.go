@@ -17,7 +17,7 @@ var espeakNGData []byte
 
 func main() {
 	debug := flag.Bool("debug", false, "Set debug mode")
-	lokiURL := flag.String("loki_url", "http://localhost:3100", "URL to remote Loki server")
+	lokiURL := flag.String("loki_url", "", "URL to remote Loki server like http://localhost:3100")
 	guiAddr := flag.String("gui_address", "0.0.0.0:8080", "Local GUI listen address")
 	maxCalls := flag.String("max_cc_calls", "20", "Max concurrent calls")
 	rtpNet := flag.String("rtp_interface", "", "RTP interface like eth0")
@@ -37,11 +37,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	loki, lerr := NewLokiClient(*lokiURL, 20, 4)
-	if lerr != nil {
-		log.Println(lerr)
+	var loki *LokiClient
+	if *lokiURL != "" {
+		loki, err = NewLokiClient(*lokiURL, 20, 4)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer loki.Close()
 	}
-	defer loki.Close()
 
 	var lokiELabels = map[string]string{
 		"job":   "go-baresip",
@@ -62,7 +65,7 @@ func main() {
 				if !ok {
 					return
 				}
-				if lerr == nil {
+				if *lokiURL != "" {
 					cc := e.Type == "CALL_CLOSED"
 					if cc && e.ID == "" {
 						lokiELabels["level"] = "warning"
@@ -91,7 +94,7 @@ func main() {
 				if !ok {
 					return
 				}
-				if lerr == nil {
+				if *lokiURL != "" {
 					loki.Send(lokiRLabels, string(r.RawJSON))
 				} else {
 					log.Println(string(r.RawJSON))

@@ -1,4 +1,4 @@
 github.com/gorilla/websocket v1.4.2 h1:+/TMaTYc4QFitKJxsQ7Yye35DkWvkdLcvGKqM+x0Ufc=
 github.com/gorilla/websocket v1.4.2/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
-github.com/negbie/go-baresip v0.0.0-20210518172858-1e29cfaf2235 h1:ViZMRIktRbjn10NpLV4KRpH5pC7jepecW6rOAz1Hzw8=
-github.com/negbie/go-baresip v0.0.0-20210518172858-1e29cfaf2235/go.mod h1:nTKUR3ZEyEHAhTVL/6PLm+mB7SLsVl/xZkwkAeL9LR4=
+github.com/negbie/go-baresip v0.0.0-20210520161312-2de4e0e6b0b1 h1:EgvjiGaSB582cQTBazBK2WnldivyONinihxAGpg6ITk=
+github.com/negbie/go-baresip v0.0.0-20210520161312-2de4e0e6b0b1/go.mod h1:nTKUR3ZEyEHAhTVL/6PLm+mB7SLsVl/xZkwkAeL9LR4=
