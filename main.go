@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"flag"
 	"log"
-	"strings"
 
 	gobaresip "github.com/negbie/go-baresip"
 )
@@ -19,25 +18,19 @@ func main() {
 	debug := flag.Bool("debug", false, "Set debug mode")
 	lokiURL := flag.String("loki_url", "", "URL to remote Loki server like http://localhost:3100")
 	guiAddr := flag.String("gui_address", "0.0.0.0:8080", "Local GUI listen address")
+	logStd := flag.Bool("log_stderr", true, "Log to stderr")
 	maxCalls := flag.String("max_cc_calls", "20", "Max concurrent calls")
 	rtpNet := flag.String("rtp_interface", "", "RTP interface like eth0")
 	rtpPorts := flag.String("rtp_ports", "10000-20000", "RTP port range")
 	sipAddr := flag.String("sip_address", "", "SIP listen address like 0.0.0.0:5060")
+	hookURL := flag.String("webhook_url", "", "Mattermost, Slack incoming webhook URL")
 	flag.Parse()
 
 	createConfig(*maxCalls, *rtpNet, *rtpPorts, *sipAddr)
 
-	gb, err := gobaresip.New(
-		gobaresip.SetAudioPath("sounds"),
-		gobaresip.SetConfigPath("."),
-		gobaresip.SetDebug(*debug),
-		gobaresip.SetWsAddr(*guiAddr),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	var loki *LokiClient
+	var err error
+
 	if *lokiURL != "" {
 		loki, err = NewLokiClient(*lokiURL, 20, 4)
 		if err != nil {
@@ -55,6 +48,16 @@ func main() {
 		"level": "info",
 	}
 
+	gb, err := gobaresip.New(
+		gobaresip.SetAudioPath("sounds"),
+		gobaresip.SetConfigPath("."),
+		gobaresip.SetDebug(*debug),
+		gobaresip.SetWsAddr(*guiAddr),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	eChan := gb.GetEventChan()
 	rChan := gb.GetResponseChan()
 
@@ -65,39 +68,34 @@ func main() {
 				if !ok {
 					return
 				}
+				level := eventLevel(&e)
+				msg := string(e.RawJSON)
+
 				if *lokiURL != "" {
-					cc := e.Type == "CALL_CLOSED"
-					if cc && e.ID == "" {
-						lokiELabels["level"] = "warning"
-					} else if cc && strings.HasPrefix(e.Param, "4") {
-						lokiELabels["level"] = "warning"
-					} else if cc && strings.HasPrefix(e.Param, "5") {
-						lokiELabels["level"] = "error"
-					} else if cc && strings.HasPrefix(e.Param, "6") {
-						lokiELabels["level"] = "error"
-					} else if cc && strings.Contains(e.Param, "error") {
-						lokiELabels["level"] = "error"
-					} else if strings.Contains(e.Type, "FAIL") {
-						lokiELabels["level"] = "warning"
-					} else if strings.Contains(e.Type, "ERROR") {
-						lokiELabels["level"] = "error"
-					} else {
-						lokiELabels["level"] = "info"
-					}
-
-					loki.Send(lokiELabels, string(e.RawJSON))
-				} else {
-					log.Println(string(e.RawJSON))
+					lokiELabels["level"] = level
+					loki.Send(lokiELabels, msg)
 				}
-
+				if *hookURL != "" {
+					go func(su string) {
+						if err := page(su, level, msg); err != nil {
+							log.Println(err)
+						}
+					}(*hookURL)
+				}
+				if *logStd {
+					log.Println(level, ":", msg)
+				}
 			case r, ok := <-rChan:
 				if !ok {
 					return
 				}
+				msg := string(r.RawJSON)
+
 				if *lokiURL != "" {
-					loki.Send(lokiRLabels, string(r.RawJSON))
-				} else {
-					log.Println(string(r.RawJSON))
+					loki.Send(lokiRLabels, msg)
+				}
+				if *logStd {
+					log.Println("info", ":", msg)
 				}
 			}
 		}
