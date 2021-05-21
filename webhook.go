@@ -13,7 +13,7 @@ const fireEmo = " :fire: "
 
 func page(webhookUrl string, level, msg string) error {
 	if level == "warning" {
-		msg = warnEmo + msg + fireEmo
+		msg = warnEmo + msg + warnEmo
 	} else if level == "error" {
 		msg = fireEmo + msg + fireEmo
 	}

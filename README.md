@@ -22,12 +22,15 @@ The [accounts](https://github.com/baresip/baresip/wiki/Accounts) file will be ge
 # Flags
 You can start telefonist with following flags:
 ```
+Usage of ./telefonist:
   -debug
         Set debug mode
   -gui_address string
         Local GUI listen address (default "0.0.0.0:8080")
+  -log_stderr
+        Log to stderr (default true)
   -loki_url string
-        URL to remote Loki server (default "http://localhost:3100")
+        URL to remote Loki server like http://localhost:3100
   -max_cc_calls string
         Max concurrent calls (default "20")
   -rtp_interface string
@@ -36,6 +39,8 @@ You can start telefonist with following flags:
         RTP port range (default "10000-20000")
   -sip_address string
         SIP listen address like 0.0.0.0:5060
+  -slack_url string
+        Slack webhook URL
 ```
 
 # GUI
