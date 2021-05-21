@@ -39,8 +39,8 @@ Usage of ./telefonist:
         RTP port range (default "10000-20000")
   -sip_address string
         SIP listen address like 0.0.0.0:5060
-  -slack_url string
-        Slack webhook URL
+  -webhook_url string
+        Mattermost, Slack incoming webhook URL
 ```
 
 # GUI

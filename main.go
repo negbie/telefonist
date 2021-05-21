@@ -75,7 +75,7 @@ func main() {
 					lokiELabels["level"] = level
 					loki.Send(lokiELabels, msg)
 				}
-				if *hookURL != "" {
+				if *hookURL != "" && (level == "warning" || level == "error") {
 					go func(su string) {
 						if err := page(su, level, msg); err != nil {
 							log.Println(err)
