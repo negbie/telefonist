@@ -31,7 +31,7 @@ Usage of ./telefonist:
         Log to stderr (default true)
   -loki_url string
         URL to remote Loki server like http://localhost:3100
-  -max_cc_calls string
+  -max_calls string
         Max concurrent calls (default "20")
   -rtp_interface string
         RTP interface like eth0

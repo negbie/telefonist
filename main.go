@@ -19,7 +19,7 @@ func main() {
 	lokiURL := flag.String("loki_url", "", "URL to remote Loki server like http://localhost:3100")
 	guiAddr := flag.String("gui_address", "0.0.0.0:8080", "Local GUI listen address")
 	logStd := flag.Bool("log_stderr", true, "Log to stderr")
-	maxCalls := flag.String("max_cc_calls", "20", "Max concurrent calls")
+	maxCalls := flag.String("max_calls", "20", "Max concurrent calls")
 	rtpNet := flag.String("rtp_interface", "", "RTP interface like eth0")
 	rtpPorts := flag.String("rtp_ports", "10000-20000", "RTP port range")
 	sipAddr := flag.String("sip_address", "", "SIP listen address like 0.0.0.0:5060")
