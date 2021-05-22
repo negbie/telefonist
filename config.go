@@ -220,7 +220,7 @@ module                  ice.so
 
 # Media encryption modules
 module                  srtp.so
-#module                 dtls_srtp.so
+module                  dtls_srtp.so
 #module                 zrtp.so
 
 
