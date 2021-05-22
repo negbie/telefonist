@@ -14,7 +14,7 @@ func main() {
 	logStd := flag.Bool("log_stderr", true, "Log to stderr")
 	maxCalls := flag.String("max_calls", "20", "Max concurrent calls")
 	rtpNet := flag.String("rtp_interface", "", "RTP interface like eth0")
-	rtpPorts := flag.String("rtp_ports", "10000-20000", "RTP port range")
+	rtpPorts := flag.String("rtp_ports", "10000-11000", "RTP port range")
 	sipAddr := flag.String("sip_address", "", "SIP listen address like 0.0.0.0:5060")
 	hookURL := flag.String("webhook_url", "", "Mattermost, Slack incoming webhook URL")
 	flag.Parse()
