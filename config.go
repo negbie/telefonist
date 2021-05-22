@@ -89,11 +89,12 @@ call_hold_other_calls   no
 
 # Audio
 audio_path              sounds
+audio_player            aubridge,nil
 #audio_player           alsa,default
 #audio_source           alsa,default
 #audio_alert            alsa,default
 audio_source            aufile,sounds/monorobo.wav
-audio_player            aubridge,nil
+#audio_source           ausine,440
 ausrc_srate             48000
 #auplay_srate           48000
 #ausrc_channels         0
@@ -176,7 +177,7 @@ module                  g711.so
 #module                 portaudio.so
 module                  aubridge.so
 module                  aufile.so
-#module                 ausine.so
+module                  ausine.so
 
 # Video codec Modules (in order)
 #module                 avcodec.so
