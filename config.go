@@ -2,11 +2,19 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"io/ioutil"
+	"os"
 	"strings"
 
 	"github.com/negbie/telefonist/zip"
 )
+
+//go:embed zip/sounds.tar.gz
+var baresipSounds []byte
+
+//go:embed zip/espeak-ng-data.tar.gz
+var espeakNGData []byte
 
 func createConfig(maxCalls, rtpNet, rtpPorts, sipAddr string) {
 	if sipAddr != "" {
@@ -41,11 +49,15 @@ func createConfig(maxCalls, rtpNet, rtpPorts, sipAddr string) {
 			1)
 	}
 
-	if err := zip.Decompress(bytes.NewReader(baresipSounds), "."); err != nil {
-		panic(err)
+	if _, err := os.Stat("sounds"); os.IsNotExist(err) {
+		if err := zip.Decompress(bytes.NewReader(baresipSounds), "."); err != nil {
+			panic(err)
+		}
 	}
-	if err := zip.Decompress(bytes.NewReader(espeakNGData), "."); err != nil {
-		panic(err)
+	if _, err := os.Stat("espeak-ng-data"); os.IsNotExist(err) {
+		if err := zip.Decompress(bytes.NewReader(espeakNGData), "."); err != nil {
+			panic(err)
+		}
 	}
 	if err := ioutil.WriteFile("config", []byte(config), 0644); err != nil {
 		panic(err)
@@ -82,7 +94,7 @@ audio_path              sounds
 #audio_alert            alsa,default
 audio_source            aufile,sounds/monorobo.wav
 audio_player            aubridge,nil
-#ausrc_srate            48000
+ausrc_srate             48000
 #auplay_srate           48000
 #ausrc_channels         0
 #auplay_channels        0
@@ -138,10 +150,10 @@ rtp_stats               no
 #module                 httpd.so
 
 # Audio codec Modules (in order)
-#module                 opus.so
+module                  opus.so
 #module                 amr.so
 #module                 g7221.so
-#module                 g722.so
+module                  g722.so
 #module                 g726.so
 module                  g711.so
 #module                 gsm.so
@@ -286,7 +298,7 @@ video_selfview          window # {window,pip}
 #redial_attempts        0 # Num or <inf>
 #redial_delay           5 # Delay in seconds
 #ringback_disabled      no
-#statmode_default       off
+statmode_default        off
 #menu_clean_number      no
 #sip_autoanswer_beep    yes
 #sip_autoanswer_method  rfc5373 # {rfc5373,call-info,alert-info}

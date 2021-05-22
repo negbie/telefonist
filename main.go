@@ -1,18 +1,11 @@
 package main
 
 import (
-	_ "embed"
 	"flag"
 	"log"
 
 	gobaresip "github.com/negbie/go-baresip"
 )
-
-//go:embed zip/sounds.tar.gz
-var baresipSounds []byte
-
-//go:embed zip/espeak-ng-data.tar.gz
-var espeakNGData []byte
 
 func main() {
 	debug := flag.Bool("debug", false, "Set debug mode")
