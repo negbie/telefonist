@@ -4,23 +4,31 @@ import (
 	"flag"
 	"log"
 
+	"github.com/coocood/freecache"
 	gobaresip "github.com/negbie/go-baresip"
 )
 
 func main() {
 	debug := flag.Bool("debug", false, "Set debug mode")
-	lokiURL := flag.String("loki_url", "", "URL to remote Loki server like http://localhost:3100")
 	guiAddr := flag.String("gui_address", "0.0.0.0:8080", "Local GUI listen address")
 	logStd := flag.Bool("log_stderr", true, "Log to stderr")
-	maxCalls := flag.String("max_calls", "20", "Max concurrent calls")
+	lokiURL := flag.String("loki_url", "", "URL to remote Loki server like http://localhost:3100")
+	maxCalls := flag.Uint("max_calls", 40, "Maximum number of incoming calls")
 	rtpNet := flag.String("rtp_interface", "", "RTP interface like eth0")
 	rtpPorts := flag.String("rtp_ports", "10000-11000", "RTP port range")
+	rtpTimeout := flag.Uint("rtp_timeout", 5, "Seconds after which a call with no incoming RTP packets will be terminated")
 	sipAddr := flag.String("sip_address", "", "SIP listen address like 0.0.0.0:5060")
-	hookURL := flag.String("webhook_url", "", "Mattermost, Slack incoming webhook URL")
+	webhookDelay := flag.Uint("webhook_delay", 900, "Webhook resend delay of warnings and errors in seconds")
+	webhookURL := flag.String("webhook_url", "", "Send warnings and errors to this Mattermost or Slack webhook URL")
 	flag.Parse()
 
-	createConfig(*maxCalls, *rtpNet, *rtpPorts, *sipAddr)
+	createConfig(*maxCalls, *rtpNet, *rtpPorts, *rtpTimeout, *sipAddr)
 
+	if *webhookDelay == 0 {
+		*webhookDelay = 1
+	}
+
+	var cache = freecache.NewCache(10 * 1024 * 1024)
 	var loki *LokiClient
 	var err error
 
@@ -68,12 +76,16 @@ func main() {
 					lokiELabels["level"] = level
 					loki.Send(lokiELabels, msg)
 				}
-				if *hookURL != "" && (level == "warning" || level == "error") {
-					go func(su string) {
-						if err := page(su, level, msg); err != nil {
-							log.Println(err)
+				if *webhookURL != "" && (level == "warning" || level == "error") {
+					go func() {
+						key := []byte(e.AccountAOR + e.PeerURI + e.Param)
+						if _, err := cache.Get(key); err != nil {
+							if err := page(*webhookURL, level, msg); err != nil {
+								log.Println(err)
+							}
+							cache.Set(key, nil, int(*webhookDelay))
 						}
-					}(*hookURL)
+					}()
 				}
 				if *logStd {
 					log.Println(level, ":", msg)

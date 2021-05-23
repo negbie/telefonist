@@ -31,16 +31,20 @@ Usage of ./telefonist:
         Log to stderr (default true)
   -loki_url string
         URL to remote Loki server like http://localhost:3100
-  -max_calls string
-        Max concurrent calls (default "20")
+  -max_calls uint
+        Maximum number of incoming calls (default 40)
   -rtp_interface string
         RTP interface like eth0
   -rtp_ports string
-        RTP port range (default "10000-20000")
+        RTP port range (default "10000-11000")
+  -rtp_timeout uint
+        Seconds after which a call with no incoming RTP packets will be terminated (default 5)
   -sip_address string
         SIP listen address like 0.0.0.0:5060
+  -webhook_delay uint
+        Webhook resend delay of warnings and errors in seconds (default 900)
   -webhook_url string
-        Mattermost, Slack incoming webhook URL
+        Send warnings and errors to this Mattermost or Slack webhook URL
 ```
 
 # GUI

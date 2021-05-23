@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/negbie/telefonist/zip"
@@ -16,37 +17,38 @@ var baresipSounds []byte
 //go:embed zip/espeak-ng-data.tar.gz
 var espeakNGData []byte
 
-func createConfig(maxCalls, rtpNet, rtpPorts, sipAddr string) {
+func createConfig(maxCalls uint, rtpNet, rtpPorts string, rtpTimeout uint, sipAddr string) {
 	if sipAddr != "" {
 		config = strings.Replace(
 			config,
 			"#sip_listen             0.0.0.0:5060",
-			"sip_listen              "+sipAddr,
-			1)
+			"sip_listen              "+sipAddr, 1)
 	}
+
+	config = strings.Replace(
+		config,
+		"call_max_calls          1",
+		"call_max_calls          "+strconv.Itoa((int(maxCalls))), 1)
 
 	if rtpNet != "" {
 		config = strings.Replace(
 			config,
 			"#net_interface          eth0",
-			"net_interface           "+rtpNet,
-			1)
+			"net_interface           "+rtpNet, 1)
 	}
 
 	if rtpPorts != "" {
 		config = strings.Replace(
 			config,
 			"#rtp_ports              10000-20000",
-			"rtp_ports               "+rtpPorts,
-			1)
+			"rtp_ports               "+rtpPorts, 1)
 	}
 
-	if maxCalls != "" {
+	if rtpTimeout != 0 {
 		config = strings.Replace(
 			config,
-			"call_max_calls          1",
-			"call_max_calls          "+maxCalls,
-			1)
+			"#rtp_timeout            60",
+			"rtp_timeout             "+strconv.Itoa((int(rtpTimeout))), 1)
 	}
 
 	if _, err := os.Stat("sounds"); os.IsNotExist(err) {
@@ -135,7 +137,7 @@ rtp_stats               no
 #net_interface          eth0
 
 # Play tones
-#file_ausrc             aufile
+file_ausrc              aufile
 #file_srate             16000
 #file_channels          1
 
