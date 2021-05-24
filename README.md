@@ -42,7 +42,7 @@ Usage of ./telefonist:
   -sip_address string
         SIP listen address like 0.0.0.0:5060
   -webhook_delay uint
-        Webhook resend delay of warnings and errors in seconds (default 900)
+        Webhook resend delay of warnings and errors in seconds (default 600)
   -webhook_url string
         Send warnings and errors to this Mattermost or Slack webhook URL
 ```

@@ -6,7 +6,7 @@ github.com/coocood/freecache v1.1.1 h1:uukNF7QKCZEdZ9gAV7WQzvh0SbjwdMF6m3x3rxEka
 github.com/coocood/freecache v1.1.1/go.mod h1:OKrEjkGVoxZhyWAJoeFi5BMLUJm2Tit0kpGkIr7NGYY=
 github.com/gorilla/websocket v1.4.2 h1:+/TMaTYc4QFitKJxsQ7Yye35DkWvkdLcvGKqM+x0Ufc=
 github.com/gorilla/websocket v1.4.2/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
-github.com/negbie/go-baresip v0.0.0-20210523131013-1edfd67c0836 h1:LnlzfDT+C6VOFkKcggQzIlcP9ScJomcDFC9hB2z3+X4=
-github.com/negbie/go-baresip v0.0.0-20210523131013-1edfd67c0836/go.mod h1:nTKUR3ZEyEHAhTVL/6PLm+mB7SLsVl/xZkwkAeL9LR4=
+github.com/negbie/go-baresip v0.0.5 h1:qLjG2e4M8gj154mgbLFpcs008JgvcRh+9xLYG+wYxQo=
+github.com/negbie/go-baresip v0.0.5/go.mod h1:nTKUR3ZEyEHAhTVL/6PLm+mB7SLsVl/xZkwkAeL9LR4=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72 h1:qLC7fQah7D6K1B0ujays3HV9gkFtllcxhzImRR7ArPQ=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=

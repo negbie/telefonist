@@ -237,7 +237,7 @@ module_tmp              account.so
 #------------------------------------------------------------------------------
 # Application Modules
 
-module_app              auloop.so
+#module_app             auloop.so
 #module_app             b2bua.so
 module_app              contact.so
 #module_app             debug_cmd.so

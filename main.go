@@ -18,7 +18,7 @@ func main() {
 	rtpPorts := flag.String("rtp_ports", "10000-11000", "RTP port range")
 	rtpTimeout := flag.Uint("rtp_timeout", 5, "Seconds after which a call with no incoming RTP packets will be terminated")
 	sipAddr := flag.String("sip_address", "", "SIP listen address like 0.0.0.0:5060")
-	webhookDelay := flag.Uint("webhook_delay", 900, "Webhook resend delay of warnings and errors in seconds")
+	webhookDelay := flag.Uint("webhook_delay", 600, "Webhook resend delay of warnings and errors in seconds")
 	webhookURL := flag.String("webhook_url", "", "Send warnings and errors to this Mattermost or Slack webhook URL")
 	flag.Parse()
 
