@@ -92,22 +92,19 @@ call_hold_other_calls   no
 # Audio
 audio_path              sounds
 audio_player            aubridge,nil
-#audio_player           alsa,default
-#audio_source           alsa,default
-#audio_alert            alsa,default
 audio_source            aufile,sounds/monorobo.wav
-#audio_source           ausine,440
+#audio_alert            ausine,440
 ausrc_srate             48000
-#auplay_srate           48000
+auplay_srate            48000
 #ausrc_channels         0
 #auplay_channels        0
-#audio_txmode           poll            # poll, thread
+audio_txmode            thread          # poll, thread
 audio_level             no
 ausrc_format            s16             # s16, float, ..
 auplay_format           s16             # s16, float, ..
 auenc_format            s16             # s16, float, ..
 audec_format            s16             # s16, float, ..
-audio_buffer            20-160          # ms
+audio_buffer            20-400          # ms
 
 # Video
 #video_source           v4l2,/dev/video0

@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-const warnEmo = " :warning: "
-const fireEmo = " :fire: "
+const warnEmo = ":warning: "
+const fireEmo = ":fire: "
 
 func page(webhookUrl string, level, msg string) error {
 	if level == "warning" {
-		msg = warnEmo + msg + warnEmo
+		msg = warnEmo + msg
 	} else if level == "error" {
-		msg = fireEmo + msg + fireEmo
+		msg = fireEmo + msg
 	}
 
 	text := "{\"text\":" + fmt.Sprintf("%q", msg) + ",\"username\":\"telefonist\"}"
