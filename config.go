@@ -85,17 +85,17 @@ sip_cafile              /etc/ssl/certs/ca-certificates.crt
 sip_tos                 160
 
 # Call
-call_local_timeout      120
+call_local_timeout      12
 call_max_calls          1
 call_hold_other_calls   no
 
 # Audio
 audio_path              sounds
 audio_player            aubridge,nil
-audio_source            aufile,sounds/monorobo.wav
-#audio_alert            ausine,440
-ausrc_srate             48000
-auplay_srate            48000
+audio_source            ausine,362
+#audio_alert            aufile,sounds/monorobo.wav
+#ausrc_srate            48000
+#auplay_srate           48000
 #ausrc_channels         0
 #auplay_channels        0
 audio_txmode            thread          # poll, thread
@@ -104,7 +104,7 @@ ausrc_format            s16             # s16, float, ..
 auplay_format           s16             # s16, float, ..
 auenc_format            s16             # s16, float, ..
 audec_format            s16             # s16, float, ..
-audio_buffer            20-400          # ms
+audio_buffer            20-320          # ms
 
 # Video
 #video_source           v4l2,/dev/video0
@@ -134,7 +134,7 @@ rtp_stats               no
 #net_interface          eth0
 
 # Play tones
-file_ausrc              aufile
+#file_ausrc             aufile
 #file_srate             16000
 #file_channels          1
 

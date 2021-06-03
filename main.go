@@ -13,10 +13,10 @@ func main() {
 	guiAddr := flag.String("gui_address", "0.0.0.0:8080", "Local GUI listen address")
 	logStd := flag.Bool("log_stderr", true, "Log to stderr")
 	lokiURL := flag.String("loki_url", "", "URL to remote Loki server like http://localhost:3100")
-	maxCalls := flag.Uint("max_calls", 40, "Maximum number of incoming calls")
+	maxCalls := flag.Uint("max_calls", 30, "Maximum number of incoming calls")
 	rtpNet := flag.String("rtp_interface", "", "RTP interface like eth0")
 	rtpPorts := flag.String("rtp_ports", "10000-11000", "RTP port range")
-	rtpTimeout := flag.Uint("rtp_timeout", 5, "Seconds after which a call with no incoming RTP packets will be terminated")
+	rtpTimeout := flag.Uint("rtp_timeout", 10, "Seconds after which a call with no incoming RTP packets will be terminated")
 	sipAddr := flag.String("sip_address", "", "SIP listen address like 0.0.0.0:5060")
 	webhookDelay := flag.Uint("webhook_delay", 600, "Webhook resend delay of warnings and errors in seconds")
 	webhookURL := flag.String("webhook_url", "", "Send warnings and errors to this Mattermost or Slack webhook URL")
@@ -53,6 +53,7 @@ func main() {
 		gobaresip.SetAudioPath("sounds"),
 		gobaresip.SetConfigPath("."),
 		gobaresip.SetDebug(*debug),
+		gobaresip.SetUserAgent("telefonist"),
 		gobaresip.SetWsAddr(*guiAddr),
 	)
 	if err != nil {
@@ -69,18 +70,18 @@ func main() {
 				if !ok {
 					return
 				}
+
 				level := eventLevel(&e)
-				msg := string(e.RawJSON)
 
 				if *lokiURL != "" {
 					lokiELabels["level"] = level
-					loki.Send(lokiELabels, msg)
+					loki.Send(lokiELabels, string(e.RawJSON))
 				}
 				if *webhookURL != "" && (level == "warning" || level == "error") {
 					go func() {
 						key := []byte(e.AccountAOR + e.PeerURI + e.Param)
 						if _, err := cache.Get(key); err != nil {
-							if err := page(*webhookURL, level, msg); err != nil {
+							if err := page(*webhookURL, level, string(e.RawJSON)); err != nil {
 								log.Println(err)
 							}
 							cache.Set(key, nil, int(*webhookDelay))
@@ -88,19 +89,18 @@ func main() {
 					}()
 				}
 				if *logStd {
-					log.Println(level, ":", msg)
+					log.Println(level, ":", string(e.RawJSON))
 				}
 			case r, ok := <-rChan:
 				if !ok {
 					return
 				}
-				msg := string(r.RawJSON)
 
 				if *lokiURL != "" {
-					loki.Send(lokiRLabels, msg)
+					loki.Send(lokiRLabels, string(r.RawJSON))
 				}
 				if *logStd {
-					log.Println("info", ":", msg)
+					log.Println("info", ":", string(r.RawJSON))
 				}
 			}
 		}
