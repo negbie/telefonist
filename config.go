@@ -98,7 +98,7 @@ audio_source            ausine,362
 #auplay_srate           48000
 #ausrc_channels         0
 #auplay_channels        0
-audio_txmode            thread          # poll, thread
+audio_txmode            poll            # poll, thread
 audio_level             no
 ausrc_format            s16             # s16, float, ..
 auplay_format           s16             # s16, float, ..
