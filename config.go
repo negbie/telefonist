@@ -130,7 +130,7 @@ rtp_stats               no
 # Network
 #dns_server             1.1.1.1:53
 #dns_server             1.0.0.1:53
-#dns_fallback           8.8.8.8:53
+dns_fallback            8.8.8.8:53
 #net_interface          eth0
 
 # Play tones
