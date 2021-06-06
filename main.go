@@ -2,11 +2,15 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/coocood/freecache"
 	gobaresip "github.com/negbie/go-baresip"
 )
+
+const v = "v0.1.0"
 
 func main() {
 	debug := flag.Bool("debug", false, "Set debug mode")
@@ -18,9 +22,15 @@ func main() {
 	rtpPorts := flag.String("rtp_ports", "10000-11000", "RTP port range")
 	rtpTimeout := flag.Uint("rtp_timeout", 10, "Seconds after which a call with no incoming RTP packets will be terminated")
 	sipAddr := flag.String("sip_address", "", "SIP listen address like 0.0.0.0:5060")
+	version := flag.Bool("version", false, "Print version")
 	webhookDelay := flag.Uint("webhook_delay", 600, "Webhook resend delay of warnings and errors in seconds")
 	webhookURL := flag.String("webhook_url", "", "Send warnings and errors to this Mattermost or Slack webhook URL")
 	flag.Parse()
+
+	if *version {
+		fmt.Println(v)
+		os.Exit(0)
+	}
 
 	createConfig(*maxCalls, *rtpNet, *rtpPorts, *rtpTimeout, *sipAddr)
 

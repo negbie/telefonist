@@ -14,9 +14,6 @@ import (
 //go:embed zip/sounds.tar.gz
 var baresipSounds []byte
 
-//go:embed zip/espeak-ng-data.tar.gz
-var espeakNGData []byte
-
 func createConfig(maxCalls uint, rtpNet, rtpPorts string, rtpTimeout uint, sipAddr string) {
 	if sipAddr != "" {
 		config = strings.Replace(
@@ -56,11 +53,6 @@ func createConfig(maxCalls uint, rtpNet, rtpPorts string, rtpTimeout uint, sipAd
 			panic(err)
 		}
 	}
-	if _, err := os.Stat("espeak-ng-data"); os.IsNotExist(err) {
-		if err := zip.Decompress(bytes.NewReader(espeakNGData), "."); err != nil {
-			panic(err)
-		}
-	}
 	if err := ioutil.WriteFile("config", []byte(config), 0644); err != nil {
 		panic(err)
 	}
@@ -93,7 +85,7 @@ call_hold_other_calls   no
 audio_path              sounds
 audio_player            aubridge,nil
 audio_source            ausine,362
-#audio_alert            aufile,sounds/monorobo.wav
+#audio_alert            aufile,sounds/ring.wav
 #ausrc_srate            48000
 #auplay_srate           48000
 #ausrc_channels         0
