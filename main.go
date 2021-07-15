@@ -10,10 +10,11 @@ import (
 	gobaresip "github.com/negbie/go-baresip"
 )
 
-const v = "v0.1.0"
+const v = "v0.1.1"
 
 func main() {
 	debug := flag.Bool("debug", false, "Set debug mode")
+	ctrlAddr := flag.String("ctrl_address", "127.0.0.1:4444", "Local control listen address")
 	guiAddr := flag.String("gui_address", "0.0.0.0:8080", "Local GUI listen address")
 	logStd := flag.Bool("log_stderr", true, "Log to stderr")
 	lokiURL := flag.String("loki_url", "", "URL to remote Loki server like http://localhost:3100")
@@ -32,7 +33,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	createConfig(*maxCalls, *rtpNet, *rtpPorts, *rtpTimeout, *sipAddr)
+	createConfig(*maxCalls, *rtpNet, *rtpPorts, *rtpTimeout, *ctrlAddr, *sipAddr)
 
 	if *webhookDelay == 0 {
 		*webhookDelay = 1
@@ -64,6 +65,7 @@ func main() {
 		gobaresip.SetConfigPath("."),
 		gobaresip.SetDebug(*debug),
 		gobaresip.SetUserAgent("telefonist"),
+		gobaresip.SetCtrlTCPAddr(*ctrlAddr),
 		gobaresip.SetWsAddr(*guiAddr),
 	)
 	if err != nil {

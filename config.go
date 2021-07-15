@@ -14,7 +14,10 @@ import (
 //go:embed zip/sounds.tar.gz
 var baresipSounds []byte
 
-func createConfig(maxCalls uint, rtpNet, rtpPorts string, rtpTimeout uint, sipAddr string) {
+func createConfig(maxCalls uint, rtpNet, rtpPorts string, rtpTimeout uint, ctrlAddr, sipAddr string) {
+	ctrlAddrNorm := strings.Replace(ctrlAddr, "localhost", "127.0.0.1", 1)
+	config = strings.Replace(config, "127.0.0.1:4444", ctrlAddrNorm, 1)
+
 	if sipAddr != "" {
 		config = strings.Replace(
 			config,
