@@ -1,4 +1,6 @@
 data/
 libbaresip/git/
 telefonist
+/telefonist
+!/pkg/telefonist/
 baresip
