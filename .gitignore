@@ -3,4 +3,5 @@ libbaresip/git/
 telefonist
 /telefonist
 !/pkg/telefonist/
+!/cmd/telefonist/
 baresip
