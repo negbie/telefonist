@@ -2,6 +2,8 @@
 
 A web-based management interface, providing a WebSocket API and web UI for controlling baresip SIP user agents.
 
+<img width="800" height="600" alt="Image" src="https://github.com/user-attachments/assets/0603eb15-e2ed-4957-8ac1-0a9dc9656ef4" />
+
 ## About
 
 Telefonist is a standalone application that uses a web interface for managing SIP calls. It provides:
@@ -108,6 +110,8 @@ Testfiles are line-based and support the following syntax:
   Refer to the [baresip documentation](https://github.com/baresip/baresip/wiki) for command details.
 
 ### Quick Start Example
+
+<img width="800" height="600" alt="Image" src="https://github.com/user-attachments/assets/b812f4ba-778d-4104-a4fa-eb20f9aade95" />
 
 1. **Start Telefonist**: 
    ```bash
