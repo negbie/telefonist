@@ -65,7 +65,7 @@ window.initCompareWindow = (deps) => {
         const eventType = (j.type || j.token || "EVENT").toUpperCase();
         const time = j.time || "??:??:??";
         let peer = escapeHTML(j.peeruri || j.contacturi || "");
-        
+
         let summaryLine = peer;
         if (eventType === "SIP") {
             const lines = (j.param || "").split("\n");
@@ -107,20 +107,20 @@ window.initCompareWindow = (deps) => {
 
     const structuralSkeleton = (text) => {
         if (!text) return "";
-        return text.split("\n").map(function(line) {
+        return text.split("\n").map(function (line) {
             // Strip timestamp: HH:MM:SS.mmm| or HH:MM:SS.mmm followed by space/nothing
             var cleaned = line.replace(/^\d{2}:\d{2}:\d{2}\.\d{3}[| ]?/, "");
             var trimmed = cleaned.trim();
-            if (!trimmed) return "";
+            if (!trimmed || trimmed.toLowerCase().startsWith("a=crypto")) return "";
 
             var words = trimmed.split(/\s+/);
-            return words.map(function(word) {
+            return words.map(function (word) {
                 // Split by semicolon OR comma to handle complex SIP parameters (Via, tags, RTCP, etc.)
-                return word.split(/[;,]/).map(function(sub) {
+                return word.split(/[;,]/).map(function (sub) {
                     // Normalize IP addresses (v4/v6)
                     if (/\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(sub) || sub.includes("::")) {
-                         if (sub.indexOf("=") !== -1) return sub.split("=")[0] + "=#";
-                         return "#";
+                        if (sub.indexOf("=") !== -1) return sub.split("=")[0] + "=#";
+                        return "#";
                     }
 
                     var isVariable = /\d/.test(sub) || /[a-fA-F0-9]{12,}/.test(sub);
@@ -136,7 +136,7 @@ window.initCompareWindow = (deps) => {
                     return sub;
                 }).join(";");
             }).join(" ");
-        }).join("\n");
+        }).filter(Boolean).join("\n");
     };
 
     const parseEvents = (text) => {
@@ -154,21 +154,21 @@ window.initCompareWindow = (deps) => {
             return true;
         });
 
-        return filtered.map(function(j, idx) {
+        return filtered.map(function (j, idx) {
             j.idx = idx;
             var display = renderEventHTML(j);
-            
+
             var compare;
             if (activeMode === "sip" || activeMode === "log") {
                 compare = structuralSkeleton(j.param || "");
             } else {
                 // For regular events, use precise JSON-based matching but skeletonize the param
                 var comp = JSON.parse(JSON.stringify(j)); // Deep clone
-                ["time", "id", "RawJSON", "run_id", "idx"].forEach(function(k) { delete comp[k]; });
+                ["time", "id", "RawJSON", "run_id", "idx"].forEach(function (k) { delete comp[k]; });
                 if (comp.param) comp.param = structuralSkeleton(comp.param);
                 compare = JSON.stringify(comp, Object.keys(comp).sort());
             }
-            
+
             return { display: display, compare: compare, idx: idx };
         });
     };
@@ -187,10 +187,10 @@ window.initCompareWindow = (deps) => {
 
         // Sorting is important for events that might arrive out of order,
         // but for SIP and LOG, the chronological order is crucial for flow analysis.
-        if (activeMode !== "sip" && activeMode !== "log") {
-            aItems.sort((a, b) => a.compare.localeCompare(b.compare));
-            bItems.sort((a, b) => a.compare.localeCompare(b.compare));
-        }
+        //if (activeMode !== "sip" && activeMode !== "log") {
+        aItems.sort((a, b) => a.compare.localeCompare(b.compare));
+        bItems.sort((a, b) => a.compare.localeCompare(b.compare));
+        //}
 
         const diff = computeLCSDiff(aItems, bItems);
         const hasDiffs = diff.some(d => d.type !== "common");
@@ -233,13 +233,13 @@ window.initCompareWindow = (deps) => {
             renderRaw(contentA, rawA);
             renderRaw(contentB, rawB);
         }
-        
+
         evtBtn?.classList.toggle("active", activeMode === "evt");
         sipBtn?.classList.toggle("active", activeMode === "sip");
         logBtn?.classList.toggle("active", activeMode === "log");
         wavBtn?.classList.toggle("active", activeMode === "wav");
         diffBtn?.classList.toggle("active", diffMode);
-        
+
         if (diffBtn) diffBtn.textContent = diffMode ? "Raw" : "Diff";
     };
 
@@ -392,7 +392,7 @@ window.initCompareWindow = (deps) => {
     if (selectB) selectB.onchange = () => fetchRun(selectB.value, "b");
 
     if (clearBtn) clearBtn.onclick = () => { clearSide("a"); clearSide("b"); };
-    
+
     const scrolls = { evt: { a: 0, b: 0 }, sip: { a: 0, b: 0 }, log: { a: 0, b: 0 } };
     const switchMode = (mode) => {
         if (!diffMode && scrolls[activeMode]) {
@@ -411,15 +411,15 @@ window.initCompareWindow = (deps) => {
     if (sipBtn) sipBtn.onclick = () => switchMode("sip");
     if (logBtn) logBtn.onclick = () => switchMode("log");
     if (wavBtn) wavBtn.onclick = () => { activeMode = "wav"; diffMode = false; applyCurrentMode(); };
-    
-    if (diffBtn) diffBtn.onclick = () => { 
+
+    if (diffBtn) diffBtn.onclick = () => {
         if (activeMode === "wav") return;
         if (!diffMode && scrolls[activeMode]) {
             scrolls[activeMode].a = contentA ? contentA.scrollTop : 0;
             scrolls[activeMode].b = contentB ? contentB.scrollTop : 0;
         }
-        diffMode = !diffMode; 
-        applyCurrentMode(); 
+        diffMode = !diffMode;
+        applyCurrentMode();
         if (!diffMode && scrolls[activeMode]) {
             if (contentA) contentA.scrollTop = scrolls[activeMode].a;
             if (contentB) contentB.scrollTop = scrolls[activeMode].b;
