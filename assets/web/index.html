@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Telefonist</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/flow.css" />
+    <link rel="stylesheet" href="/sip_ladder.css" />
+    <link rel="stylesheet" href="/compare.css" />
+    <link rel="stylesheet" href="/controls.css" />
+    <link rel="stylesheet" href="/highlight.css" />
+    <script src="/event_bus.js"></script>
+    <script src="/utils.js"></script>
+    <script src="/flow.js"></script>
+    <script src="/socket_handler.js"></script>
+    <script src="/sip_renderer.js"></script>
+    <script src="/log_renderer.js"></script>
+    <script src="/api.js"></script>
+    <script src="/state_manager.js"></script>
+    <script src="/testfile_manager.js"></script>
+    <script src="/compare_window.js"></script>
+    <script src="/app.js" defer></script>
+
+</head>
+
+<body>
+    <div id="layout">
+        <div id="top-bar">
+            <form id="form">
+                <input type="text" id="command" autofocus placeholder="Command..." />
+                <input type="text" id="search" placeholder="Search Flow..." />
+                <input type="text" id="search-sip" placeholder="Search SIP..." />
+                <input type="text" id="search-log" placeholder="Search Log..." />
+            </form>
+            <label title="Collapse all flow items">
+                <input type="checkbox" id="collapse-all" />
+                Collapse
+            </label>
+            <label title="Show only test and testfile messages">
+                <input type="checkbox" id="only-tests" />
+                Tests
+            </label>
+            <label title="Show only messages with a result (PASS/FAIL)">
+                <input type="checkbox" id="only-results" />
+                Results
+            </label>
+            <label title="Auto-scroll the output panes to the latest event">
+                <input type="checkbox" id="autoscroll" checked />
+                Auto-scroll
+            </label>
+            <button id="clear" type="button">Clear</button>
+            <button id="logout" type="button">Logout 🚪</button>
+        </div>
+
+        <div id="top-row">
+            <div class="col-pane" id="left-col">
+                <div id="flow"></div>
+            </div>
+
+            <div class="col-pane" id="mid-col">
+                <div id="sip-view"></div>
+                <!-- SIP comparison panel -->
+                <div id="sip-compare-panel" style="display: none;">
+                    <button type="button" id="close-sip-compare" title="Close Comparison">✕</button>
+                    <div id="sip-compare-split">
+                        <div class="sip-compare-side" id="sip-compare-left">
+                            <div class="sip-compare-header">Message 1</div>
+                            <pre id="sip-compare-content-left"></pre>
+                        </div>
+                        <div class="sip-compare-side" id="sip-compare-right">
+                            <div class="sip-compare-header">Message 2</div>
+                            <pre id="sip-compare-content-right"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-pane" id="right-col">
+                <div id="log-view"></div>
+            </div>
+        </div>
+
+
+
+        <div id="resizer"></div>
+
+        <div id="bottom-row" data-bottom-mode="tests">
+            <div id="test-controls">
+                <div class="controls-sidebar">
+                    <div class="sidebar-group">
+                        <button type="button" id="btn-mode-tests" class="active" title="Tests Mode">🧪</button>
+                        <button type="button" id="btn-mode-compare" title="Compare Mode">⚖️</button>
+                    </div>
+                    <div class="sidebar-separator"></div>
+                    <div class="sidebar-group">
+                        <button type="button" id="testfiles-run" title="Run Testfile (Alt+R)">▶</button>
+                        <button type="button" id="testfiles-stop" title="Stop Run">■</button>
+                        <button type="button" id="testfiles-save" title="Save Testfile (Alt+S)">💾</button>
+                    </div>
+                    <div class="sidebar-separator"></div>
+                    <div class="sidebar-group">
+                        <button type="button" id="testfiles-new" title="New Testfile">+</button>
+                        <button type="button" id="testfiles-rename" title="Rename Testfile">✎</button>
+                        <button type="button" id="testfiles-delete" title="Delete Testfile">✖</button>
+                    </div>
+                    <div class="sidebar-separator"></div>
+                    <div class="sidebar-group">
+                        <button type="button" id="projects-new" title="New Project">📁+</button>
+                        <button type="button" id="projects-delete" title="Delete Project">📁x</button>
+                    </div>
+                    <div class="sidebar-spacer"></div>
+                    <button type="button" id="sidebar-toggle" title="Toggle Sidebar">»</button>
+                </div>
+                <div class="controls-main">
+                    <div class="testfile-actions">
+                        <div class="project-selector">
+                            <label class="hint" for="project-select">Project:</label>
+                            <select id="project-select">
+                                <option value="">(all projects)</option>
+                            </select>
+                        </div>
+
+                        <select id="testfile-select" multiple size="5">
+                            <option value="">(none)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div id="testfile-panel">
+                <div id="testfile-backdrop">
+                    <div id="testfile-highlights"></div>
+                    <textarea id="testfile-input" wrap="off" spellcheck="false" placeholder=""></textarea>
+                </div>
+            </div>
+
+            <div id="compare-panel">
+                <div id="compare-controls">
+                    <label class="hint">Compare runs:</label>
+                    <select id="compare-run-a">
+                        <option value="">(select run A)</option>
+                    </select>
+                    <select id="compare-run-b">
+                        <option value="">(select run B)</option>
+                    </select>
+                    <button type="button" id="compare-clear">Clear</button>
+                    <button type="button" id="compare-evt" title="Show only test events">EVT</button>
+                    <button type="button" id="compare-sip" title="Show only SIP messages">SIP</button>
+                    <button type="button" id="compare-log" title="Show only logger messages">LOG</button>
+                    <button type="button" id="compare-wav" title="Toggle WAV comparison mode">WAV</button>
+                    <button type="button" id="compare-diff"
+                        title="Toggle diff view for the selected mode">Diff</button>
+                    <button type="button" id="compare-delete-selected"
+                        title="Delete the runs selected in the dropdowns">Delete</button>
+                    <button type="button" id="compare-delete-all"
+                        title="Delete all stored runs for the current testfile">Delete All</button>
+                </div>
+                <div id="compare-panes">
+                    <div class="compare-pane" id="compare-pane-a">
+                        <div class="compare-pane-header" id="compare-header-a">Run A</div>
+                        <div id="compare-content-a" class="compare-content"></div>
+                    </div>
+                    <div class="compare-pane" id="compare-pane-b">
+                        <div class="compare-pane-header" id="compare-header-b">Run B</div>
+                        <div id="compare-content-b" class="compare-content"></div>
+                    </div>
+                </div>
+            </div>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,75 @@
+/* flow.css */
+/* Sequential event list (flow view) */
+#flow {
+    height: 100%;
+    overflow: auto;
+    padding: 10px;
+    box-sizing: border-box;
+    font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+}
+
+details.event {
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: #fff;
+    margin: 0 0 8px 0;
+}
+
+details.event>summary {
+    list-style: none;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto auto auto 1fr;
+    gap: 4ch;
+    align-items: baseline;
+    font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+}
+
+details.event>summary::-webkit-details-marker {
+    display: none;
+}
+
+.evt-time {
+    color: #333;
+
+}
+
+.evt-type {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.evt-peer {
+    color: #555;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.evt-json {
+    margin: 8px 0 0 0;
+    padding: 12px;
+    border-radius: 6px;
+    background: #fafafa;
+    border: 1px solid #eee;
+    color: #222;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    line-height: 1.5;
+}
+
+/* Toggle visibility */
+body[data-view="raw"] #flow {
+    display: block;
+}

@@ -1,0 +1,130 @@
+/* sip_ladder.css */
+
+.sip-ladder-row {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 8px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.sip-ladder-header {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    cursor: pointer;
+    background: #f8fafc;
+    border-radius: 6px;
+}
+
+.sip-ladder-row.open .sip-ladder-header {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.sip-time {
+    width: 100px;
+    color: #64748b;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.sip-arrow-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 0 0px;
+    min-width: 0;
+}
+
+.sip-node {
+    padding: 4px 8px;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-weight: 600;
+    color: #475569;
+    font-size: 11px;
+    z-index: 2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+.sip-arrow-line {
+    flex: 1;
+    height: 2px;
+    background: #cbd5e1;
+    position: relative;
+    margin: 0 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 50px;
+}
+
+.sip-arrow-head-right {
+    position: absolute;
+    right: -2px;
+    top: -4px;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 6px solid #cbd5e1;
+}
+
+.sip-method-top,
+.sip-method-bottom {
+    position: absolute;
+    background: transparent;
+    padding: 0 8px;
+    font-weight: bold;
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.sip-method-top {
+    top: -18px;
+}
+
+.sip-method-bottom {
+    bottom: -18px;
+}
+
+.sip-details {
+    display: none;
+    margin: 0;
+    padding: 15px;
+    background: #1e293b;
+    color: #f8fafc;
+    overflow-x: auto;
+    border-top: 1px solid #cbd5e1;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    font-size: 12px;
+}
+
+.sip-ladder-row.open .sip-details {
+    display: block;
+}
+
+.sip-ladder-row:hover {
+    border-color: #94a3b8;
+}
+
+.sip-ladder-row.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.sip-ladder-row.selected .sip-ladder-header {
+    background: #eff6ff;
+}

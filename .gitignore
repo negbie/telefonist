@@ -1,8 +1,4 @@
-accounts
-config
-contacts
-current_contact
-uuid
+data/
+libbaresip/git/
 telefonist
-sounds
-espeak-ng-data
+baresip

@@ -1,0 +1,275 @@
+/* compare.css */
+
+#compare-panel {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-left: 2px solid #ccc;
+    background: #fafafa;
+}
+
+#compare-controls {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid #ccc;
+    font-size: 12px;
+    background: #f3f4f6;
+    flex-wrap: wrap;
+}
+
+#compare-controls select {
+    flex: 1 1 160px;
+    min-width: 120px;
+    font-size: 12px;
+    padding: 3px 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+}
+
+#compare-controls button {
+    padding: 4px 10px;
+    font-size: 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+}
+
+#compare-controls button:hover {
+    background: #e5e7eb;
+}
+
+#compare-panes {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+}
+
+.compare-pane {
+    flex: 1 1 50%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid #ccc;
+}
+
+.compare-pane:last-child {
+    border-right: none;
+}
+
+.compare-pane-header {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    background: #e5e7eb;
+    border-bottom: 1px solid #ccc;
+    color: #374151;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.compare-content {
+    flex: 1 1 auto;
+    margin: 0;
+    padding: 10px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    overflow-y: auto;
+    overflow-x: auto;
+    white-space: normal;
+    background: #fff;
+    color: #111;
+    box-sizing: border-box;
+}
+
+/* Diff highlighting - pastel colors */
+.compare-content .diff-only-a {
+    display: block;
+    background: #ebf5ff;
+    /* pastel blue background */
+    color: #294e7a;
+    /* muted navy text */
+    border-left: 3px solid #3b82f6; 
+    padding: 4px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+.compare-content .diff-only-b {
+    display: block;
+    background: #fdf2f8; 
+    color: #9d174d; 
+    border-left: 3px solid #ec4899; 
+    padding: 4px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+.compare-content .diff-common {
+    display: block;
+    color: #374151;
+    margin-bottom: 8px;
+    padding: 4px;
+}
+
+.compare-content .diff-placeholder {
+    display: block;
+    background: #f3f4f6;
+    color: transparent;
+    border-left: 3px solid #d1d5db;
+    padding: 4px;
+    user-select: none;
+    min-height: 2em;
+    margin-bottom: 8px;
+    border-radius: 4px;
+}
+
+/* Diff button active state */
+#compare-diff.active {
+    background: #1d4ed8;
+    color: #fff;
+    border-color: #1d4ed8;
+    font-weight: 600;
+}
+
+#compare-wav.active {
+    background: #10b981;
+    color: #fff;
+    border-color: #10b981;
+    font-weight: 600;
+}
+
+.diff-identical,
+.diff-empty {
+    text-align: center;
+    padding: 20px;
+    color: #6b7280;
+    font-style: italic;
+}
+
+.wav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.wav-item {
+    padding: 8px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+}
+
+.wav-info {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #4b5563;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wav-waveform {
+    width: 100%;
+    height: 120px;
+    background: #fff;
+    border: 1px solid #ddd;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.wav-waveform canvas {
+    width: 100%;
+    height: 100%;
+}
+
+.wav-item audio {
+    width: 100%;
+    height: 32px;
+}
+
+.wav-empty {
+    color: #9ca3af;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+.json-row {
+    display: flex;
+    gap: 4px;
+    font-size: 11px;
+    margin-bottom: 2px;
+    line-height: 1.4;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
+.json-key {
+    color: #4b5563;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.json-value {
+    color: #111827;
+    white-space: pre-wrap;
+    font-family: var(--font-mono);
+    min-width: 0;
+    flex-grow: 1;
+}
+
+/* Event cards in comparison */
+.compare-content details.event {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    margin: 0;
+}
+
+.compare-content .evt-content {
+    background: #fafafa;
+    border-top: 1px solid #eee;
+    padding: 4px 8px;
+    font-size: 10px;
+}
+
+.compare-content .evt-raw {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-mono);
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-size: 10px;
+    line-height: 1.2;
+}
+.evt-seq {
+    background: #f3f4f6;
+    color: #4b5563;
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-right: 4px;
+    border: 1px solid #e5e7eb;
+    user-select: none;
+}
+
+.evt-seq:hover {
+    background: #e5e7eb;
+    color: #111827;
+    border-color: #d1d5db;
+}
+.compare-content .evt-body {
+    padding: 2px 0;
+}

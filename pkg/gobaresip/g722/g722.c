@@ -1,0 +1,213 @@
+/**
+ * @file g722.c  G.722 audio codec
+ *
+ * Copyright (C) 2010 Creytiv.com
+ */
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <re.h>
+#include <rem_au.h>
+#include <baresip.h>
+#include "g722_encoder.h"
+#include "g722_decoder.h"
+
+
+/**
+ * @defgroup g722 g722
+ *
+ * The G.722 audio codec
+ *
+ * ## From RFC 3551:
+
+ 4.5.2 G722
+
+   G722 is specified in ITU-T Recommendation G.722, "7 kHz audio-coding
+   within 64 kbit/s".  The G.722 encoder produces a stream of octets,
+   each of which SHALL be octet-aligned in an RTP packet.  The first bit
+   transmitted in the G.722 octet, which is the most significant bit of
+   the higher sub-band sample, SHALL correspond to the most significant
+   bit of the octet in the RTP packet.
+
+   Even though the actual sampling rate for G.722 audio is 16,000 Hz,
+   the RTP clock rate for the G722 payload format is 8,000 Hz because
+   that value was erroneously assigned in RFC 1890 and must remain
+   unchanged for backward compatibility.  The octet rate or sample-pair
+   rate is 8,000 Hz.
+
+   ##   Reference:
+
+  http://www.soft-switch.org/spandsp-modules.html
+
+ */
+
+
+enum {
+	G722_SAMPLE_RATE = 16000,
+	G722_BITRATE_48k = 48000,
+	G722_BITRATE_56k = 56000,
+	G722_BITRATE_64k = 64000
+};
+
+
+struct auenc_state {
+	G722_ENC_CTX *enc;
+};
+
+struct audec_state {
+	G722_DEC_CTX *dec;
+};
+
+
+static void encode_destructor(void *arg)
+{
+	struct auenc_state *st = arg;
+	g722_encoder_destroy(st->enc);
+}
+
+
+static void decode_destructor(void *arg)
+{
+	struct audec_state *st = arg;
+	g722_decoder_destroy(st->dec);
+}
+
+
+static int encode_update(struct auenc_state **aesp,
+			 const struct aucodec *ac,
+			 struct auenc_param *prm, const char *fmtp)
+{
+	struct auenc_state *st;
+	(void)prm;
+	(void)fmtp;
+
+	if (!aesp || !ac)
+		return EINVAL;
+
+	if (*aesp)
+		return 0;
+
+	st = mem_zalloc(sizeof(*st), encode_destructor);
+	if (!st)
+		return ENOMEM;
+
+	st->enc = g722_encoder_new(64000, G722_PACKED);
+	if (!st->enc) {
+		mem_deref(st);
+		return EPROTO;
+	}
+
+	*aesp = st;
+
+	return 0;
+}
+
+
+static int decode_update(struct audec_state **adsp,
+			 const struct aucodec *ac, const char *fmtp)
+{
+	struct audec_state *st;
+	(void)fmtp;
+
+	if (!adsp || !ac)
+		return EINVAL;
+
+	if (*adsp)
+		return 0;
+
+	st = mem_zalloc(sizeof(*st), decode_destructor);
+	if (!st)
+		return ENOMEM;
+
+	st->dec = g722_decoder_new(64000, G722_PACKED);
+	if (!st->dec) {
+		mem_deref(st);
+		return EPROTO;
+	}
+
+	*adsp = st;
+
+	return 0;
+}
+
+
+static int encode(struct auenc_state *st,
+		  bool *marker, uint8_t *buf, size_t *len,
+		  int fmt, const void *sampv, size_t sampc)
+{
+	int n;
+	(void)marker;
+
+	if (fmt != AUFMT_S16LE)
+		return ENOTSUP;
+
+	n = g722_encode(st->enc, sampv, (int)sampc, buf);
+	if (n <= 0) {
+		return EPROTO;
+	}
+	else if (n > (int)*len) {
+		return EOVERFLOW;
+	}
+
+	*len = (size_t)n;
+
+	return 0;
+}
+
+
+static int decode(struct audec_state *st, int fmt, void *sampv, size_t *sampc,
+		  bool marker, const uint8_t *buf, size_t len)
+{
+	int n;
+	(void)marker;
+
+	if (!st || !sampv || !buf)
+		return EINVAL;
+
+	if (fmt != AUFMT_S16LE)
+		return ENOTSUP;
+
+	n = g722_decode(st->dec, buf, (int)len, sampv);
+	if (n < 0)
+		return EPROTO;
+
+	*sampc = (size_t)n;
+
+	return 0;
+}
+
+
+static struct aucodec g722 = {
+	.pt      = "9",
+	.name    = "G722",
+	.srate   = 16000,
+	.crate   = 8000,
+	.ch      = 1,
+	.pch     = 1,
+	.encupdh = encode_update,
+	.ench    = encode,
+	.decupdh = decode_update,
+	.dech    = decode,
+};
+
+
+static int module_init(void)
+{
+	aucodec_register(baresip_aucodecl(), &g722);
+	return 0;
+}
+
+
+static int module_close(void)
+{
+	aucodec_unregister(&g722);
+	return 0;
+}
+
+
+EXPORT_SYM const struct mod_export DECL_EXPORTS(g722) = {
+	"g722",
+	"codec",
+	module_init,
+	module_close
+};

@@ -1,0 +1,306 @@
+/* style.css */
+
+:root {
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --lh-main: 1.7;
+    --lh-cmd: 1.15;
+    --bg: #f7f7f8;
+    --panel: #ffffff;
+    --border: #e5e7eb;
+    --text: #111827;
+    --muted: #6b7280;
+    --radius: 8px;
+    --input-radius: 8px;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--text);
+    background: var(--bg);
+    overflow: hidden;
+}
+
+pre {
+    margin: 0;
+    font-family: var(--font-mono);
+}
+
+#layout {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Master Layout */
+#top-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    background: #fafafa;
+    padding: 4px 10px;
+    gap: 12px;
+    font-size: 12px;
+}
+
+#top-row {
+    flex: 2 1 50%;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    border-bottom: 2px solid #ccc;
+}
+
+#resizer {
+    height: 6px;
+    background: #ddd;
+    cursor: ns-resize;
+    flex: 0 0 auto;
+    z-index: 10;
+}
+
+#resizer:hover,
+#resizer:active {
+    background: #999;
+    height: 8px;
+    margin-top: -1px;
+    margin-bottom: -1px;
+}
+
+#bottom-row {
+    flex: 1 1 33%;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    background: #fafafa;
+}
+
+.col-pane {
+    display: flex;
+    flex-direction: column;
+    border-right: 2px solid #ccc;
+    overflow: hidden;
+    background: #fff;
+    flex: 1 1 auto;
+}
+
+#left-col {
+    flex: 1 1 20%;
+}
+
+#mid-col {
+    flex: 1 1 40%;
+}
+
+#right-col {
+    flex: 1 1 40%;
+}
+
+.col-pane:last-child {
+    border-right: none;
+}
+
+#flow,
+#log-view,
+#sip-view {
+    flex: 1 1 auto;
+    height: 100%;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 10px;
+}
+
+#test-controls {
+    flex: 0 0 auto;
+    display: flex;
+    overflow: hidden;
+}
+
+#testfile-panel {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Utilities */
+.hint {
+    color: var(--muted);
+}
+
+/* PASS/FAIL Highlights in Flow */
+details.event>summary .evt-peer.pass {
+    color: #0f7b0f;
+    font-weight: 600;
+}
+
+details.event>summary .evt-peer.fail {
+    color: #b00020;
+    font-weight: 600;
+}
+
+/* Filter: show only test/testfile + testfiles (management) messages */
+body[data-only-tests="1"] #flow .list:not([data-token="test"]):not([data-token="testfile"]):not([data-token="testfiles"]) {
+    display: none !important;
+}
+
+/* Filter: show only results */
+body[data-only-results="1"] #flow .list:not([data-has-result="1"]) {
+    display: none !important;
+}
+
+/* Panel visibility toggle */
+#bottom-row[data-bottom-mode="tests"] #compare-panel {
+    display: none;
+}
+
+#bottom-row[data-bottom-mode="compare"] #testfile-panel {
+    display: none;
+}
+
+/* SIP compare panel under the SIP view */
+#sip-compare-panel {
+    flex: 0 0 40%;
+    border-top: 2px solid var(--border);
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+}
+
+#close-sip-compare {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+#close-sip-compare:hover {
+    background: #e2e8f0;
+    color: var(--text);
+}
+
+#sip-compare-split {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+}
+
+.sip-compare-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    overflow: hidden;
+}
+
+.sip-compare-side:first-child {
+    border-right: 1px solid var(--border);
+}
+
+.sip-compare-header {
+    font-weight: bold;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+}
+
+.sip-compare-side pre {
+    flex: 1;
+    overflow: auto;
+    font-size: 11px;
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 10px;
+    border-radius: 4px;
+    margin: 0;
+}
+
+/* Run Separators */
+.run-separator {
+    text-align: center;
+    margin: 16px 0;
+    font-weight: bold;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    user-select: none;
+}
+.run-separator.start { color: #8b5cf6; }
+.run-separator.end-pass { color: #10b981; }
+.run-separator.end-fail { color: #ef4444; }
+.run-separator.cmd { color: #8b5cf6; font-size: 11px; }
+.run-separator.cmd:hover { color: #7c3aed; }
+
+/* SIP Action Buttons */
+.sip-actions {
+    display: inline-flex;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.btn-sip {
+    padding: 1px 6px;
+    font-size: 9px;
+    border-radius: 3px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.2s;
+    line-height: 1;
+    height: 16px;
+}
+.btn-sip:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+.btn-sip.compare-active {
+    background: #3b82f6;
+    color: white;
+    border-color: #2563eb;
+}
+
+.sip-method-top {
+    display: flex;
+    align-items: center;
+}
+
+/* Download Buttons */
+.download-container {
+    text-align: center;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+.btn-download {
+    padding: 4px 12px;
+    font-size: 11px;
+    border-radius: 4px;
+    border: 1px solid #4b5563;
+    background-color: #1f2937;
+    color: #e5e7eb;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-download:hover {
+    background-color: #374151;
+    border-color: #9ca3af;
+}

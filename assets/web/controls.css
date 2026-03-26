@@ -1,0 +1,318 @@
+/* controls.css */
+
+/* Mode toggle (Tests | Compare) */
+.mode-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+    width: 100%;
+}
+
+.mode-toggle button {
+    padding: 5px 10px;
+    font-size: 12px;
+    border: none;
+    background: #f3f4f6;
+    color: #555;
+    cursor: pointer;
+    font-family: var(--font-sans);
+}
+
+.mode-toggle button:first-child {
+    border-right: 1px solid #ccc;
+}
+
+
+
+.mode-toggle button:hover {
+    background: #e5e7eb;
+    color: #111;
+}
+
+.mode-toggle button.active {
+    background: #fff;
+    color: #111;
+    font-weight: 600;
+}
+
+/* Forms and Selects */
+select,
+input[type="text"] {
+    box-sizing: border-box;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--input-radius);
+    background: #fff;
+    font-size: 12px;
+}
+
+#form input[type="text"] {
+    font-family: var(--font-mono);
+}
+
+#form input[type="text"]:focus {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.35);
+}
+
+/* Project Selector */
+.project-selector {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.project-selector label {
+    margin-bottom: 0 !important;
+    white-space: nowrap;
+}
+
+.project-selector select {
+    margin-bottom: 0 !important;
+    flex: 1;
+}
+
+
+
+/* Testfile List and Select */
+#testfile-select {
+    width: 100%;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    border: 1px solid var(--border);
+    border-radius: var(--input-radius);
+    background: #fff;
+    outline: none;
+    flex: 1;
+    /* Expand to fill space */
+    min-height: 200px;
+}
+
+#testfile-select optgroup {
+    font-weight: bold;
+    font-style: normal;
+    background: #f9fafb;
+    color: #4b5563;
+    padding: 10px 0;
+}
+
+#testfile-select optgroup option {
+    font-weight: normal;
+    padding-left: 12px;
+    background: #fff;
+}
+
+#testfile-select option {
+    padding: 4px 8px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+#testfile-select option:last-child {
+    border-bottom: none;
+}
+
+#testfile-select option:checked {
+    background-color: #e5edff !important;
+    color: #000;
+}
+
+.testfile-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+}
+
+
+/* Layout with Sidebar */
+#test-controls {
+    display: flex;
+    flex-direction: row;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: #fff;
+    border-right: 1px solid var(--border);
+    width: 48px;
+    /* Collapsed width */
+}
+
+#test-controls.expanded,
+#test-controls:hover {
+    width: 368px;
+    /* Adjusted to fit the reduced content size */
+}
+
+.controls-sidebar {
+    width: 48px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 0;
+    background: #f9fafb;
+    border-right: 1px solid var(--border);
+    gap: 8px;
+    z-index: 20;
+    overflow-y: auto;
+    scrollbar-width: none;
+    /* Hide scrollbar for clean look */
+}
+
+.controls-sidebar::-webkit-scrollbar {
+    display: none;
+}
+
+.sidebar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+}
+
+.sidebar-separator {
+    width: 24px;
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+}
+
+.controls-sidebar button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--muted);
+    transition: all 0.2s;
+}
+
+.controls-sidebar button:hover {
+    background: #f3f4f6;
+    color: var(--text);
+    border-color: #d1d5db;
+}
+
+.controls-sidebar #testfiles-run {
+    color: #10b981;
+}
+
+.controls-sidebar #testfiles-stop {
+    color: #ef4444;
+}
+
+.controls-sidebar #testfiles-save {
+    color: #111827;
+}
+
+.controls-sidebar #testfiles-new {
+    color: #3b82f6;
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.controls-sidebar #testfiles-rename {
+    color: #f59e0b;
+}
+
+.controls-sidebar #testfiles-delete {
+    color: #ef4444;
+}
+
+.controls-sidebar #projects-new {
+    color: #3b82f6;
+    font-weight: bold;
+}
+
+.controls-sidebar #projects-delete {
+    color: #ef4444;
+}
+
+.controls-sidebar button.active {
+    background: #e5edff;
+    border-color: #3b82f6;
+    color: #3b82f6;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.controls-sidebar button:disabled {
+    opacity: 0.2;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
+
+.sidebar-spacer {
+    flex: 1;
+}
+
+.controls-main {
+    flex: 1;
+    min-width: 320px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+#test-controls.expanded .controls-main,
+#test-controls:hover .controls-main {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Specific button styles for the sidebar toggle */
+#sidebar-toggle {
+    border: none;
+    background: transparent;
+    font-size: 18px;
+    margin-bottom: 5px;
+}
+
+#test-controls.expanded #sidebar-toggle {
+    transform: rotate(180deg);
+}
+
+/* Logout Button Premium Style */
+#logout {
+    margin-left: auto;
+    background: #fff;
+    border: 1px solid #fee2e2;
+    color: #ef4444 !important;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 6px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#logout:hover {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #dc2626 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.1), 0 2px 4px -1px rgba(239, 68, 68, 0.06);
+}
+
+#logout:active {
+    transform: translateY(0);
+}

@@ -1,0 +1,181 @@
+
+/* highlight.css */
+        /* Testfile editor panel (now main area) */
+        #testfile-panel {
+            flex: 1;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        #testfile-panel .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        #testfile-panel .row .spacer {
+            flex: 1 1 auto;
+        }
+
+        #testfile-backdrop {
+            flex: 1;
+            position: relative;
+            display: flex;
+            min-height: 0;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+
+        body[data-test-mode="visual"] #testfile-backdrop {
+            display: none;
+        }
+
+        #testfile-highlights {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            box-sizing: border-box;
+            padding: 8px 10px;
+            font-family:
+                'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro',
+                ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+                "Liberation Mono", "Courier New", monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre;
+            word-break: normal;
+            overflow-wrap: normal;
+            color: #333;
+            overflow: hidden;
+            /* Will sync scroll with JS */
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        #testfile-input {
+            width: 100%;
+            flex: 1;
+            box-sizing: border-box;
+            min-height: 0;
+            resize: none;
+            padding: 8px 10px;
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            color: transparent;
+            /* Makes text invisible, caret visible via caret-color */
+            caret-color: #000;
+            font-family:
+                'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro',
+                ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+                "Liberation Mono", "Courier New", monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre;
+            overflow: auto;
+            word-break: normal;
+            overflow-wrap: normal;
+            margin: 0;
+            z-index: 2;
+        }
+
+        #testfile-input::placeholder {
+            color: transparent;
+        }
+
+        /* Syntax colors */
+        .hl-comment {
+            color: #8b949e;
+            font-style: italic;
+        }
+
+        .hl-name {
+            color: #d73a49;
+            font-weight: 600;
+        }
+
+        .hl-hash {
+            color: #0550ae;
+        }
+
+        .hl-cmd {
+            color: #000;
+            font-weight: 500;
+        }
+
+        .hl-pipe {
+            color: #8250df;
+            font-weight: bold;
+        }
+
+
+        .hl-directive {
+            color: #6a737d;
+            font-weight: bold;
+        }
+
+        .hl-value {
+            color: #24292f;
+        }
+
+        .hl-space {
+            white-space: pre;
+        }
+
+        #testfile-panel button {
+            padding: 6px 10px;
+            border: 1px solid #000;
+            background: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #testfile-panel button:hover {
+            background: #f3f3f3;
+        }
+
+        #testfile-panel .hint {
+            color: #555;
+            font-size: 12px;
+            font-family:
+                system-ui,
+                -apple-system,
+                "Segoe UI",
+                Roboto,
+                Arial,
+                sans-serif;
+        }
+
+        .mode-toggle {
+            display: flex;
+            gap: 4px;
+            background: #eee;
+            padding: 4px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        .mode-toggle button {
+            flex: 1;
+            border: none !important;
+            background: transparent !important;
+            padding: 4px 8px !important;
+            border-radius: 4px !important;
+            color: #555;
+        }
+
+        .mode-toggle button.active {
+            background: #fff !important;
+            color: #000;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            font-weight: 500;
+        }
