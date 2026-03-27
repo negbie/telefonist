@@ -29,8 +29,9 @@ func newBaresipInstance(f AppFlags) (*gobaresip.Baresip, error) {
 	return gobaresip.New(
 		gobaresip.SetAudioPath("sounds"),
 		gobaresip.SetConfigPath(f.DataDir),
-		gobaresip.SetUserAgent("telefonist"),
+		gobaresip.SetUserAgent(f.Alias),
 		gobaresip.SetCtrlTCPAddr(f.CtrlAddr),
+		gobaresip.SetBaresipCtrlAddr(f.BaresipCtrlAddr),
 	)
 }
 
@@ -85,7 +86,11 @@ func Run() error {
 	f := ParseFlags()
 	MaybePrintVersionAndExit(f.Version)
 
-	if f.Agent {
+	// Agent mode is signaled via environment variable for a cleaner sub-process CLI
+	if os.Getenv("TELEFONIST_AGENT") == "1" {
+		f.Agent = true
+		f.Alias = os.Getenv("TELEFONIST_ALIAS")
+		f.BaresipCtrlAddr = os.Getenv("TELEFONIST_BARESIP_CTRL")
 		return RunAgent(f)
 	}
 

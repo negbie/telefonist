@@ -232,6 +232,7 @@ type Baresip struct {
 	closeOnce        sync.Once
 	closeCh          chan struct{}
 	remote           bool
+	baresipCtrlAddr  string
 	msgRecvHandler   func(Msg)
 }
 
@@ -283,6 +284,13 @@ func New(options ...func(*Baresip) error) (*Baresip, error) {
 	}
 
 	return b, nil
+}
+
+func SetBaresipCtrlAddr(addr string) func(*Baresip) error {
+	return func(b *Baresip) error {
+		b.baresipCtrlAddr = addr
+		return nil
+	}
 }
 
 //export gobaresip_sip_trace_handler
@@ -603,7 +611,9 @@ func (b *Baresip) setup() error {
 			return err
 		}
 	} else {
-		// In local (Agent) mode, we use direct C callbacks for events and UI output
+		// In Multi-Process Agent mode, we use CGO UI handler for logs
+		// and the sip_trace_handler for SIP messages.
+		// These go to b.msgChan and are bridged in startProxy.
 		C.register_bevent_handler()
 		C.register_ui_handler()
 	}
@@ -680,7 +690,48 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 	defer conn.Close()
 	log.Printf("gobaresip: proxy accepted connection from %s", conn.RemoteAddr())
 
-	// Write loop: Forward b.msgChan to Master
+	// Connect to local Baresip's ctrl_tcp (Internal)
+	log.Printf("gobaresip: proxy connecting to local baresip at %s", b.baresipCtrlAddr)
+	localConn, err := net.Dial("tcp", b.baresipCtrlAddr)
+	if err != nil {
+		log.Printf("gobaresip: proxy failed to connect to local baresip: %v", err)
+		return
+	}
+	defer localConn.Close()
+
+	// Use a mutex to protect concurrent writes to the Master Hub connection
+	var writeMu sync.Mutex
+	writeToMaster := func(data []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		netstring := fmt.Sprintf("%d:%s,", len(data), string(data))
+		_, err := conn.Write([]byte(netstring))
+		return err
+	}
+
+	// 1. Forward Baresip (TCP) -> Master (Events/Responses)
+	go func() {
+		// We use a internal reader to read netstrings from local Baresip
+		rLocal := newReader(localConn)
+		for {
+			msg, err := rLocal.readNetstring()
+			if err != nil {
+				return
+			}
+			// Enrichment: add agent alias to every JSON event/response
+			var m map[string]interface{}
+			if err := json.Unmarshal(msg, &m); err == nil {
+				m["_agent"] = b.userAgent // b.userAgent holds the agent alias
+				msg, _ = json.Marshal(m)
+			}
+
+			if err := writeToMaster(msg); err != nil {
+				return
+			}
+		}
+	}()
+
+	// 2. Forward msgChan (CGO) -> Master (SIP Traces/Logs)
 	go func() {
 		for {
 			select {
@@ -690,26 +741,23 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 				}
 				var data []byte
 				switch {
-				case m.Event != nil:
-					data = m.Event.RawJSON
-				case m.Response != nil:
-					data = m.Response.RawJSON
-				case m.Log != "":
-					data, _ = json.Marshal(map[string]interface{}{
-						"event": true,
-						"type":  "LOG",
-						"param": m.Log,
-					})
 				case m.SIP != "":
 					data, _ = json.Marshal(map[string]interface{}{
-						"event": true,
-						"type":  "SIP",
-						"param": m.SIP,
+						"event":  true,
+						"type":   "SIP",
+						"param":  m.SIP,
+						"_agent": b.userAgent,
+					})
+				case m.Log != "":
+					data, _ = json.Marshal(map[string]interface{}{
+						"event":  true,
+						"type":   "LOG",
+						"param":  m.Log,
+						"_agent": b.userAgent,
 					})
 				}
 				if len(data) > 0 {
-					netstring := fmt.Sprintf("%d:%s,", len(data), string(data))
-					if _, err := conn.Write([]byte(netstring)); err != nil {
+					if err := writeToMaster(data); err != nil {
 						return
 					}
 				}
@@ -719,32 +767,24 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 		}
 	}()
 
-	// Read loop: Forward Master commands to Baresip (CGO)
-	r := newReader(conn)
-	for {
-		msg, err := r.readNetstring()
-		if err != nil {
-			return
-		}
-		var cmd struct {
-			Command string `json:"command"`
-			Params  string `json:"params"`
-			Token   string `json:"token"`
-		}
-		if err := json.Unmarshal(msg, &cmd); err == nil {
-			fullCmd := strings.TrimSpace(cmd.Command)
-			if fullCmd == "" {
-				continue
+	// 3. Forward Master -> Baresip (Commands)
+	go func() {
+		rMaster := newReader(conn)
+		for {
+			msg, err := rMaster.readNetstring()
+			if err != nil {
+				return
 			}
-			if cmd.Params != "" {
-				fullCmd += " " + cmd.Params
+			// Forward exactly as received (netstring wrap)
+			netstring := fmt.Sprintf("%d:%s,", len(msg), string(msg))
+			if _, err := localConn.Write([]byte(netstring)); err != nil {
+				return
 			}
-			cCmd := C.CString(fullCmd)
-			C.my_ui_input(cCmd)
-			C.free(unsafe.Pointer(cCmd))
-			log.Printf("gobaresip: proxy executed command: %s", fullCmd)
 		}
-	}
+	}()
+
+	// Wait for connection to close or agent to stop
+	<-b.closeCh
 }
 
 // CmdDirect executes a command directly via baresip C API (for Agent mode)

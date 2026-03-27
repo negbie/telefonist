@@ -68,10 +68,7 @@ func CreateConfig(dataDir string, maxCalls uint, rtpNet, rtpPorts string, rtpTim
 		c = regexp.MustCompile(`(?m)^#module\s+alsa\.so`).ReplaceAllString(c, "module                  alsa.so")
 	}
 
-	if isAgent {
-		c = strings.Replace(c, "module_app              ctrl_tcp.so", "#module_app             ctrl_tcp.so", 1)
-		c = strings.Replace(c, "ctrl_tcp_listen", "#ctrl_tcp_listen", 1)
-	}
+	// Agents now use ctrl_tcp for high-fidelity structured telephony feedback
 
 	soundsDir := filepath.Join(dataDir, "sounds")
 	if _, err := os.Stat(soundsDir); os.IsNotExist(err) {

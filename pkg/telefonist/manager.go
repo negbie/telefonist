@@ -67,33 +67,50 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	m.nextRtpPort += 102
 	rtpPorts := fmt.Sprintf("%d-%d", rtpStart, rtpEnd)
 
-	// find a free control port
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	// 1. Proxy listener address (Master Hub connects here)
+	lProxy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
 	}
-	ctrlAddr := l.Addr().String()
-	l.Close()
+	proxyAddr := lProxy.Addr().String()
+	lProxy.Close()
+
+	// 2. Baresip listener address (Internal Agent Proxy connects here)
+	lBaresip, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	baresipAddr := lBaresip.Addr().String()
+	lBaresip.Close()
 
 	// Write config and accounts
-	// We reuse CreateConfig but we might need to adjust it to be more flexible for agents
+	// We pass baresipAddr to CreateConfig so Baresip listens there
 	globalRecordsDir, _ := filepath.Abs(filepath.Join(m.dataDir, "recorded_temp"))
-	CreateConfig(agentDir, 10, "", rtpPorts, 10, ctrlAddr, fmt.Sprintf("0.0.0.0:%d", sipPort), false, true, globalRecordsDir)
+	CreateConfig(agentDir, 10, "", rtpPorts, 10, baresipAddr, fmt.Sprintf("0.0.0.0:%d", sipPort), false, true, globalRecordsDir)
 
 	// Write accounts file
-	// The accountLine is something like "<sip:test1@...>;..."
 	accountsFile := filepath.Join(agentDir, "accounts")
 	if err := os.WriteFile(accountsFile, []byte(accountLine+"\n"), 0644); err != nil {
 		return err
 	}
 
 	// Start agent process
+	// We pass both addresses to the agent:
+	// -ctrl_address: where the proxy listens for the Master
+	// -baresip_ctrl_address: where Baresip is listening locally
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, self, "-agent", "-data_dir", agentDir, "-ctrl_address", ctrlAddr)
+	cmd := exec.CommandContext(ctx, self, 
+		"-data_dir", agentDir, 
+		"-ctrl_address", proxyAddr)
+	cmd.Env = append(os.Environ(), 
+		"TELEFONIST_AGENT=1",
+		"TELEFONIST_ALIAS="+alias,
+		"TELEFONIST_BARESIP_CTRL="+baresipAddr,
+	)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	
@@ -101,15 +118,15 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		return err
 	}
 
-	// Connect to agent
+	// Connect to agent's PROXY
 	var gb *gobaresip.Baresip
 	maxRetries := 20
 	for i := 0; i < maxRetries; i++ {
 		time.Sleep(500 * time.Millisecond)
-		log.Printf("hub: connecting to agent %s at %s (attempt %d)", alias, ctrlAddr, i+1)
+		log.Printf("hub: connecting to agent %s at %s (attempt %d)", alias, proxyAddr, i+1)
 		gb, err = gobaresip.New(
 			gobaresip.SetRemote(true),
-			gobaresip.SetCtrlTCPAddr(ctrlAddr),
+			gobaresip.SetCtrlTCPAddr(proxyAddr),
 			gobaresip.SetContext(ctx),
 		)
 		if err == nil {
@@ -127,7 +144,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		ConfigDir: agentDir,
 		Baresip:   gb,
 		Cmd:       cmd,
-		CtrlAddr:  ctrlAddr,
+		CtrlAddr:  proxyAddr,
 		SipPort:   sipPort,
 		RtpPorts:  rtpPorts,
 	}

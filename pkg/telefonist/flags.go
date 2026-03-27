@@ -13,6 +13,7 @@ var Version = "0.7.1"
 // to avoid accidental behavior changes.
 type AppFlags struct {
 	CtrlAddr        string
+	BaresipCtrlAddr string
 	UiAddr          string
 	UiAdminPassword string
 	MaxCalls        uint
@@ -27,6 +28,7 @@ type AppFlags struct {
 	DataDir         string
 	SkipSipMsg      string
 	Agent           bool
+	Alias           string
 }
 
 // ParseFlags defines and parses CLI flags, returning the collected values.
@@ -48,7 +50,6 @@ func ParseFlags() AppFlags {
 	flag.BoolVar(&f.Version, "version", false, "Print version")
 	flag.StringVar(&f.DataDir, "data_dir", "data", "Directory for configuration files and data")
 	flag.StringVar(&f.SkipSipMsg, "skip_sip_msg", "OPTIONS", "Comma separated list of SIP methods to ignore")
-	flag.BoolVar(&f.Agent, "agent", false, "Run in agent mode (sub-process for baresip)")
 
 	flag.Parse()
 	return f
