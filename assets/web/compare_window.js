@@ -188,8 +188,8 @@ window.initCompareWindow = (deps) => {
         // Sorting is important for events that might arrive out of order,
         // but for SIP and LOG, the chronological order is crucial for flow analysis.
         //if (activeMode !== "sip" && activeMode !== "log") {
-        aItems.sort((a, b) => a.compare.localeCompare(b.compare));
-        bItems.sort((a, b) => a.compare.localeCompare(b.compare));
+        //    aItems.sort((a, b) => a.compare.localeCompare(b.compare));
+        //    bItems.sort((a, b) => a.compare.localeCompare(b.compare));
         //}
 
         const diff = computeLCSDiff(aItems, bItems);
@@ -393,17 +393,22 @@ window.initCompareWindow = (deps) => {
 
     if (clearBtn) clearBtn.onclick = () => { clearSide("a"); clearSide("b"); };
 
-    const scrolls = { evt: { a: 0, b: 0 }, sip: { a: 0, b: 0 }, log: { a: 0, b: 0 } };
+    const scrolls = {};
+    const getScrollKey = (m, d) => `${m}${d ? "_diff" : ""}`;
+
     const switchMode = (mode) => {
-        if (!diffMode && scrolls[activeMode]) {
-            scrolls[activeMode].a = contentA ? contentA.scrollTop : 0;
-            scrolls[activeMode].b = contentB ? contentB.scrollTop : 0;
-        }
+        const key = getScrollKey(activeMode, diffMode);
+        if (!scrolls[key]) scrolls[key] = { a: 0, b: 0 };
+        scrolls[key].a = contentA ? contentA.scrollTop : 0;
+        scrolls[key].b = contentB ? contentB.scrollTop : 0;
+
         if (mode) activeMode = mode;
         applyCurrentMode();
-        if (!diffMode && scrolls[activeMode]) {
-            if (contentA) contentA.scrollTop = scrolls[activeMode].a;
-            if (contentB) contentB.scrollTop = scrolls[activeMode].b;
+
+        const nextKey = getScrollKey(activeMode, diffMode);
+        if (scrolls[nextKey]) {
+            if (contentA) contentA.scrollTop = scrolls[nextKey].a;
+            if (contentB) contentB.scrollTop = scrolls[nextKey].b;
         }
     };
 
@@ -414,15 +419,18 @@ window.initCompareWindow = (deps) => {
 
     if (diffBtn) diffBtn.onclick = () => {
         if (activeMode === "wav") return;
-        if (!diffMode && scrolls[activeMode]) {
-            scrolls[activeMode].a = contentA ? contentA.scrollTop : 0;
-            scrolls[activeMode].b = contentB ? contentB.scrollTop : 0;
-        }
+        const key = getScrollKey(activeMode, diffMode);
+        if (!scrolls[key]) scrolls[key] = { a: 0, b: 0 };
+        scrolls[key].a = contentA ? contentA.scrollTop : 0;
+        scrolls[key].b = contentB ? contentB.scrollTop : 0;
+
         diffMode = !diffMode;
         applyCurrentMode();
-        if (!diffMode && scrolls[activeMode]) {
-            if (contentA) contentA.scrollTop = scrolls[activeMode].a;
-            if (contentB) contentB.scrollTop = scrolls[activeMode].b;
+
+        const nextKey = getScrollKey(activeMode, diffMode);
+        if (scrolls[nextKey]) {
+            if (contentA) contentA.scrollTop = scrolls[nextKey].a;
+            if (contentB) contentB.scrollTop = scrolls[nextKey].b;
         }
     };
 
