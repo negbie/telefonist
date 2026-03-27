@@ -1,7 +1,6 @@
 package telefonist
 
 import (
-	"sync"
 	"testing"
 	"time"
 )
@@ -314,59 +313,7 @@ func TestExpandCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := expandCommand(tt.input, nil, "data")
-			if got != tt.want {
-				t.Errorf("expandCommand(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestExpandCommandWithCallIDs(t *testing.T) {
-	callIDs := &sync.Map{}
-	callIDs.Store("testuri", "123")
-	callIDs.Store("other", "456")
-
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{
-			name:  "accept with valid localuri",
-			input: "accept testuri",
-			want:  "accept 123",
-		},
-		{
-			name:  "accept with unknown localuri",
-			input: "accept unknown",
-			want:  "accept unknown",
-		},
-		{
-			name:  "callfind with valid localuri",
-			input: "callfind other",
-			want:  "callfind 456",
-		},
-		{
-			name:  "case insensitive command",
-			input: "ACCEPT testuri",
-			want:  "accept 123",
-		},
-		{
-			name:  "argument with extra params",
-			input: "accept testuri extra",
-			want:  "accept 123 extra",
-		},
-		{
-			name:  "non-mapped command",
-			input: "dial testuri",
-			want:  "dial testuri",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := expandCommand(tt.input, callIDs, "data")
+			got := expandCommand(tt.input, "data")
 			if got != tt.want {
 				t.Errorf("expandCommand(%q) = %q, want %q", tt.input, got, tt.want)
 			}

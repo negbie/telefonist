@@ -13,7 +13,6 @@ import (
 )
 
 // ErrIgnoredCommand is returned when a command is silently ignored
-// (e.g. empty input or "quit" via CmdWs).
 var ErrIgnoredCommand = errors.New("command ignored")
 
 /*
@@ -83,9 +82,6 @@ func buildCommand(command, params, token string) *CommandMsg {
 
 // Cmd will send a raw baresip command over ctrl_tcp.
 func (b *Baresip) Cmd(command, params, token string) error {
-	if command == "dial" {
-		params = stripSIP(params)
-	}
 
 	msg, err := json.Marshal(buildCommand(command, params, token))
 	if err != nil {
@@ -96,6 +92,9 @@ func (b *Baresip) Cmd(command, params, token string) error {
 	defer b.writeMu.Unlock()
 
 	if atomic.LoadUint32(&b.ctrlConnAlive) == 0 {
+		if !b.remote {
+			return b.CmdDirect(command, params, token)
+		}
 		return fmt.Errorf("can't write command to closed tcp_ctrl connection")
 	}
 
@@ -116,20 +115,6 @@ func (b *Baresip) Cmd(command, params, token string) error {
 	b.ctrlConn.SetWriteDeadline(deadline)
 	_, err = b.ctrlConn.Write(buf)
 	return err
-}
-
-func stripSIP(s string) string {
-	if s == "" {
-		return s
-	}
-
-	s = strings.ReplaceAll(s, "sip:", "")
-
-	// Find first '@' and truncate there
-	if i := strings.IndexByte(s, '@'); i >= 0 {
-		s = s[:i]
-	}
-	return s
 }
 
 // CmdAccept will accept incoming call
@@ -289,9 +274,6 @@ func (b *Baresip) CmdWs(raw []byte) error {
 	}
 
 	m[0] = strings.ToLower(m[0])
-	if m[0] == "quit" {
-		return ErrIgnoredCommand
-	}
 
 	if len(m) == 1 {
 		return b.Cmd(m[0], "", "cmd_"+m[0])

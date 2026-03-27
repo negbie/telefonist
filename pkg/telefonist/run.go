@@ -5,11 +5,25 @@ import (
 	"log"
 	"net/http"
 	"os"
-
+	"os/signal"
 	"strings"
+	"syscall"
 
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
 )
+
+func RunAgent(f AppFlags) error {
+	if err := os.MkdirAll(f.DataDir, 0755); err != nil {
+		return err
+	}
+
+	gb, err := newBaresipInstance(f)
+	if err != nil {
+		return err
+	}
+
+	return gb.Run()
+}
 
 func newBaresipInstance(f AppFlags) (*gobaresip.Baresip, error) {
 	return gobaresip.New(
@@ -71,11 +85,15 @@ func Run() error {
 	f := ParseFlags()
 	MaybePrintVersionAndExit(f.Version)
 
+	if f.Agent {
+		return RunAgent(f)
+	}
+
 	if err := os.MkdirAll(f.DataDir, 0755); err != nil {
 		return err
 	}
 
-	CreateConfig(f.DataDir, f.MaxCalls, f.RtpNet, f.RtpPorts, f.RtpTimeout, f.CtrlAddr, f.SipAddr, f.UseAlsa)
+	CreateConfig(f.DataDir, f.MaxCalls, f.RtpNet, f.RtpPorts, f.RtpTimeout, f.CtrlAddr, f.SipAddr, f.UseAlsa, false, "")
 
 	// Set unique session cookie name based on UI port to avoid logout conflicts when running multiple instances on localhost.
 	port := "8080"
@@ -85,13 +103,8 @@ func Run() error {
 	SetSessionCookieName("session_" + port)
 
 
-	gb, err := newBaresipInstance(f)
-	if err != nil {
-		return err
-	}
-
 	// Setup websocket hub
-	hub := NewWsHub(gb, f.DataDir, f.SkipSipMsg)
+	hub := NewWsHub(f.DataDir, f.SkipSipMsg)
 
 	// Initialize persistent test store (SQLite next to executable) and attach to hub.
 	// If it fails, we continue without persistence (UI can still use testfile_inline).
@@ -111,12 +124,12 @@ func Run() error {
 
 	startHTTPServer(f, hub)
 
-	err = gb.Run()
-	if err != nil {
-		log.Println(err)
-	}
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+
 	hub.Stop()
-	gb.Close()
+	hub.bm.CloseAll()
 	return nil
 }
 

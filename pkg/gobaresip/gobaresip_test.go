@@ -8,27 +8,6 @@ import (
 	"testing"
 )
 
-func TestStripSIP(t *testing.T) {
-	tests := []struct {
-		in, want string
-	}{
-		{"", ""},
-		{"12345", "12345"},
-		{"sip:12345@example.com", "12345"},
-		{"sip:12345", "12345"},
-		{"12345@example.com", "12345"},
-		{"SIP:12345@example.com", "SIP:12345"}, // only lowercase "sip:" is stripped
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			got := stripSIP(tt.in)
-			if got != tt.want {
-				t.Errorf("stripSIP(%q) = %q, want %q", tt.in, got, tt.want)
-			}
-		})
-	}
-}
 
 func TestReadNetstring(t *testing.T) {
 	tests := []struct {

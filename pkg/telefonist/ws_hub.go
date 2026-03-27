@@ -30,7 +30,11 @@ type WsHub struct {
 	// Outbound broadcast messages (serialized through the hub).
 	broadcast chan []byte
 
-	bs *gobaresip.Baresip
+	bm *BaresipManager
+	agentMsg chan AgentMsg
+
+	// activeAgent is the current target for commands (set by uafind)
+	activeAgent string
 
 	// Callback handlers
 	onEvent    func(gobaresip.EventMsg)
@@ -55,7 +59,6 @@ type WsHub struct {
 	cancel context.CancelFunc
 
 	internalCmd chan func()
-	callIDs     sync.Map // map[string]string: Localuri -> ID
 
 	// chainMu ensures only one executeChain runs at a time,
 	// preventing interleaving of multi-step command sequences.
@@ -65,6 +68,12 @@ type WsHub struct {
 	skipSipMethods []string
 
 	cmdCounter atomic.Uint64
+}
+
+type AgentMsg struct {
+	Alias    string
+	Msg      gobaresip.Msg
+	Sentinel chan struct{}
 }
 
 // broadcastToClients sends msg to every connected client.
@@ -81,7 +90,7 @@ func (h *WsHub) broadcastToClients(msg []byte) {
 	}
 }
 
-func NewWsHub(bs *gobaresip.Baresip, dataDir string, skipSipMsg string) *WsHub {
+func NewWsHub(dataDir string, skipSipMsg string) *WsHub {
 	var skipMethods []string
 	if skipSipMsg != "" {
 		parts := strings.Split(skipSipMsg, ",")
@@ -93,13 +102,14 @@ func NewWsHub(bs *gobaresip.Baresip, dataDir string, skipSipMsg string) *WsHub {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	return &WsHub{
+	h := &WsHub{
 		clients:        make(map[*client]bool),
 		command:        make(chan []byte, 128),
 		register:       make(chan *client, 128),
 		unregister:     make(chan *client, 128),
 		broadcast:      make(chan []byte, 1024),
-		bs:             bs,
+		bm:             nil, // Set later
+		agentMsg:       make(chan AgentMsg, 1024),
 		onEvent:        nil,
 		onResponse:     nil,
 		testStore:      nil,
@@ -110,11 +120,32 @@ func NewWsHub(bs *gobaresip.Baresip, dataDir string, skipSipMsg string) *WsHub {
 		DataDir:        dataDir,
 		skipSipMethods: skipMethods,
 	}
+	h.bm = NewBaresipManager(h, dataDir)
+	return h
+}
+
+func (h *WsHub) ForwardAgentMsg(alias string, msg gobaresip.Msg) {
+	select {
+	case h.agentMsg <- AgentMsg{Alias: alias, Msg: msg}:
+	default:
+		log.Printf("hub: agentMsg chan full, dropping msg from %s", alias)
+	}
 }
 
 // Stop shuts down the hub and all managed goroutines.
 func (h *WsHub) Stop() {
 	h.cancel()
+}
+
+// Drain blocks until all currently queued agent messages are processed by Run.
+func (h *WsHub) Drain() {
+	done := make(chan struct{})
+	select {
+	case h.agentMsg <- AgentMsg{Sentinel: done}:
+		<-done
+	case <-time.After(3 * time.Second):
+		log.Println("hub: drain timeout")
+	}
 }
 
 // SetEventHandler sets the callback for event messages.
@@ -133,8 +164,6 @@ func (h *WsHub) SetResponseHandler(handler func(gobaresip.ResponseMsg)) {
 }
 
 func (h *WsHub) Run() {
-	msgChan := h.bs.GetMsgChan()
-
 	for {
 		select {
 		case f := <-h.internalCmd:
@@ -189,45 +218,42 @@ func (h *WsHub) Run() {
 				}(input)
 
 			default:
-				cmd := expandCommand(input, &h.callIDs, h.DataDir)
-				h.BroadcastCommandHint(cmd)
-				if err := h.bs.CmdWs([]byte(cmd)); err != nil {
-					log.Println(err)
-				}
+				cmd := expandCommand(input, h.DataDir)
+				h.executeSmartCommand(cmd)
 			}
 
-		case m, ok := <-msgChan:
+		case am, ok := <-h.agentMsg:
 			if !ok {
 				return
 			}
+			if am.Sentinel != nil {
+				close(am.Sentinel)
+				continue
+			}
+			m := am.Msg
 
 			switch {
 			case m.Event != nil:
 				e := *m.Event
-				// Call the event handler if set
 				if h.onEvent != nil {
 					h.onEvent(e)
 				}
 
-				// Skip RTCP stats from both training output and display
 				if e.Type == "CALL_RTCP" || e.Type == "MODULE" || e.Type == "END_OF_FILE" {
 					continue
 				}
 
-				// Capture Localuri -> ID mapping for call events
-				if e.Class == "call" && e.Localuri != "" && e.ID != "" {
-					if e.Type == "CALL_CLOSED" {
-						h.callIDs.Delete(e.Localuri)
-					} else {
-						h.callIDs.Store(e.Localuri, e.ID)
-					}
-				}
+				// No automatic ringing state tracking needed anymore.
 
 				if h.trainSession != nil {
 					h.trainSession.recordEvent(e)
 				}
 
-				h.broadcastToClients(e.RawJSON)
+				var mEvent map[string]interface{}
+				json.Unmarshal(e.RawJSON, &mEvent)
+				mEvent["_agent"] = am.Alias
+				enriched, _ := json.Marshal(mEvent)
+				h.broadcastToClients(enriched)
 
 			case m.Response != nil:
 				r := *m.Response
@@ -239,20 +265,26 @@ func (h *WsHub) Run() {
 					continue
 				}
 
-				// Call the response handler if set
 				if h.onResponse != nil {
 					h.onResponse(r)
 				}
 
-				h.broadcastToClients(r.RawJSON)
+				var mResp map[string]interface{}
+				json.Unmarshal(r.RawJSON, &mResp)
+				mResp["_agent"] = am.Alias
+				mResp["event"] = true
+				mResp["type"] = "RESPONSE"
+				mResp["param"] = r.Data
+				enriched, _ := json.Marshal(mResp)
+				h.broadcastToClients(enriched)
 
 			case m.Log != "":
 				l := m.Log
-				// Format as JSON and send to client
 				msg, err := json.Marshal(map[string]interface{}{
-					"event": true,
-					"type":  "LOG",
-					"param": l,
+					"event":  true,
+					"type":   "LOG",
+					"param":  l,
+					"_agent": am.Alias,
 				})
 				if err != nil {
 					continue
@@ -269,9 +301,10 @@ func (h *WsHub) Run() {
 				}
 
 				msg, err := json.Marshal(map[string]interface{}{
-					"event": true,
-					"type":  "SIP",
-					"param": s,
+					"event":  true,
+					"type":   "SIP",
+					"param":  s,
+					"_agent": am.Alias,
 				})
 				if err != nil {
 					continue
@@ -306,6 +339,102 @@ func (h *WsHub) shouldSkipSip(msg string) bool {
 		}
 	}
 	return false
+}
+
+func (h *WsHub) executeSmartCommand(cmd string) {
+	h.BroadcastCommandHint(cmd)
+
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return
+	}
+
+	target := h.activeAgent
+	first := ""
+	if len(parts) > 0 {
+		first = strings.ToLower(parts[0])
+
+		// Robust prefix detection: look for agentAlias:cmd
+		// Since agentAlias can be a SIP URI (sip:user@host), we look for ALL colons in the first word.
+		h.bm.mu.RLock()
+		var bestAlias string
+		for a := range h.bm.agents {
+			for i := len(parts[0]) - 1; i >= 0; i-- {
+				if parts[0][i] == ':' {
+					prefix := parts[0][:i]
+					if strings.EqualFold(a, prefix) {
+						if len(a) > len(bestAlias) {
+							bestAlias = a
+						}
+					}
+				}
+			}
+		}
+		h.bm.mu.RUnlock()
+
+		if bestAlias != "" {
+			idx := len(bestAlias)
+			target = bestAlias
+			// The command part starts after the colon of bestAlias
+			cmd = parts[0][idx+1:] + " " + strings.Join(parts[1:], " ")
+			cmd = strings.TrimSpace(cmd)
+			parts = strings.Fields(cmd)
+			if len(parts) > 0 {
+				first = strings.ToLower(parts[0])
+			}
+		}
+	}
+
+	// Handle orchestration commands
+	if first == "uafind" && len(parts) >= 2 {
+		h.activeAgent = parts[1]
+		return
+	}
+
+	if first == "uadelall" {
+		h.bm.CloseAll()
+		h.activeAgent = ""
+		return
+	}
+
+	if first == "uanew" && len(parts) >= 2 {
+		accountLine := strings.Join(parts[1:], " ")
+		// Try to extract alias from <alias;... or <sip:alias@...
+		alias := ""
+		if start := strings.Index(accountLine, "<"); start != -1 {
+			if end := strings.Index(accountLine, ";"); end != -1 && end > start {
+				alias = accountLine[start+1 : end]
+			} else if end := strings.Index(accountLine, ">"); end != -1 && end > start {
+				alias = accountLine[start+1 : end]
+			}
+		}
+		
+		if alias != "" {
+			// Stop existing agent if it already exists to ensure fresh config for uanew
+			if _, ok := h.bm.GetAgent(alias); ok {
+				log.Printf("hub: agent %s already exists, stopping it first for uanew", alias)
+				h.bm.StopAgent(alias)
+			}
+			log.Printf("hub: hatching new agent %s", alias)
+			if err := h.bm.SpawnAgent(h.ctx, alias, accountLine); err != nil {
+				log.Printf("hub: failed to spawn agent %s: %v", alias, err)
+			} else {
+				h.activeAgent = alias
+			}
+		}
+		return
+	}
+
+	// Direct Routing: All orchestration relies on explicit agent targeting (activeAgent or prefix).
+
+	if a, ok := h.bm.GetAgent(target); ok {
+		if err := a.Baresip.CmdWs([]byte(cmd)); err != nil {
+			log.Printf("hub: error sending command to agent %s: %v", target, err)
+		}
+	} else {
+		log.Printf("hub: no active agent for command %q", cmd)
+	}
+	h.BroadcastCommandHint(cmd)
 }
 
 // BroadcastCommandHint sends a "hint" of an executed command to the Log and SIP views.

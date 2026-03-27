@@ -9,9 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv" // Added for Atoi
+	"strconv"
 	"strings"
-	"time"
 )
 
 // TestfileData holds the name and content of a test file to be executed.
@@ -159,6 +158,9 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 
 	log.Printf("running testfile: %s (project %s) (%d cases, %d repeats)", fileName, projectName, len(cases), repeatCount)
 
+	// Stop all active agents before starting a test run to ensure a clean state
+	h.bm.CloseAll()
+
 	globalStatus := "PASS"
 
 	for rep := 1; rep <= repeatCount; rep++ {
@@ -203,30 +205,7 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		}
 
 		// Ensure all events from this run are processed by WsHub.run
-		// by sending a barrier command and waiting for its response.
-		syncToken := fmt.Sprintf("sync_%d_%d", rep, time.Now().UnixNano())
-		syncDone := make(chan struct{})
-
-		h.internalCmd <- func() {
-			h.syncWaiters[syncToken] = syncDone
-		}
-
-		if err := h.bs.Cmd("callstat", "", syncToken); err == nil {
-			timer := time.NewTimer(2 * time.Second)
-			select {
-			case <-syncDone:
-				timer.Stop()
-			case <-timer.C:
-				log.Printf("runTestfileInternal: sync timeout for %s", syncToken)
-				h.internalCmd <- func() {
-					delete(h.syncWaiters, syncToken)
-				}
-			case <-ctx.Done():
-				timer.Stop()
-				broadcastInfo(h, fmt.Sprintf(`{"status":"stopped","token":"testfile","file":%q,"project":%q}`, fileName, projectName))
-				return
-			}
-		}
+		h.Drain()
 
 		var actualHash string
 		var fullLog string
@@ -348,14 +327,6 @@ func parseTestfile(content string) (cases []testCase, expectedHash string, repea
 		}
 
 		name := ""
-		if idx := strings.IndexByte(line, ':'); idx > 0 {
-			ws := strings.IndexAny(line, " \t")
-			if ws == -1 || idx < ws {
-				name = strings.TrimSpace(line[:idx])
-				line = strings.TrimSpace(line[idx+1:])
-			}
-		}
-
 		if line == "" {
 			continue
 		}

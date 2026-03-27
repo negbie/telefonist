@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -171,39 +170,42 @@ func isDuration(s string) bool {
 }
 
 // isKnownCommand checks if the first word of a string is a known command keyword.
+// It also handles optional agent prefix like "ua1:dial".
 func isKnownCommand(s string) bool {
 	if s == "" {
 		return false
 	}
 	firstWord := strings.SplitN(s, " ", 2)[0]
+	
+	// Check for agent: prefix (e.g. ua1:dial)
+	if idx := strings.Index(firstWord, ":"); idx != -1 {
+		// Ensure it's not a SIP URI (which starts with sip:)
+		if !strings.HasPrefix(strings.ToLower(firstWord), "sip:") {
+			firstWord = firstWord[idx+1:]
+		} else {
+			// Even for SIP URIs, there might be a SECOND colon for the command
+			// e.g. sip:test1@host:dial
+			// We look for the colon that's NOT part of sip:
+			remaining := firstWord[4:]
+			if idx2 := strings.Index(remaining, ":"); idx2 != -1 {
+				firstWord = remaining[idx2+1:]
+			} else {
+				// It's just a SIP URI, probably an argument, not a command prefix
+				return false
+			}
+		}
+	}
+
 	return knownCommands[firstWord] || knownCommands[strings.ToLower(firstWord)]
 }
 
 // expandCommand expands shortcuts like ;input_wav=NAME/ into full audio configuration.
-// It also replaces Localuri with call ID for accept and callfind commands.
-func expandCommand(cmd string, callIDs *sync.Map, dataDir string) string {
+func expandCommand(cmd string, dataDir string) string {
 	soundsDir := filepath.Join(dataDir, "sounds")
 	recordsDir := filepath.Join(dataDir, "recorded_temp")
 
 	cmd = wavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/$1;audio_player=aufile,"+recordsDir+"/")
 	cmd = strings.ReplaceAll(cmd, ";input_wav=", ";audio_source=aufile,"+soundsDir+"/")
-
-	if callIDs == nil {
-		return cmd
-	}
-
-	parts := strings.Fields(cmd)
-	if len(parts) >= 2 {
-		first := strings.ToLower(parts[0])
-		if first == "accept" || first == "callfind" || first == "hold" || first == "resume" || first == "hangup" {
-			if id, ok := callIDs.Load(parts[1]); ok {
-				if idStr, ok := id.(string); ok {
-					return first + " " + idStr + strings.TrimPrefix(cmd, parts[0]+" "+parts[1])
-				}
-			}
-		}
-	}
-
 	return cmd
 }
 
@@ -253,11 +255,8 @@ func executeChain(ctx context.Context, h *WsHub, tokens []chainToken) {
 				return
 			}
 		} else {
-			cmd := expandCommand(tok.command, &h.callIDs, h.DataDir)
-			h.BroadcastCommandHint(cmd)
-			if err := h.bs.CmdWs([]byte(cmd)); err != nil {
-				log.Printf("cmdchain: error executing command %q: %v", cmd, err)
-			}
+			cmd := expandCommand(tok.command, h.DataDir)
+			h.executeSmartCommand(cmd)
 		}
 	}
 }

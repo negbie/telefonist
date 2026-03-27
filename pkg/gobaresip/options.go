@@ -68,3 +68,19 @@ func SetReconnect(backoff time.Duration) func(*Baresip) error {
 		return nil
 	}
 }
+
+// SetRemote sets the baresip instance to remote mode.
+func SetRemote(opt bool) func(*Baresip) error {
+	return func(b *Baresip) error {
+		b.remote = opt
+		return nil
+	}
+}
+
+// SetMsgRecvHandler sets the message receive handler.
+func SetMsgRecvHandler(handler func(Msg)) func(*Baresip) error {
+	return func(b *Baresip) error {
+		b.msgRecvHandler = handler
+		return nil
+	}
+}
