@@ -123,7 +123,7 @@ window.initCompareWindow = (deps) => {
                         return "#";
                     }
 
-                    var isVariable = /\d/.test(sub) || /[a-fA-F0-9]{12,}/.test(sub);
+                    var isVariable = /\d/.test(sub) || /[a-zA-Z0-9]{12,}/.test(sub) || /[\/\+\-\*\?\!\&]/.test(sub);
                     if (isVariable) {
                         if (sub.indexOf("=") !== -1) return sub.split("=")[0] + "=#";
                         if (sub.indexOf(":") !== -1) {
