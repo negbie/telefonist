@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,19 +31,55 @@ type BaresipManager struct {
 	agents map[string]*Agent
 	master *WsHub
 	
-	nextSipPort int
-	nextRtpPort int
+	BaseSipIP   string
+	BaseSipPort int
+	BaseRtpPort int
+	MaxCalls    uint
+	RtpNet      string
+	RtpTimeout  uint
+	UseAlsa     bool
+	HasSipListen bool
 
 	dataDir string
 }
 
-func NewBaresipManager(hub *WsHub, dataDir string) *BaresipManager {
+func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string, rtpPorts string, rtpTimeout uint, useAlsa bool, sipListen string) *BaresipManager {
+	baseIP := "0.0.0.0"
+	basePort := 5060
+	baseRtpPort := 10000
+
+	hasSipListen := sipListen != ""
+	if sipListen != "" {
+		if host, portStr, err := net.SplitHostPort(sipListen); err == nil {
+			baseIP = host
+			if p, err := strconv.Atoi(portStr); err == nil {
+				basePort = p
+			}
+		} else {
+			baseIP = sipListen
+		}
+	}
+
+	if rtpPorts != "" {
+		// Expecting "start-end" or just "start"
+		parts := strings.Split(rtpPorts, "-")
+		if p, err := strconv.Atoi(strings.TrimSpace(parts[0])); err == nil {
+			baseRtpPort = p
+		}
+	}
+
 	return &BaresipManager{
-		agents:      make(map[string]*Agent),
-		master:      hub,
-		nextSipPort: 5060,
-		nextRtpPort: 10000,
-		dataDir:     dataDir,
+		agents:       make(map[string]*Agent),
+		master:       hub,
+		BaseSipIP:    baseIP,
+		BaseSipPort:  basePort,
+		BaseRtpPort:  baseRtpPort,
+		MaxCalls:     maxCalls,
+		RtpNet:       rtpNet,
+		RtpTimeout:   rtpTimeout,
+		UseAlsa:      useAlsa,
+		HasSipListen: hasSipListen,
+		dataDir:      dataDir,
 	}
 }
 
@@ -60,11 +98,9 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	}
 
 	// Allocate ports
-	sipPort := m.nextSipPort
-	m.nextSipPort += 2
-	rtpStart := m.nextRtpPort
+	sipPort := m.BaseSipPort + (len(m.agents) * 2)
+	rtpStart := m.BaseRtpPort + (len(m.agents) * 102)
 	rtpEnd := rtpStart + 100
-	m.nextRtpPort += 102
 	rtpPorts := fmt.Sprintf("%d-%d", rtpStart, rtpEnd)
 
 	// 1. Proxy listener address (Master Hub connects here)
@@ -86,7 +122,11 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// Write config and accounts
 	// We pass baresipAddr to CreateConfig so Baresip listens there
 	globalRecordsDir, _ := filepath.Abs(filepath.Join(m.dataDir, "recorded_temp"))
-	CreateConfig(agentDir, 10, "", rtpPorts, 10, baresipAddr, fmt.Sprintf("0.0.0.0:%d", sipPort), false, true, globalRecordsDir)
+	sipAddr := ""
+	if m.HasSipListen {
+		sipAddr = fmt.Sprintf("%s:%d", m.BaseSipIP, sipPort)
+	}
+	CreateConfig(agentDir, m.MaxCalls, m.RtpNet, rtpPorts, m.RtpTimeout, baresipAddr, sipAddr, m.UseAlsa, true, globalRecordsDir)
 
 	// Write accounts file
 	accountsFile := filepath.Join(agentDir, "accounts")

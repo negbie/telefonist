@@ -98,8 +98,6 @@ func Run() error {
 		return err
 	}
 
-	CreateConfig(f.DataDir, f.MaxCalls, f.RtpNet, f.RtpPorts, f.RtpTimeout, f.CtrlAddr, f.SipAddr, f.UseAlsa, false, "")
-
 	// Set unique session cookie name based on UI port to avoid logout conflicts when running multiple instances on localhost.
 	port := "8080"
 	if parts := strings.Split(f.UiAddr, ":"); len(parts) > 1 {
@@ -109,7 +107,7 @@ func Run() error {
 
 
 	// Setup websocket hub
-	hub := NewWsHub(f.DataDir, f.SkipSipMsg)
+	hub := NewWsHub(f.DataDir, f.SkipSipMsg, f.MaxCalls, f.RtpNet, f.RtpPorts, f.RtpTimeout, f.UseAlsa, f.SipListen)
 
 	// Initialize persistent test store (SQLite next to executable) and attach to hub.
 	// If it fails, we continue without persistence (UI can still use testfile_inline).

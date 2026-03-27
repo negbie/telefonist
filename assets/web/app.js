@@ -7,7 +7,6 @@
 
 (function () {
   window.onload = function () {
-    const msg = document.getElementById("command");
     const flowEl = document.getElementById("flow");
     const clearEl = document.getElementById("clear");
     const logoutEl = document.getElementById("logout");
@@ -100,17 +99,6 @@
       collapseAllEl.onchange = () => flow.setCollapseAll(!!collapseAllEl.checked);
     }
 
-    // Command handling
-    if (msg) {
-      msg.onkeydown = (e) => {
-        if (e.keyCode === 13) { // Enter
-          e.preventDefault();
-          if (!socket || !socket.isOpen() || !msg.value) return;
-          socket.send(msg.value);
-          msg.value = "";
-        }
-      };
-    }
 
     const socketWrapper = {
       isOpen: () => socket && socket.isOpen(),

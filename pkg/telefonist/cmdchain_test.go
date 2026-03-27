@@ -54,8 +54,6 @@ func TestIsKnownCommand(t *testing.T) {
 		{"hold", true},
 		{"resume", true},
 		{"mute", true},
-		{"train start", true},
-		{"test abc123", true},
 		{"accept", true},
 		// Not known commands
 		{"", false},

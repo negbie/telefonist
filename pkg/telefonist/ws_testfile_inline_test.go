@@ -53,8 +53,8 @@ case1: USER says GREETING
 
 func TestParseTestfileIsolation(t *testing.T) {
 	content1 := `_define X 1
-case1: X`
-	content2 := `case2: X`
+X`
+	content2 := `X`
 
 	cases1, _, _, _, _, _ := parseTestfile(content1)
 	cases2, _, _, _, _, _ := parseTestfile(content2)
@@ -65,13 +65,20 @@ case1: X`
 	if len(cases2) == 0 || cases2[0].sequence != "X" {
 		t.Errorf("content2 expected X, got %v (isolation failure)", cases2)
 	}
+
+	content3 := `_define ua1 sip:test1@host
+ua1:dial 123`
+	cases3, _, _, _, _, _ := parseTestfile(content3)
+	if len(cases3) == 0 || cases3[0].sequence != "sip:test1@host:dial 123" {
+		t.Errorf("content3 expected sequence='sip:test1@host:dial 123', got sequence=%q", cases3[0].sequence)
+	}
 }
 
 func TestParseTestfileSorting(t *testing.T) {
 	content := `
 _define FOO 1
 _define FOOBAR 2
-case: FOOBAR
+FOOBAR
 `
 	cases, _, _, _, _, _ := parseTestfile(content)
 	if len(cases) == 0 || cases[0].sequence != "2" {

@@ -20,7 +20,7 @@ type AppFlags struct {
 	RtpNet          string
 	RtpPorts        string
 	RtpTimeout      uint
-	SipAddr         string
+	SipListen       string
 	TlsCert         string
 	TlsKey          string
 	UseAlsa         bool
@@ -43,7 +43,7 @@ func ParseFlags() AppFlags {
 	flag.StringVar(&f.RtpNet, "rtp_interface", "", "RTP interface like eth0")
 	flag.StringVar(&f.RtpPorts, "rtp_ports", "10000-11000", "RTP port range")
 	flag.UintVar(&f.RtpTimeout, "rtp_timeout", 10, "Seconds after which a call with no incoming RTP packets will be terminated")
-	flag.StringVar(&f.SipAddr, "sip_address", "", "SIP listen address like 0.0.0.0:5060")
+	flag.StringVar(&f.SipListen, "sip_listen", "", "SIP listen address and base port for agents (e.g., 127.0.0.1:5060)")
 	flag.StringVar(&f.TlsCert, "tls_cert", "", "Path to TLS certificate file")
 	flag.StringVar(&f.TlsKey, "tls_key", "", "Path to TLS key file")
 	flag.BoolVar(&f.UseAlsa, "use_alsa", false, "Use ALSA for audio (uncomments alsa lines in config)")

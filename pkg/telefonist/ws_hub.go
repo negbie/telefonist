@@ -90,7 +90,7 @@ func (h *WsHub) broadcastToClients(msg []byte) {
 	}
 }
 
-func NewWsHub(dataDir string, skipSipMsg string) *WsHub {
+func NewWsHub(dataDir string, skipSipMsg string, maxCalls uint, rtpNet string, rtpPorts string, rtpTimeout uint, useAlsa bool, sipListen string) *WsHub {
 	var skipMethods []string
 	if skipSipMsg != "" {
 		parts := strings.Split(skipSipMsg, ",")
@@ -120,7 +120,7 @@ func NewWsHub(dataDir string, skipSipMsg string) *WsHub {
 		DataDir:        dataDir,
 		skipSipMethods: skipMethods,
 	}
-	h.bm = NewBaresipManager(h, dataDir)
+	h.bm = NewBaresipManager(h, dataDir, maxCalls, rtpNet, rtpPorts, rtpTimeout, useAlsa, sipListen)
 	return h
 }
 

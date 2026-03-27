@@ -124,18 +124,6 @@ static void my_ui_input(const char *str) {
 	cmd_process_long(baresip_commands(), str, strlen(str), NULL, NULL);
 }
 
-static const char* ua_aor_wrapper(struct ua *ua) {
-	if (!ua) return "";
-	return account_aor(ua_account(ua));
-}
-
-static void my_bevent_handler(enum bevent_ev ev, struct bevent *event, void *arg)
-{
-	(void)arg;
-	extern void gobaresip_bevent_handler(void *event, int ev, char *prm);
-	gobaresip_bevent_handler(event, (int)ev, (char *)bevent_get_text(event));
-}
-
 static int my_ui_output_handler(const char *str) {
 	extern void gobaresip_ui_output_handler(char *str);
 	gobaresip_ui_output_handler((char *)str);
@@ -148,11 +136,7 @@ static struct ui my_ui = {
 	.outputh = my_ui_output_handler,
 };
 
-inline void register_bevent_handler() {
-	bevent_register(my_bevent_handler, NULL);
-}
-
-inline void register_ui_handler() {
+static inline void register_ui_handler() {
 	ui_register(baresip_uis(), &my_ui);
 }
 
@@ -317,53 +301,7 @@ func gobaresip_log_handler(_ C.int, p *C.char, len C.int) {
 	}
 }
 
-//export gobaresip_bevent_handler
-func gobaresip_bevent_handler(event unsafe.Pointer, ev C.int, prm *C.char) {
-	b := activeBaresipPtr.Load()
-	if b == nil {
-		return
-	}
-
-	e := &EventMsg{
-		Event: true,
-		Class: "ua", // Default
-	}
-
-	cev := (*C.struct_bevent)(event)
-
-	// Resolve UA and AOR
-	ua := C.bevent_get_ua(cev)
-	if ua != nil {
-		cAor := C.ua_aor_wrapper(ua)
-		e.AccountAOR = C.GoString(cAor)
-		e.Cuser = C.GoString(C.ua_cuser(ua))
-	}
-
-	// Resolve Call Details
-	call := C.bevent_get_call(cev)
-	if call != nil {
-		e.Class = "call"
-		e.ID = C.GoString(C.call_id(call))
-		e.PeerURI = C.GoString(C.call_peeruri(call))
-		e.Localuri = C.GoString(C.call_localuri(call))
-		e.PeerDisplayname = C.GoString(C.call_peername(call))
-	}
-
-	// Resolve Type using bevent_str
-	e.Type = C.GoString(C.bevent_str(C.enum_bevent_ev(ev)))
-
-	if prm != nil {
-		e.Param = C.GoString(prm)
-	}
-
-	// Important: Populate RawJSON for the Master Hub
-	e.RawJSON, _ = json.Marshal(e)
-
-	select {
-	case b.msgChan <- Msg{Event: e}:
-	default:
-	}
-}
+// gobaresip_bevent_handler is no longer needed as we use ctrl_tcp JSON events
 
 //export gobaresip_ui_output_handler
 func gobaresip_ui_output_handler(str *C.char) {
@@ -614,7 +552,6 @@ func (b *Baresip) setup() error {
 		// In Multi-Process Agent mode, we use CGO UI handler for logs
 		// and the sip_trace_handler for SIP messages.
 		// These go to b.msgChan and are bridged in startProxy.
-		C.register_bevent_handler()
 		C.register_ui_handler()
 	}
 

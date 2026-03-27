@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-
 func TestReadNetstring(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -80,8 +79,6 @@ func TestCmdWsSentinelError(t *testing.T) {
 	}{
 		{"empty", []byte("")},
 		{"whitespace", []byte("   ")},
-		{"quit", []byte("quit")},
-		{"QUIT mixed case", []byte("QUIT")},
 	}
 
 	for _, tt := range tests {

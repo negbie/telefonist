@@ -27,8 +27,7 @@ type testCase struct {
 	rawLine  string
 }
 
-// handleTestfileInlineCommand runs a list of `test` cases provided inline (pasted from UI),
-// instead of reading from disk.
+// handleTestfileInlineCommand runs a list of `test` cases provided inline (pasted from UI)
 // Expected usage: testfile_inline <project|”> <name> <base64(testfile_content)>
 func handleTestfileInlineCommand(h *WsHub, input string) {
 	argsStr := strings.TrimSpace(strings.TrimPrefix(input, "testfile_inline"))
@@ -245,19 +244,19 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 			}
 		}
 
-			broadcastInfo(h, fmt.Sprintf(
-				`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":%d,"expected_hash":%q,"actual_hash":%q,"result":%q,"run_id":%d}`,
-				fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID,
-			))
+		broadcastInfo(h, fmt.Sprintf(
+			`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":%d,"expected_hash":%q,"actual_hash":%q,"result":%q,"run_id":%d}`,
+			fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID,
+		))
 
-			if webhookURL != "" {
-				go func() {
-					if err := sendResultWebhook(webhookURL, fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID); err != nil {
-						log.Printf("failed to send result webhook: %v", err)
-					}
-				}()
-			}
+		if webhookURL != "" {
+			go func() {
+				if err := sendResultWebhook(webhookURL, fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID); err != nil {
+					log.Printf("failed to send result webhook: %v", err)
+				}
+			}()
 		}
+	}
 
 	log.Printf("finished testfile: %s (result: %s)", fileName, globalStatus)
 }
@@ -327,11 +326,8 @@ func parseTestfile(content string) (cases []testCase, expectedHash string, repea
 		}
 
 		name := ""
-		if line == "" {
-			continue
-		}
-
 		sequence := line
+
 		// Sort keys by length descending to ensure longer variable names are replaced first
 		keys := make([]string, 0, len(defines))
 		for k := range defines {

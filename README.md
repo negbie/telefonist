@@ -55,13 +55,13 @@ Run telefonist with its various configuration flags.
 - `-data_dir` - Directory for configuration files and runtime data (default: "data")
 - `-ui_address` - UI listen address (default: "0.0.0.0:8080")
 - `-ui_admin_password` - UI admin password (default: "telefonist")
-- `-sip_address` - SIP listen address like 0.0.0.0:5060 (default: "")
+- `-sip_listen` - SIP listen address and base port for agents (default: "0.0.0.0:5060")
 - `-ctrl_address` - Local control listen address (default: "127.0.0.1:4444")
-- `-max_calls` - Maximum number of incoming calls (default: 10)
-- `-use_alsa` - Use ALSA for audio (uncomments alsa lines in config)
-- `-rtp_interface` - RTP interface like eth0 (default: "")
-- `-rtp_ports` - RTP port range (default: "10000-11000")
-- `-rtp_timeout` - Seconds after which a call with no incoming RTP packets will be terminated (default: 10)
+- `-max_calls` - Maximum number of incoming calls for agents (default: 10)
+- `-use_alsa` - Use ALSA for audio in agents (uncomments alsa lines in agent config)
+- `-rtp_interface` - RTP interface for agents like eth0 (default: "")
+- `-rtp_ports` - RTP port range for agents (default: "10000-11000")
+- `-rtp_timeout` - Seconds after which a call with no incoming RTP packets will be terminated in agents (default: 10)
 - `-tls_cert` - Path to TLS certificate file
 - `-tls_key` - Path to TLS key file
 - `-version` - Print version and exit
@@ -115,7 +115,7 @@ Testfiles are line-based and support the following syntax:
 
 1. **Start Telefonist**: 
    ```bash
-   ./telefonist -sip_address "0.0.0.0:5060"
+   ./telefonist -sip_listen "0.0.0.0:5060"
    ```
 
 2. **Create a Test**: Open the UI at `http://localhost:8080`, define a new project, and create a testfile with the following content (replace IPs with your local addresses):

@@ -105,8 +105,6 @@ var knownCommands = map[string]bool{
 	"videodir":       true,
 	"vidsrc":         true,
 	// telefonist-specific commands
-	"train": true,
-	"test":  true,
 }
 
 // defaultTrailingDelay is the delay added after the last command in a chain
