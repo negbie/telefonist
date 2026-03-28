@@ -187,10 +187,10 @@ window.initCompareWindow = (deps) => {
 
         // Sorting is important for events that might arrive out of order,
         // but for SIP and LOG, the chronological order is crucial for flow analysis.
-        //if (activeMode !== "sip" && activeMode !== "log") {
-        //    aItems.sort((a, b) => a.compare.localeCompare(b.compare));
-        //    bItems.sort((a, b) => a.compare.localeCompare(b.compare));
-        //}
+        if (activeMode !== "sip" && activeMode !== "log") {
+            aItems.sort((a, b) => a.compare.localeCompare(b.compare));
+            bItems.sort((a, b) => a.compare.localeCompare(b.compare));
+        }
 
         const diff = computeLCSDiff(aItems, bItems);
         const hasDiffs = diff.some(d => d.type !== "common");

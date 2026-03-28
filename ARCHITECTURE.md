@@ -5,8 +5,9 @@ Telefonist provides a web interface for automated SIP testing, call recording, a
 ## Core Principles
 
 - **Single Binary**: Fully static builds (via Zig/musl) containing all dependencies.
+- **Multi-Process Isolation**: SIP cores (Agents) run as independent processes spawned and monitored by the Master Hub.
 - **Centralized Data**: All persistent state (DB, recordings, sounds) is managed under a configurable `--data_dir`.
-- **Event-Driven**: Asynchronous communication between the SIP core and web clients via WebSockets.
+- **Event-Driven**: Asynchronous communication between the SIP agents and the Master Hub via localized TCP control interfaces.
 - **Hash-Based Verification**: Stable, normalized event streams used for automated test pass/fail validation.
 
 ---
@@ -15,15 +16,17 @@ Telefonist provides a web interface for automated SIP testing, call recording, a
 
 1. **Initialization**
    - Parse CLI flags (`pkg/telefonist/flags.go`).
-   - Initialize `DataDir` and generate/patch `baresip` configuration (`pkg/telefonist/config.go`).
+   - Initialize `DataDir` and generate `baresip` configuration templates (`pkg/telefonist/config.go`).
    - Extract embedded assets (sounds) and initialize the SQLite `TestStore`.
-   - Create a `telefonist.Baresip` instance (CGO wrapper).
+   - Start the `BaresipManager` to orchestrate isolated SIP agents.
 
-2. **Orchestration (WsHub)**
+2. **Orchestration (WsHub & BaresipManager)**
    - Start the `WsHub` Select-loop:
-     - Connects `telefonist` events/responses to all WebSocket clients.
-     - Dispatches incoming commands to the SIP core or internal test handlers.
-     - Manages hierarchical recording persistence and cleanup.
+     - Connects agent events/responses to WebSocket clients.
+     - Dispatches commands to the `BaresipManager`.
+   - `BaresipManager` spawns and monitors `baresip` processes (Agents):
+     - Each agent is a separate process with its own configuration and command-line lifecycle.
+     - Master Hub communicates with Agents via a local TCP proxy.
 
 3. **Command Processing**
    - **Command Chain**: Pipelined execution (`cmd|delay|cmd`) handled in `pkg/telefonist/cmdchain.go`.
@@ -40,8 +43,8 @@ Telefonist provides a web interface for automated SIP testing, call recording, a
 
 ### Layout
 - `cmd/telefonist/`: Main application entry point (`main.go`).
-- `pkg/telefonist/`: Core application logic, HTTP/WS handlers, and storage.
-- `pkg/gobaresip/`: Go wrapper around the `baresip` C library.
+- `pkg/telefonist/`: Core application logic, HTTP/WS handlers, and agent orchestration.
+- `pkg/gobaresip/`: Control library for managing remote `baresip` instances.
 - `assets/`: Embedded zip files for UI and audio files.
 - `configs/`: Embedded configuration templates and patching logic.
 
@@ -54,6 +57,9 @@ Telefonist provides a web interface for automated SIP testing, call recording, a
 #### [Storage & State]
 - `teststore.go`: Manages the SQLite database and hierarchical filesystem operations (WAV directories).
 - `config.go`: Handles dynamic configuration generation and sound extraction.
+
+#### [Agent Management]
+- `manager.go`: Orchestrates the lifecycle of isolated `baresip` processes (Agents).
 
 #### [Communication]
 - `ws_hub.go`: The central dispatcher for all system messages.

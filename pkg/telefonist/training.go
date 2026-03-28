@@ -72,7 +72,8 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 	t.fullBuf.Write(e.RawJSON)
 	t.fullBuf.WriteString("\n\n")
 
-	if e.Type == "CALL_RTCP" {
+	// Following types should be excluded from the hash calculation
+	if e.Type == "CALL_RTCP" || e.Type == "SIP" || e.Type == "LOG" {
 		return
 	}
 

@@ -79,11 +79,11 @@ Once started, open your browser to `http://localhost:8080` (or whatever ui_addre
 
 ## Architecture
 
-Telefonist is a thin application layer on top of baresip:
+Telefonist follows a multi-process **Agents Architecture**:
 
-1. Creates a baresip instance
-2. Sets up a WebSocket hub that bridges telefonist channels to WebSocket clients
-3. Provides an HTTP server with a web UI
+1. **Master Hub**: A pure Go orchestrator that manages projects, testfiles, and provides the Web/WebSocket interface.
+2. **Agents**: Isolated and disposable `baresip` instances spawned as separate processes for each test run or persistent user agent.
+3. **Control Interface**: The Master Hub controls agents via localized TCP control interfaces, ensuring stability and crash isolation.
 
 ## Writing and Running Tests
 
@@ -118,7 +118,7 @@ Testfiles are line-based and support the following syntax:
    ./telefonist -sip_listen "0.0.0.0:5060"
    ```
 
-2. **Create a Test**: Open the UI at `http://localhost:8080`, define a new project, and create a testfile with the following content (replace IPs with your local addresses):
+2. **Create a Test**: Open the UI at `http://localhost:8080`, define a new project, and create a testfile with the following content (replace the SIP addresses with your own):
 
    ```bash
    _hash 3ce5536071322de9
@@ -133,10 +133,9 @@ Testfiles are line-based and support the following syntax:
    uanew <ua3;transport=udp>;regint=0;input_wav=charlie.wav
 
    # Attended Transfer 
-   uafind ua1
-   dial ua2|2s|accept|6s
-   atransferstart ua3|2s|accept|6s
-   uafind ua2|atransferexec|2s|accept|6s|hangup
+   ua1:dial ua2|2s|ua2:accept|6s
+   ua2:atransferstart ua3|2s|ua3:accept|6s
+   ua2:atransferexec|6s|hangup
    uadelall
    ```
 
