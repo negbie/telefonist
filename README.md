@@ -111,26 +111,25 @@ Testfiles are line-based and support the following syntax:
 
 ### Quick Start Example
 
-<img width="800" height="600" alt="Image" src="https://github.com/user-attachments/assets/b812f4ba-778d-4104-a4fa-eb20f9aade95" />
 
 1. **Start Telefonist**: 
    ```bash
-   ./telefonist -sip_listen "0.0.0.0:5060"
+   ./telefonist
    ```
 
 2. **Create a Test**: Open the UI at `http://localhost:8080`, define a new project, and create a testfile with the following content (replace the SIP addresses with your own):
 
    ```bash
-   _hash 3ce5536071322de9
+   _hash Actual_hash
    _define ua1 sip:alice@192.168.1.100
    _define ua2 sip:bob@192.168.1.100
    _define ua3 sip:charlie@192.168.1.100
    _ignore TRANSFER, CALL_CLOSED
    _run 1
 
-   uanew <ua1;transport=udp>;regint=0;input_wav=alice.wav
-   uanew <ua2;transport=udp>;regint=0;input_wav=bob.wav
-   uanew <ua3;transport=udp>;regint=0;input_wav=charlie.wav
+   uanew <ua1;transport=udp>;input_wav=alice.wav
+   uanew <ua2;transport=udp>;input_wav=bob.wav
+   uanew <ua3;transport=udp>;input_wav=charlie.wav
 
    # Attended Transfer 
    ua1:dial ua2|2s|ua2:accept|6s
