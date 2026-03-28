@@ -127,9 +127,9 @@ Testfiles are line-based and support the following syntax:
    _ignore TRANSFER, CALL_CLOSED
    _run 1
 
-   uanew <ua1;transport=udp>;input_wav=alice.wav
-   uanew <ua2;transport=udp>;input_wav=bob.wav
-   uanew <ua3;transport=udp>;input_wav=charlie.wav
+   uanew <ua1;transport=udp>;auth_pass=secret1;input_wav=alice.wav
+   uanew <ua2;transport=udp>;auth_pass=secret2;input_wav=bob.wav
+   uanew <ua3;transport=udp>;auth_pass=secret3;input_wav=charlie.wav
 
    # Attended Transfer 
    ua1:dial ua2|2s|ua2:accept|6s
