@@ -27,7 +27,7 @@ endef
 
 SHELL := /bin/sh
 
-VERSION ?= 0.7.1
+VERSION ?= 0.8.0
 JOBS ?= 16
 CC ?= gcc
 CXX ?= g++
