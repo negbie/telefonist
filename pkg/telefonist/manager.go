@@ -17,27 +17,27 @@ import (
 )
 
 type Agent struct {
-	Alias      string
-	ConfigDir  string
-	Baresip    *gobaresip.Baresip
-	Cmd        *exec.Cmd
-	CtrlAddr   string
-	SipPort    int
-	RtpPorts   string
+	Alias     string
+	ConfigDir string
+	Baresip   *gobaresip.Baresip
+	Cmd       *exec.Cmd
+	CtrlAddr  string
+	SipPort   int
+	RtpPorts  string
 }
 
 type BaresipManager struct {
 	mu     sync.RWMutex
 	agents map[string]*Agent
 	master *WsHub
-	
-	BaseSipIP   string
-	BaseSipPort int
-	BaseRtpPort int
-	MaxCalls    uint
-	RtpNet      string
-	RtpTimeout  uint
-	UseAlsa     bool
+
+	BaseSipIP    string
+	BaseSipPort  int
+	BaseRtpPort  int
+	MaxCalls     uint
+	RtpNet       string
+	RtpTimeout   uint
+	UseAlsa      bool
 	HasSipListen bool
 
 	dataDir string
@@ -128,9 +128,10 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	}
 	CreateConfig(agentDir, m.MaxCalls, m.RtpNet, rtpPorts, m.RtpTimeout, baresipAddr, sipAddr, m.UseAlsa, true, globalRecordsDir)
 
-	// Write accounts file
+	// Write empty accounts file to prevent initial registration before bridge is ready.
+	// Baresip will load UAs via explicit uanew command later.
 	accountsFile := filepath.Join(agentDir, "accounts")
-	if err := os.WriteFile(accountsFile, []byte(accountLine+"\n"), 0644); err != nil {
+	if err := os.WriteFile(accountsFile, []byte(""), 0644); err != nil {
 		return err
 	}
 
@@ -143,17 +144,17 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, self, 
-		"-data_dir", agentDir, 
+	cmd := exec.CommandContext(ctx, self,
+		"-data_dir", agentDir,
 		"-ctrl_address", proxyAddr)
-	cmd.Env = append(os.Environ(), 
+	cmd.Env = append(os.Environ(),
 		"TELEFONIST_AGENT=1",
 		"TELEFONIST_ALIAS="+alias,
 		"TELEFONIST_BARESIP_CTRL="+baresipAddr,
 	)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	
+
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -193,6 +194,11 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 
 	// Forward agent messages to master hub
 	go m.forwardMessages(agent)
+
+	// Explicitly trigger UA registration now that the telemetry bridge is up
+	if err := agent.Baresip.CmdWs([]byte("uanew " + accountLine)); err != nil {
+		log.Printf("hub: failed to trigger registration for agent %s: %v", alias, err)
+	}
 
 	return nil
 }

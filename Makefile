@@ -226,6 +226,22 @@ stage_presence: $(BARESIP_DIR)
 	cp -a "$$src_dir" "$(BARESIP_DIR)/modules/"
 
 ###############################################################################
+# Custom aufile module staging (copy into vendored baresip tree)
+###############################################################################
+.PHONY: stage_aufile
+stage_aufile: $(BARESIP_DIR)
+	@set -eu; \
+	if [ ! -d "$(ROOT_DIR)/pkg/gobaresip/aufile" ]; then \
+	  echo "ERROR: custom aufile module directory not found at: $(ROOT_DIR)/pkg/gobaresip/aufile" >&2; \
+	  exit 1; \
+	fi; \
+	src_dir="$(ROOT_DIR)/pkg/gobaresip/aufile"; \
+	mkdir -p "$(BARESIP_DIR)/modules"; \
+	rm -rf "$(BARESIP_DIR)/modules/aufile"; \
+	cp -a "$$src_dir" "$(BARESIP_DIR)/modules/"
+
+
+###############################################################################
 # Module .so staging (so runtime dlopen can find them)
 ###############################################################################
 .PHONY: stage_modules
@@ -314,9 +330,9 @@ $(REM_LIB): $(REM_DIR) $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO) | $(GIT_DIR)
 	cp build/librem.a "$(REM_LIB)"
 
 # Ensure our custom modules are present in the baresip/modules tree before building baresip
-$(BARESIP_LIB): stage_g722 stage_rtcpsummary stage_presence
-$(BARESIP_LIB).alsa: stage_g722 stage_rtcpsummary stage_presence
-$(BARESIP_EXE): stage_g722 stage_rtcpsummary stage_presence
+$(BARESIP_LIB): stage_g722 stage_rtcpsummary stage_presence stage_aufile
+$(BARESIP_LIB).alsa: stage_g722 stage_rtcpsummary stage_presence stage_aufile
+$(BARESIP_EXE): stage_g722 stage_rtcpsummary stage_presence stage_aufile
 
 # After (re)building baresip, stage any produced shared-object modules for runtime dlopen()
 all: stage_modules

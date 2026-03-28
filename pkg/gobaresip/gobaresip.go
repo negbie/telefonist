@@ -201,6 +201,7 @@ type Msg struct {
 
 type Baresip struct {
 	userAgent        string
+	alias            string
 	ctrlAddr         string
 	configPath       string
 	audioPath        string
@@ -244,6 +245,9 @@ func New(options ...func(*Baresip) error) (*Baresip, error) {
 	if b.userAgent == "" {
 		b.userAgent = "go-baresip"
 	}
+	if b.alias == "" {
+		b.alias = b.userAgent
+	}
 	if b.ctx == nil {
 		b.ctx = context.Background()
 	}
@@ -273,6 +277,13 @@ func New(options ...func(*Baresip) error) (*Baresip, error) {
 func SetBaresipCtrlAddr(addr string) func(*Baresip) error {
 	return func(b *Baresip) error {
 		b.baresipCtrlAddr = addr
+		return nil
+	}
+}
+
+func SetAlias(alias string) func(*Baresip) error {
+	return func(b *Baresip) error {
+		b.alias = alias
 		return nil
 	}
 }
@@ -658,7 +669,7 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 			// Enrichment: add agent alias to every JSON event/response
 			var m map[string]interface{}
 			if err := json.Unmarshal(msg, &m); err == nil {
-				m["_agent"] = b.userAgent // b.userAgent holds the agent alias
+				m["_agent"] = b.alias
 				msg, _ = json.Marshal(m)
 			}
 
@@ -683,14 +694,14 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 						"event":  true,
 						"type":   "SIP",
 						"param":  m.SIP,
-						"_agent": b.userAgent,
+						"_agent": b.alias,
 					})
 				case m.Log != "":
 					data, _ = json.Marshal(map[string]interface{}{
 						"event":  true,
 						"type":   "LOG",
 						"param":  m.Log,
-						"_agent": b.userAgent,
+						"_agent": b.alias,
 					})
 				}
 				if len(data) > 0 {

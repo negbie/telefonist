@@ -238,11 +238,11 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 			} else {
 				runID = id
 				h.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"testruns","action":"save","testfile":%q,"project":%q}`, fileName, projectName))
-
-				// Process WAV files in recorded_temp folder
-				processRecordings(context.Background(), store, runID, h.DataDir)
 			}
 		}
+
+		// Collect final recordings after all steps (including uadelall) are done and agents are stopped
+		processRecordings(ctx, h.testStore, runID, h.DataDir)
 
 		broadcastInfo(h, fmt.Sprintf(
 			`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":%d,"expected_hash":%q,"actual_hash":%q,"result":%q,"run_id":%d}`,

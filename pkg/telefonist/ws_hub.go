@@ -358,13 +358,19 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 		// Since agentAlias can be a SIP URI (sip:user@host), we look for ALL colons in the first word.
 		h.bm.mu.RLock()
 		var bestAlias string
+		var bestColonIdx int
 		for a := range h.bm.agents {
 			for i := len(parts[0]) - 1; i >= 0; i-- {
 				if parts[0][i] == ':' {
 					prefix := parts[0][:i]
+					// Normalize prefix: strip SIP parameters (part after ;)
+					if semi := strings.Index(prefix, ";"); semi != -1 {
+						prefix = prefix[:semi]
+					}
 					if strings.EqualFold(a, prefix) {
 						if len(a) > len(bestAlias) {
 							bestAlias = a
+							bestColonIdx = i
 						}
 					}
 				}
@@ -373,10 +379,9 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 		h.bm.mu.RUnlock()
 
 		if bestAlias != "" {
-			idx := len(bestAlias)
 			target = bestAlias
 			// The command part starts after the colon of bestAlias
-			cmd = parts[0][idx+1:] + " " + strings.Join(parts[1:], " ")
+			cmd = parts[0][bestColonIdx+1:] + " " + strings.Join(parts[1:], " ")
 			cmd = strings.TrimSpace(cmd)
 			parts = strings.Fields(cmd)
 			if len(parts) > 0 {
@@ -402,10 +407,13 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 		// Try to extract alias from <alias;... or <sip:alias@...
 		alias := ""
 		if start := strings.Index(accountLine, "<"); start != -1 {
-			if end := strings.Index(accountLine, ";"); end != -1 && end > start {
-				alias = accountLine[start+1 : end]
-			} else if end := strings.Index(accountLine, ">"); end != -1 && end > start {
-				alias = accountLine[start+1 : end]
+			if end := strings.Index(accountLine, ">"); end != -1 && end > start {
+				aor := accountLine[start+1 : end]
+				if semi := strings.Index(aor, ";"); semi != -1 {
+					alias = aor[:semi]
+				} else {
+					alias = aor
+				}
 			}
 		}
 		

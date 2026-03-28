@@ -2,6 +2,7 @@ package telefonist
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -26,10 +27,12 @@ func RunAgent(f AppFlags) error {
 }
 
 func newBaresipInstance(f AppFlags) (*gobaresip.Baresip, error) {
+	ua := fmt.Sprintf("telefonist/%s (baresip)", Version)
 	return gobaresip.New(
 		gobaresip.SetAudioPath("sounds"),
 		gobaresip.SetConfigPath(f.DataDir),
-		gobaresip.SetUserAgent(f.Alias),
+		gobaresip.SetAlias(f.Alias),
+		gobaresip.SetUserAgent(ua),
 		gobaresip.SetCtrlTCPAddr(f.CtrlAddr),
 		gobaresip.SetBaresipCtrlAddr(f.BaresipCtrlAddr),
 	)

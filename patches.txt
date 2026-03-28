@@ -7,33 +7,10 @@ replace:
 with:
 	// don't check for replaces header
 
-file: libbaresip/git/baresip/modules/aufile/aufile_play.c
+file: libbaresip/git/baresip/modules/menu/dynamic_menu.c
 replace:
-#include "aufile.h"
+		err = call_hold(ua_call(ua), true);
+		if (err)
+			goto out;
 with:
-#include "aufile.h"
-#include <time.h>
-
-static int timestamp_print(struct re_printf *pf, const struct tm *tm)
-{
-	if (!tm)
-		return 0;
-
-	return re_hprintf(pf, "%d-%02d-%02d-%02d-%02d-%02d",
-			  1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday,
-			  tm->tm_hour, tm->tm_min, tm->tm_sec);
-}
-
-file: libbaresip/git/baresip/modules/aufile/aufile_play.c
-replace:
-	file = "speaker.wav";
-	if (str_isset(device))
-		file = device;
-with:
-	char file_buf[256];
-	time_t tnow = time(NULL);
-	struct tm *tm = localtime(&tnow);
-	re_snprintf(file_buf, sizeof(file_buf), "%s-%H.wav",
-		    str_isset(device) ? device : "speaker", timestamp_print, tm);
-	file = file_buf;
-
+	// don't hold
