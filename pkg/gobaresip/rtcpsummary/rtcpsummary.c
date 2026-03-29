@@ -23,24 +23,22 @@ static void print_rtcp_summary_line(const struct call *call,
 	if (rtcp && (rtcp->tx.sent || rtcp->rx.sent)) {
 
 		mbuf_printf(mb,
-			"rtcp_summary;" /* Reporter Identifier */
-			//"id=%s;"         /* Call ID */
-			"peer=%s;"       /* Peer URI */
-			"rx=%s;"         /* Packets RX */
-			"tx=%s;",        /* Packets TX */
-			//call_id(call),
+			"peeruri=%s;"	/* Peer URI */
+			"rx=%s;"		/* Packets RX */
+			"tx=%s;",		/* Packets TX */
+			//"id=%s;"		/* Call ID */
 			call_peeruri(call),
-			rtcp->rx.sent > 0 ? "true" : "false",
-			rtcp->tx.sent > 0 ? "true" : "false");
+			rtcp->rx.sent > 10 ? "true" : "false",
+			rtcp->tx.sent > 10 ? "true" : "false");
+			//call_id(call),
 			//1.0 * rtcp->rx.jit/1000,
 			//1.0 * rtcp->tx.jit/1000,
 			//1.0 * rtcp->rtt/1000);
-
-		bevent_ua_emit(BEVENT_CUSTOM, call_get_ua(call), "%b", mb->buf, mb->pos);
+		bevent_ua_emit(BEVENT_RTCP_SUMMARY, call_get_ua(call), "%b", mb->buf, mb->pos);
 	}
 	else {
 		mbuf_printf(mb, "No RTCP stats collected for peer=%s", call_peeruri(call));
-		bevent_ua_emit(BEVENT_CUSTOM, call_get_ua(call), "%b", mb->buf, mb->pos);
+		bevent_ua_emit(BEVENT_RTCP_SUMMARY, call_get_ua(call), "%b", mb->buf, mb->pos);
 	}
 
 	mem_deref(mb);

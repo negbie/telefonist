@@ -13,7 +13,7 @@ _define GREETING MSG, USER_EMAIL
 
 case1: USER says GREETING
 `
-	cases, _, _, _, _, err := parseTestfile(content)
+	cases, _, _, _, _, _, err := parseTestfile(content)
 	if err != nil {
 		t.Fatalf("parseTestfile failed: %v", err)
 	}
@@ -56,8 +56,8 @@ func TestParseTestfileIsolation(t *testing.T) {
 X`
 	content2 := `X`
 
-	cases1, _, _, _, _, _ := parseTestfile(content1)
-	cases2, _, _, _, _, _ := parseTestfile(content2)
+	cases1, _, _, _, _, _, _ := parseTestfile(content1)
+	cases2, _, _, _, _, _, _ := parseTestfile(content2)
 
 	if len(cases1) == 0 || cases1[0].sequence != "1" {
 		t.Errorf("content1 expected 1, got %v", cases1)
@@ -68,7 +68,7 @@ X`
 
 	content3 := `_define ua1 sip:test1@host
 ua1:dial 123`
-	cases3, _, _, _, _, _ := parseTestfile(content3)
+	cases3, _, _, _, _, _, _ := parseTestfile(content3)
 	if len(cases3) == 0 || cases3[0].sequence != "sip:test1@host:dial 123" {
 		t.Errorf("content3 expected sequence='sip:test1@host:dial 123', got sequence=%q", cases3[0].sequence)
 	}
@@ -80,8 +80,27 @@ _define FOO 1
 _define FOOBAR 2
 FOOBAR
 `
-	cases, _, _, _, _, _ := parseTestfile(content)
+	cases, _, _, _, _, _, _ := parseTestfile(content)
 	if len(cases) == 0 || cases[0].sequence != "2" {
 		t.Errorf("Expected 2, got %v (sorting failure)", cases)
+	}
+}
+
+func TestParseTestfileAccept(t *testing.T) {
+	content := `
+_accept CALL_MENC, CALL_LOCAL_SDP
+case1: dial 123
+`
+	_, _, _, _, acceptedEvents, _, err := parseTestfile(content)
+	if err != nil {
+		t.Fatalf("parseTestfile failed: %v", err)
+	}
+
+	if len(acceptedEvents) != 2 {
+		t.Fatalf("expected 2 accepted events, got %d", len(acceptedEvents))
+	}
+
+	if acceptedEvents[0] != "CALL_MENC" || acceptedEvents[1] != "CALL_LOCAL_SDP" {
+		t.Errorf("expected [CALL_MENC, CALL_LOCAL_SDP], got %v", acceptedEvents)
 	}
 }

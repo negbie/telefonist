@@ -7,6 +7,7 @@ replace:
 with:
 	// don't check for replaces header
 
+
 file: libbaresip/git/baresip/modules/menu/dynamic_menu.c
 replace:
 		err = call_hold(ua_call(ua), true);
@@ -14,3 +15,23 @@ replace:
 			goto out;
 with:
 	// don't hold
+
+
+file: libbaresip/git/baresip/src/bevent.c
+replace:
+	case BEVENT_CUSTOM:               return "CUSTOM";
+	default: return "?";
+with:
+	case BEVENT_CUSTOM:               return "CUSTOM";
+	case BEVENT_RTCP_SUMMARY:         return "RTCP_SUMMARY";
+	default: return "?";
+
+
+file: libbaresip/git/baresip/include/baresip.h
+replace:
+	BEVENT_CUSTOM,
+	BEVENT_SIPSESS_CONN,
+with:
+	BEVENT_CUSTOM,
+	BEVENT_RTCP_SUMMARY,
+	BEVENT_SIPSESS_CONN,

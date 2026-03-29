@@ -55,7 +55,7 @@ func TestHashOutputDifferentInputs(t *testing.T) {
 }
 
 func TestNewTrainSession(t *testing.T) {
-	session := newTrainSession(nil)
+	session := newTrainSession(nil, nil)
 
 	if !session.active {
 		t.Error("new session should be active")
@@ -66,7 +66,7 @@ func TestNewTrainSession(t *testing.T) {
 }
 
 func TestTrainSessionFinishEmpty(t *testing.T) {
-	session := newTrainSession(nil)
+	session := newTrainSession(nil, nil)
 
 	hash := session.finish()
 
@@ -76,7 +76,7 @@ func TestTrainSessionFinishEmpty(t *testing.T) {
 }
 
 func TestTrainSessionRecordEvent(t *testing.T) {
-	session := newTrainSession(nil)
+	session := newTrainSession(nil, nil)
 
 	event := gobaresip.EventMsg{
 		Type:    "CALL_ESTABLISHED",
@@ -94,7 +94,7 @@ func TestTrainSessionRecordEvent(t *testing.T) {
 }
 
 func TestTrainSessionRecordEventCustom(t *testing.T) {
-	session := newTrainSession(nil)
+	session := newTrainSession(nil, nil)
 
 	event := gobaresip.EventMsg{
 		Type:    "CUSTOM",
@@ -112,7 +112,7 @@ func TestTrainSessionRecordEventCustom(t *testing.T) {
 }
 
 func TestTrainSessionRecordEventInactive(t *testing.T) {
-	session := newTrainSession(nil)
+	session := newTrainSession(nil, nil)
 	session.active = false
 
 	session.recordEvent(gobaresip.EventMsg{Type: "CALL_ESTABLISHED"})
@@ -124,7 +124,7 @@ func TestTrainSessionRecordEventInactive(t *testing.T) {
 }
 
 func TestTrainSessionRecordEventRTCP(t *testing.T) {
-	session := newTrainSession(nil)
+	session := newTrainSession(nil, nil)
 	session.recordEvent(gobaresip.EventMsg{Type: "CALL_RTCP"})
 
 	output := session.outputBuf.String()
@@ -134,7 +134,7 @@ func TestTrainSessionRecordEventRTCP(t *testing.T) {
 }
 
 func TestTrainSessionRecordEventIgnored(t *testing.T) {
-	session := newTrainSession([]string{"CALL_RESUME", "CALL_Hold"})
+	session := newTrainSession([]string{"CALL_RESUME", "CALL_Hold"}, nil)
 
 	// Should record CALL_ESTABLISHED
 	session.recordEvent(gobaresip.EventMsg{
@@ -159,5 +159,35 @@ func TestTrainSessionRecordEventIgnored(t *testing.T) {
 
 	if output != expected {
 		t.Errorf("Ignored events were recorded incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
+	}
+}
+
+func TestTrainSessionRecordEventAccepted(t *testing.T) {
+	session := newTrainSession(nil, []string{"CALL_ESTABLISHED", "CALL_HOLD"})
+
+	// Should record CALL_ESTABLISHED
+	session.recordEvent(gobaresip.EventMsg{
+		Type:    "CALL_ESTABLISHED",
+		RawJSON: []byte(`{"event":true,"type":"CALL_ESTABLISHED","id":"123"}`),
+	})
+
+	// Should NOT record CALL_MENC
+	session.recordEvent(gobaresip.EventMsg{
+		Type:    "CALL_MENC",
+		RawJSON: []byte(`{"event":true,"type":"CALL_MENC","id":"456"}`),
+	})
+
+	// Should record CALL_HOLD (case insensitive)
+	session.recordEvent(gobaresip.EventMsg{
+		Type:    "call_hold",
+		RawJSON: []byte(`{"event":true,"type":"call_hold","id":"789"}`),
+	})
+
+	output := session.outputBuf.String()
+	expected := `{"event":true,"type":"CALL_ESTABLISHED","id":""}` + "\n\n" +
+		`{"event":true,"type":"call_hold","id":""}` + "\n\n"
+
+	if output != expected {
+		t.Errorf("Accepted events filtering was incorrect.\nExpected:\n%q\nGot:\n%q", expected, output)
 	}
 }

@@ -50,13 +50,15 @@ type TrainSession struct {
 	outputBuf     bytes.Buffer // For hashing (filtered/clean)
 	fullBuf       bytes.Buffer // For downloads/storage (raw)
 	ignoredEvents []string
+	acceptedEvents []string
 }
 
 // newTrainSession creates a new testing session.
-func newTrainSession(ignoredEvents []string) *TrainSession {
+func newTrainSession(ignoredEvents []string, acceptedEvents []string) *TrainSession {
 	return &TrainSession{
-		active:        true,
-		ignoredEvents: ignoredEvents,
+		active:         true,
+		ignoredEvents:  ignoredEvents,
+		acceptedEvents: acceptedEvents,
 	}
 }
 
@@ -79,6 +81,19 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 
 	for _, ignored := range t.ignoredEvents {
 		if strings.EqualFold(e.Type, ignored) {
+			return
+		}
+	}
+
+	if len(t.acceptedEvents) > 0 {
+		found := false
+		for _, accepted := range t.acceptedEvents {
+			if strings.EqualFold(e.Type, accepted) {
+				found = true
+				break
+			}
+		}
+		if !found {
 			return
 		}
 	}
