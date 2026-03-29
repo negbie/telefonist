@@ -94,18 +94,22 @@ Telefonist allows you to write and execute automated test sequences (testfiles) 
 Testfiles are line-based and support the following syntax:
 
 - **Comments**: Lines starting with `#` are ignored.
-- **Commands**: Each line defines a test case: `Name: command1 | duration | command2`
-  - Example: `CallTest: dial sip:user@host | 5s | hangup`
+- **Commands**: Each line defines a test case: `command1 | duration | command2`
+  - Example: `dial sip:user@host | 5s | hangup`
 - **Chaining**: Use `|` to separate multiple commands or to insert delays.
 - **Durations**: Use `10s`, `500ms`, `2m`, etc., to wait between steps.
+- **Agent Targeting**: Prefix a command with an agent alias followed by a colon to target a specific agent.
+  - Example: `ua1:dial ua2` sends the `dial ua2` command to the agent with alias `ua1`.
+  - Default: Commands without a prefix are sent to the last created or "active" agent.
 - **Wav Shortcuts**:
   - `;input_wav=file.wav` - Automatically configures `audio_source` to use `file.wav`.
 - **Metadata**:
-  - `_run <count>` - Repeat the entire testfile `<count>` times.
-  - `_ignore <event1>,<event2>` - List of events to ignore during analysis.
-  - `_define <VAR> <value>` - Define a macro that will be replaced in subsequent lines.
   - `_hash <expected_hash>` - Verify the final state against a specific hash.
+  - `_ignore <event1>,<event2>` - List of events to ignore for the hash calculation.
+  - `_accept <event1>,<event2>` - List of events to accept for the hash calculation.
+  - `_define <VAR> <value>` - Define a macro that will be replaced in subsequent lines.
   - `_webhook <url>` - Send the final test result to this webhook URL (e.g., MS Teams).
+  - `_run <count>` - Repeat the entire testfile `<count>` times.
 
   Refer to the [baresip documentation](https://github.com/baresip/baresip/wiki) for command details.
 
@@ -124,7 +128,7 @@ Testfiles are line-based and support the following syntax:
    _define ua1 sip:alice@192.168.1.100
    _define ua2 sip:bob@192.168.1.100
    _define ua3 sip:charlie@192.168.1.100
-   _ignore TRANSFER, CALL_CLOSED
+   _accept CALL_RINGING, CALL_ESTABLISHED, CALL_RTPESTAB, CALL_CLOSED, RTCP_SUMMARY
    _run 1
 
    uanew <ua1;transport=udp>;auth_pass=secret1;input_wav=alice.wav
@@ -134,7 +138,7 @@ Testfiles are line-based and support the following syntax:
    # Attended Transfer 
    ua1:dial ua2|2s|ua2:accept|6s
    ua2:atransferstart ua3|2s|ua3:accept|6s
-   ua2:atransferexec|6s|hangup
+   ua2:atransferexec|6s|ua1:hangup
    uadelall
    ```
 
@@ -142,7 +146,7 @@ Testfiles are line-based and support the following syntax:
    - `_hash`: A unique identifier (checksum) representing the expected sequence of events. If the run matches this hash, the test passes.
      > [!TIP]
      > For your first run, leave `_hash` empty. The final test result will reveal the actual hash, which you can then copy into your testfile for future validation.
-   - `_ignore`: A comma-separated list of events to exclude from the hash calculation (e.g., `TRANSFER`, `CALL_CLOSED`).
+   - `_accept`: A comma-separated list of events to accept for the hash calculation (e.g., `CALL_RINGING`, `CALL_ESTABLISHED`).
    - `_define`: Creates reusable macros for SIP URIs or other configuration strings.
    - `_run`: Specifies how many times to repeat the entire sequence.
 

@@ -146,10 +146,19 @@ window.initCompareWindow = (deps) => {
 
         const filtered = all.filter(j => {
             const type = (j.type || j.token || "EVENT").toLowerCase();
-            if (activeMode === "sip") return type === "sip";
+            if (activeMode === "sip") {
+                if (type !== "sip") return false;
+                const param = j.param || "";
+                if (param.includes("CSeq: ") && /\d+\s+OPTIONS/i.test(param)) {
+                    return false;
+                }
+                return true;
+            }
             if (activeMode === "log") return type === "log";
             if (activeMode === "evt") {
-                return j.type !== "SIP" && j.type !== "LOG" && j.token !== "testfile";
+                if (j.type === "SIP" || j.type === "LOG" || j.token === "testfile") return false;
+                // Also skip SIP OPTIONS even if they somehow ended up here (unlikely but safe)
+                return true;
             }
             return true;
         });

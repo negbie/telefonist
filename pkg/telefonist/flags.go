@@ -26,7 +26,6 @@ type AppFlags struct {
 	UseAlsa         bool
 	Version         bool
 	DataDir         string
-	SkipSipMsg      string
 	Agent           bool
 	Alias           string
 }
@@ -49,7 +48,6 @@ func ParseFlags() AppFlags {
 	flag.BoolVar(&f.UseAlsa, "use_alsa", false, "Use ALSA for audio (uncomments alsa lines in config)")
 	flag.BoolVar(&f.Version, "version", false, "Print version")
 	flag.StringVar(&f.DataDir, "data_dir", "data", "Directory for configuration files and data")
-	flag.StringVar(&f.SkipSipMsg, "skip_sip_msg", "OPTIONS", "Comma separated list of SIP methods to ignore")
 
 	flag.Parse()
 	return f

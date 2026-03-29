@@ -65,7 +65,6 @@ type WsHub struct {
 	chainMu sync.Mutex
 
 	DataDir string
-	skipSipMethods []string
 
 	cmdCounter atomic.Uint64
 }
@@ -90,17 +89,7 @@ func (h *WsHub) broadcastToClients(msg []byte) {
 	}
 }
 
-func NewWsHub(dataDir string, skipSipMsg string, maxCalls uint, rtpNet string, rtpPorts string, rtpTimeout uint, useAlsa bool, sipListen string) *WsHub {
-	var skipMethods []string
-	if skipSipMsg != "" {
-		parts := strings.Split(skipSipMsg, ",")
-		for _, p := range parts {
-			if m := strings.TrimSpace(p); m != "" {
-				skipMethods = append(skipMethods, strings.ToUpper(m))
-			}
-		}
-	}
-
+func NewWsHub(dataDir string, maxCalls uint, rtpNet string, rtpPorts string, rtpTimeout uint, useAlsa bool, sipListen string) *WsHub {
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &WsHub{
 		clients:        make(map[*client]bool),
@@ -118,7 +107,6 @@ func NewWsHub(dataDir string, skipSipMsg string, maxCalls uint, rtpNet string, r
 		cancel:         cancel,
 		internalCmd:    make(chan func(), 128),
 		DataDir:        dataDir,
-		skipSipMethods: skipMethods,
 	}
 	h.bm = NewBaresipManager(h, dataDir, maxCalls, rtpNet, rtpPorts, rtpTimeout, useAlsa, sipListen)
 	return h
@@ -299,9 +287,6 @@ func (h *WsHub) Run() {
 
 			case m.SIP != "":
 				s := m.SIP
-				if h.shouldSkipSip(s) {
-					continue
-				}
 
 				msg, err := json.Marshal(map[string]interface{}{
 					"event":  true,
@@ -321,28 +306,6 @@ func (h *WsHub) Run() {
 	}
 }
 
-func (h *WsHub) shouldSkipSip(msg string) bool {
-	if len(h.skipSipMethods) == 0 {
-		return false
-	}
-	lines := strings.Split(msg, "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "CSeq: ") {
-			// CSeq: 1234 OPTIONS
-			parts := strings.Fields(line)
-			if len(parts) >= 3 {
-				method := strings.ToUpper(parts[2])
-				for _, skip := range h.skipSipMethods {
-					if method == skip {
-						return true
-					}
-				}
-			}
-			break
-		}
-	}
-	return false
-}
 
 func (h *WsHub) executeSmartCommand(cmd string) {
 	h.BroadcastCommandHint(cmd)

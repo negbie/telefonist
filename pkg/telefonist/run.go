@@ -110,7 +110,7 @@ func Run() error {
 
 
 	// Setup websocket hub
-	hub := NewWsHub(f.DataDir, f.SkipSipMsg, f.MaxCalls, f.RtpNet, f.RtpPorts, f.RtpTimeout, f.UseAlsa, f.SipListen)
+	hub := NewWsHub(f.DataDir, f.MaxCalls, f.RtpNet, f.RtpPorts, f.RtpTimeout, f.UseAlsa, f.SipListen)
 
 	// Initialize persistent test store (SQLite next to executable) and attach to hub.
 	// If it fails, we continue without persistence (UI can still use testfile_inline).
