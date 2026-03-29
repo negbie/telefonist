@@ -111,6 +111,7 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) {
 					h.trainSession = nil
 				}
 			}
+			h.bm.CloseAll()
 		}()
 
 		for _, tf := range batch {
@@ -165,7 +166,7 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 	for rep := 1; rep <= repeatCount; rep++ {
 		select {
 		case <-ctx.Done():
-			broadcastInfo(h, fmt.Sprintf(`{"status":"stopped","token":"testfile","file":%q,"project":%q}`, fileName, projectName))
+			checkTestFailure(h, fileName, projectName)
 			return
 		default:
 		}
@@ -182,13 +183,14 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		select {
 		case <-sessionReady:
 		case <-ctx.Done():
+			checkTestFailure(h, fileName, projectName)
 			return
 		}
 
 		for _, tc := range cases {
 			select {
 			case <-ctx.Done():
-				broadcastInfo(h, fmt.Sprintf(`{"status":"stopped","token":"testfile","file":%q,"project":%q}`, fileName, projectName))
+				checkTestFailure(h, fileName, projectName)
 				return
 			default:
 			}
@@ -221,7 +223,7 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		select {
 		case <-done:
 		case <-ctx.Done():
-			broadcastInfo(h, fmt.Sprintf(`{"status":"stopped","token":"testfile","file":%q,"project":%q}`, fileName, projectName))
+			checkTestFailure(h, fileName, projectName)
 			return
 		}
 
@@ -259,6 +261,29 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 	}
 
 	log.Printf("finished testfile: %s (result: %s)", fileName, globalStatus)
+}
+
+func checkTestFailure(h *WsHub, fileName, projectName string) {
+	var failMsg string
+	done := make(chan struct{})
+	h.internalCmd <- func() {
+		if h.trainSession != nil {
+			failMsg = h.trainSession.failMsg
+			h.trainSession.finish() // ensure session is closed even if stopped
+			h.trainSession = nil
+		}
+		close(done)
+	}
+	<-done
+
+	if failMsg != "" {
+		broadcastInfo(h, fmt.Sprintf(
+			`{"status":"finished","token":"testfile","file":%q,"project":%q,"result":"FAIL","message":%q}`,
+			fileName, projectName, failMsg,
+		))
+	} else {
+		broadcastInfo(h, fmt.Sprintf(`{"status":"stopped","token":"testfile","file":%q,"project":%q}`, fileName, projectName))
+	}
 }
 
 func parseTestfile(content string) (cases []testCase, expectedHash string, repeatCount int, ignoredEvents []string, acceptedEvents []string, webhookURL string, err error) {

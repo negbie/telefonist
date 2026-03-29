@@ -191,3 +191,16 @@ func TestTrainSessionRecordEventAccepted(t *testing.T) {
 		t.Errorf("Accepted events filtering was incorrect.\nExpected:\n%q\nGot:\n%q", expected, output)
 	}
 }
+
+func TestTrainSessionRecordEventRegisterFail(t *testing.T) {
+	session := newTrainSession(nil, nil)
+
+	session.recordEvent(gobaresip.EventMsg{
+		Type:    "REGISTER_FAIL",
+		RawJSON: []byte(`{"event":true,"type":"REGISTER_FAIL","id":"123"}`),
+	})
+
+	if session.failMsg != "Registration failed" {
+		t.Errorf("expected failMsg 'Registration failed', got %q", session.failMsg)
+	}
+}

@@ -51,6 +51,7 @@ type TrainSession struct {
 	fullBuf       bytes.Buffer // For downloads/storage (raw)
 	ignoredEvents []string
 	acceptedEvents []string
+	failMsg        string
 }
 
 // newTrainSession creates a new testing session.
@@ -73,6 +74,10 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 	// Always record to fullBuf for storage/download
 	t.fullBuf.Write(e.RawJSON)
 	t.fullBuf.WriteString("\n\n")
+
+	if e.Type == "REGISTER_FAIL" {
+		t.failMsg = "Registration failed"
+	}
 
 	// Following types should be excluded from the hash calculation
 	if e.Type == "CALL_RTCP" || e.Type == "SIP" || e.Type == "LOG" {

@@ -247,6 +247,9 @@ func (h *WsHub) Run() {
 
 				if h.trainSession != nil {
 					h.trainSession.recordEvent(e)
+					if h.trainSession.failMsg != "" && h.testCancel != nil {
+						h.testCancel()
+					}
 				}
 
 				var mEvent map[string]interface{}
