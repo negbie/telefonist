@@ -223,11 +223,12 @@ function initResizer(resizer, topRow, bottomRow) {
 
     resizer.addEventListener("mousedown", function (e) {
         isResizing = true;
+        document.body.classList.add("resizing");
         document.body.style.cursor = "ns-resize";
         e.preventDefault();
     });
-    let ticking = false;
 
+    let ticking = false;
     document.addEventListener("mousemove", function (e) {
         if (!isResizing || ticking) return;
 
@@ -238,14 +239,18 @@ function initResizer(resizer, topRow, bottomRow) {
             if (topH < 100) topH = 100;
             if (totalH - topH < 100) topH = totalH - 100;
             var topPct = (topH / totalH) * 100;
-            topRow.style.flex = "1 1 " + topPct + "%";
-            bottomRow.style.flex = "1 1 " + (100 - topPct) + "%";
+
+            document.documentElement.style.setProperty("--split-top", topPct + "%");
+            document.documentElement.style.setProperty("--split-bottom", (100 - topPct) + "%");
+
             ticking = false;
         });
     });
+
     document.addEventListener("mouseup", function () {
         if (isResizing) {
             isResizing = false;
+            document.body.classList.remove("resizing");
             document.body.style.cursor = "";
         }
     });

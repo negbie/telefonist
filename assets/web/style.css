@@ -12,6 +12,8 @@
     --muted: #6b7280;
     --radius: 8px;
     --input-radius: 8px;
+    --split-top: 50%;
+    --split-bottom: 50%;
 }
 
 *,
@@ -54,7 +56,7 @@ pre {
 }
 
 #top-row {
-    flex: 2 1 50%;
+    flex: 1 1 var(--split-top);
     display: flex;
     flex-direction: row;
     overflow: hidden;
@@ -78,7 +80,7 @@ pre {
 }
 
 #bottom-row {
-    flex: 1 1 33%;
+    flex: 1 1 var(--split-bottom);
     display: flex;
     flex-direction: row;
     overflow: hidden;
@@ -305,4 +307,10 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
 .btn-download:hover {
     background-color: #374151;
     border-color: #9ca3af;
+}
+/* Optimization during resizing */
+body.resizing * {
+    pointer-events: none !important;
+    user-select: none !important;
+    transition: none !important;
 }
