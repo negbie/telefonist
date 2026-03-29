@@ -26,6 +26,7 @@ window.renderLogEvent = (j, elements, getOptions) => {
 
         const sep = document.createElement("div");
         sep.className = "run-separator " + (isStart ? "start" : (j.result === "FAIL" ? "end-fail" : "end-pass"));
+        sep.setAttribute("data-token", j.token || "test");
 
         let text = (j.token === "testfile" ? "─── " : "─── Run ") + (isStart ? "Testfile " : (type === "finished" ? "Finished: " : "Started: ")) + safeText(name);
         if (type === "finished" && j.result) {
@@ -95,6 +96,8 @@ window.renderLogEvent = (j, elements, getOptions) => {
             if (!container) return;
             const el = document.createElement("div");
             el.className = "run-separator cmd";
+            el.setAttribute("data-token", j.token || "test");
+            // Do not set data-has-result="1" as CMD events are not results themselves.
             if (j._cmdId) {
                 el.dataset.cmdId = j._cmdId;
                 el.style.cursor = "pointer";

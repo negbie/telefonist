@@ -464,6 +464,7 @@ func (h *WsHub) BroadcastCommandHint(cmd string) {
 		"event":  true,
 		"type":   "CMD",
 		"param":  "CMD: " + display,
+		"token":  "test",
 		"_cmdId": fmt.Sprintf("cmd_%d_%d", time.Now().Unix(), count),
 	})
 	h.broadcast <- msg

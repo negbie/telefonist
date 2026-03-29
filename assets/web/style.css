@@ -149,12 +149,14 @@ details.event>summary .evt-peer.fail {
 }
 
 /* Filter: show only test/testfile + testfiles (management) messages */
-body[data-only-tests="1"] #flow .list:not([data-token="test"]):not([data-token="testfile"]):not([data-token="testfiles"]) {
+body[data-only-tests="1"] #flow .list:not([data-token="test"]):not([data-token="testfile"]):not([data-token="testfiles"]),
+body[data-only-tests="1"] #flow .run-separator:not([data-token="test"]):not([data-token="testfile"]):not([data-token="testfiles"]) {
     display: none !important;
 }
 
 /* Filter: show only results */
-body[data-only-results="1"] #flow .list:not([data-has-result="1"]) {
+body[data-only-results="1"] #flow .list:not([data-has-result="1"]),
+body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     display: none !important;
 }
 
