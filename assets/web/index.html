@@ -86,7 +86,7 @@
         <div id="resizer"></div>
 
         <div id="bottom-row" data-bottom-mode="tests">
-            <div id="test-controls">
+            <div id="test-controls" class="expanded">
                 <div class="controls-sidebar">
                     <div class="sidebar-group">
                         <button type="button" id="btn-mode-tests" class="active" title="Tests Mode">🧪</button>
@@ -115,7 +115,6 @@
                 <div class="controls-main">
                     <div class="testfile-actions">
                         <div class="project-selector">
-                            <label class="hint" for="project-select">Project:</label>
                             <select id="project-select">
                                 <option value="">(all projects)</option>
                             </select>
@@ -149,8 +148,7 @@
                     <button type="button" id="compare-sip" title="Show only SIP messages">SIP</button>
                     <button type="button" id="compare-log" title="Show only logger messages">LOG</button>
                     <button type="button" id="compare-wav" title="Toggle WAV comparison mode">WAV</button>
-                    <button type="button" id="compare-diff"
-                        title="Toggle diff view for the selected mode">Diff</button>
+                    <button type="button" id="compare-diff" title="Toggle diff view for the selected mode">Diff</button>
                     <button type="button" id="compare-delete-selected"
                         title="Delete the runs selected in the dropdowns">Delete</button>
                     <button type="button" id="compare-delete-all"
@@ -167,7 +165,7 @@
                     </div>
                 </div>
             </div>
-    </div>
+        </div>
 </body>
 
 </html>

@@ -281,10 +281,6 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     border-color: #2563eb;
 }
 
-.sip-method-top {
-    display: flex;
-    align-items: center;
-}
 
 /* Download Buttons */
 .download-container {

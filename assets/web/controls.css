@@ -88,7 +88,6 @@ input[type="text"] {
     background: #fff;
     outline: none;
     flex: 1;
-    /* Expand to fill space */
     min-height: 200px;
     overflow-x: hidden;
     max-width: 100%;
@@ -125,8 +124,8 @@ input[type="text"] {
 }
 
 #testfile-select option:checked {
-    background-color: #e5edff !important;
-    color: #000;
+    background-color: #3b82f6 !important;
+    color: #fff;
 }
 
 .testfile-actions {
@@ -151,10 +150,8 @@ input[type="text"] {
     /* Collapsed width */
 }
 
-#test-controls.expanded,
-#test-controls:hover {
+#test-controls.expanded {
     width: 320px;
-    /* Adjusted to fit the reduced content size */
 }
 
 .controls-sidebar {
@@ -281,8 +278,7 @@ input[type="text"] {
     box-sizing: border-box;
 }
 
-#test-controls.expanded .controls-main,
-#test-controls:hover .controls-main {
+#test-controls.expanded .controls-main {
     opacity: 1;
     pointer-events: auto;
 }

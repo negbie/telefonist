@@ -10,17 +10,7 @@
             background: #fff;
         }
 
-        #testfile-panel .row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 8px;
-        }
 
-        #testfile-panel .row .spacer {
-            flex: 1 1 auto;
-        }
 
         #testfile-backdrop {
             flex: 1;
@@ -32,9 +22,7 @@
             border-radius: 6px;
         }
 
-        body[data-test-mode="visual"] #testfile-backdrop {
-            display: none;
-        }
+
 
         #testfile-highlights {
             position: absolute;
@@ -130,52 +118,3 @@
             white-space: pre;
         }
 
-        #testfile-panel button {
-            padding: 6px 10px;
-            border: 1px solid #000;
-            background: #fff;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        #testfile-panel button:hover {
-            background: #f3f3f3;
-        }
-
-        #testfile-panel .hint {
-            color: #555;
-            font-size: 12px;
-            font-family:
-                system-ui,
-                -apple-system,
-                "Segoe UI",
-                Roboto,
-                Arial,
-                sans-serif;
-        }
-
-        .mode-toggle {
-            display: flex;
-            gap: 4px;
-            background: #eee;
-            padding: 4px;
-            border-radius: 6px;
-            border: 1px solid #ccc;
-        }
-
-        .mode-toggle button {
-            flex: 1;
-            border: none !important;
-            background: transparent !important;
-            padding: 4px 8px !important;
-            border-radius: 4px !important;
-            color: #555;
-        }
-
-        .mode-toggle button.active {
-            background: #fff !important;
-            color: #000;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-            font-weight: 500;
-        }

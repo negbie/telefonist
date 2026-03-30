@@ -275,7 +275,11 @@ window.initTestfileManager = function (deps) {
     function updateCurrentOptionLabel() {
         if (!testfileSelectEl || !activeKey) return;
         const opt = Array.from(testfileSelectEl.options).find(o => o.value === activeKey);
-        if (opt) opt.textContent = state.isDirty(activeKey) ? `${state.getEntry(activeKey).name} [unsaved]` : state.getEntry(activeKey).name;
+        if (opt) {
+            let label = state.isDirty(activeKey) ? `${state.getEntry(activeKey).name} [unsaved]` : state.getEntry(activeKey).name;
+            if (label.length > 30) label = label.substring(0, 30) + '...';
+            opt.textContent = label;
+        }
     }
 
     function populateProjectsSelect(projects, forcedValue) {
@@ -330,7 +334,9 @@ window.initTestfileManager = function (deps) {
             }
             groups[p].sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
                 const k = `${e.project}:${e.name}`;
-                const opt = new Option(state.isDirty(k) ? e.name + " [unsaved]" : e.name, k);
+                let label = state.isDirty(k) ? e.name + " [unsaved]" : e.name;
+                if (label.length > 30) label = label.substring(0, 30) + '...';
+                const opt = new Option(label, k);
                 opt.selected = (k === activeKey);
                 container.appendChild(opt);
             });
