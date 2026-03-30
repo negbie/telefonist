@@ -81,6 +81,64 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 	}
 }
 
+func HandleAPIProjectRename(hub *WsHub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			OldName string `json:"old_name"`
+			NewName string `json:"new_name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		if err := hub.testStore.RenameProject(ctx, req.OldName, req.NewName); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"projects","action":"rename","message":"renamed","old_name":%q,"new_name":%q}`, req.OldName, req.NewName))
+		json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "renamed"})
+	}
+}
+
+func HandleAPIProjectClone(hub *WsHub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			SrcName    string `json:"src_name"`
+			TargetName string `json:"target_name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		if err := hub.testStore.CloneProject(ctx, req.SrcName, req.TargetName); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"projects","action":"clone","message":"cloned","src_name":%q,"target_name":%q}`, req.SrcName, req.TargetName))
+		json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "cloned"})
+	}
+}
+
 func HandleAPITestfiles(hub *WsHub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if hub.testStore == nil {

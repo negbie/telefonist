@@ -6,6 +6,8 @@ window.initTestfileManager = function (deps) {
 
     const projectSelectEl = document.getElementById("project-select");
     const projectsNewEl = document.getElementById("projects-new");
+    const projectsRenameEl = document.getElementById("projects-rename");
+    const projectsCloneEl = document.getElementById("projects-clone");
     const projectsDeleteEl = document.getElementById("projects-delete");
 
     const state = window.StateManager();
@@ -201,9 +203,39 @@ window.initTestfileManager = function (deps) {
             });
         }
     };
+    if (projectsRenameEl) projectsRenameEl.onclick = () => {
+        const oldName = projectSelectEl?.value;
+        if (!oldName) {
+            alert("Please select a project to rename first.");
+            return;
+        }
+        const newName = window.prompt(`Enter new name for project "${oldName}":`, oldName);
+        const trimmed = newName?.trim();
+        if (trimmed && trimmed !== oldName) {
+            api.renameProject(oldName, trimmed).then(j => {
+                if (j.status !== "finished") alert("Error renaming project: " + j.message);
+                else requestLists({ project: trimmed });
+            }).catch(e => alert("Error renaming project: " + e.message));
+        }
+    };
+    if (projectsCloneEl) projectsCloneEl.onclick = () => {
+        const srcName = projectSelectEl?.value;
+        if (!srcName) {
+            alert("Please select a project to clone first.");
+            return;
+        }
+        const targetName = window.prompt(`Enter name for new cloned project (copy of "${srcName}"):`, srcName + "_copy");
+        const trimmed = targetName?.trim();
+        if (trimmed && trimmed !== srcName) {
+            api.cloneProject(srcName, trimmed).then(j => {
+                if (j.status !== "finished") alert("Error cloning project: " + j.message);
+                else requestLists({ project: trimmed });
+            }).catch(e => alert("Error cloning project: " + e.message));
+        }
+    };
     if (projectsDeleteEl) projectsDeleteEl.onclick = () => {
         const name = projectSelectEl?.value;
-        if (name && window.confirm(`Delete project "${name}"? Test files will be moved to uncategorized.`)) {
+        if (name && window.confirm(`Delete project "${name}"? Test files will be left intact but moved to uncategorized.`)) {
             api.deleteProject(name).then(j => {
                 if (j.status !== "finished") alert("Error deleting project: " + j.message);
                 else requestLists();
@@ -341,6 +373,16 @@ window.initTestfileManager = function (deps) {
                 container.appendChild(opt);
             });
         });
+        
+        // If the active key is not in the filtered list, clear the input
+        if (activeKey && filter && state.getEntry(activeKey)?.project !== filter) {
+            setActiveKey("");
+            if (testfileInputEl) {
+                testfileInputEl.value = "";
+                updateHighlights();
+            }
+        }
+        
         updateEnabledStates();
     }
 

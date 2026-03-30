@@ -99,7 +99,7 @@ input[type="text"] {
     font-style: normal;
     background: #f9fafb;
     color: #4b5563;
-    padding: 8px;
+    padding-top: 8px;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -107,16 +107,12 @@ input[type="text"] {
 
 #testfile-select optgroup option {
     font-weight: normal;
-    padding-left: 16px;
     background: #fff;
 }
 
 #testfile-select option {
-    padding: 4px 8px;
-    border-bottom: 1px solid #f0f0f0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    font-weight: normal;
+    background: #fff;
 }
 
 #testfile-select option:last-child {

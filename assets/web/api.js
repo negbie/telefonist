@@ -24,6 +24,20 @@
                 method: "DELETE"
             }).then(handleResponse);
         },
+        renameProject: function (oldName, newName) {
+            return fetch("/api/projects/rename", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ old_name: oldName, new_name: newName })
+            }).then(handleResponse);
+        },
+        cloneProject: function (srcName, targetName) {
+            return fetch("/api/projects/clone", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ src_name: srcName, target_name: targetName })
+            }).then(handleResponse);
+        },
         getTestfiles: function () {
             return fetch("/api/testfiles").then(handleResponse);
         },

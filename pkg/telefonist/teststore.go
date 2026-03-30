@@ -792,6 +792,124 @@ func (s *TestStore) DeleteProject(ctx context.Context, name string) error {
 	return tx.Commit()
 }
 
+// RenameProject renames an entire project, including updating all its testfiles and testruns.
+func (s *TestStore) RenameProject(ctx context.Context, oldName, newName string) error {
+	if s == nil || s.db == nil {
+		return errors.New("test store is not initialized")
+	}
+	if err := validateProjectName(oldName); err != nil {
+		return err
+	}
+	if err := validateProjectName(newName); err != nil {
+		return err
+	}
+	if oldName == newName {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// 1. Rename physical WAV folders
+	oldP := oldName
+	if oldP == "" {
+		oldP = "default"
+	}
+	newP := newName
+	if newP == "" {
+		newP = "default"
+	}
+	
+	oldDir := filepath.Join(s.wavDir, oldP)
+	newDir := filepath.Join(s.wavDir, newP)
+
+	if _, err := os.Stat(oldDir); err == nil {
+		if err := os.MkdirAll(filepath.Dir(newDir), 0755); err == nil {
+			if err := os.Rename(oldDir, newDir); err != nil {
+				log.Printf("failed to rename project directory %q -> %q: %v", oldDir, newDir, err)
+			}
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// 2. Insert new project
+	if _, err := tx.ExecContext(ctx, `INSERT INTO projects(name, created_at) VALUES(?, ?) ON CONFLICT(name) DO NOTHING;`, newName, now); err != nil {
+		return err
+	}
+
+	// 3. Update testfiles
+	if _, err := tx.ExecContext(ctx, `UPDATE testfiles SET project_name = ?, updated_at = ? WHERE project_name = ?;`, newName, now, oldName); err != nil {
+		return err
+	}
+
+	// 4. Update testrun_wavs paths
+	if oldDir != newDir {
+		// e.g. replacing 'alpha/' with 'beta/' at the beginning of the file_path
+		prefixOld := oldP + string(filepath.Separator)
+		prefixNew := newP + string(filepath.Separator)
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE testrun_wavs 
+			SET file_path = ? || SUBSTR(file_path, ?)
+			WHERE file_path LIKE ?;
+		`, prefixNew, len(prefixOld)+1, prefixOld+"%"); err != nil {
+			log.Printf("failed to update testrun wav file paths: %v", err)
+		}
+	}
+
+	// 5. Update testruns (done later to prevent FK cascade issues if any)
+	if _, err := tx.ExecContext(ctx, `UPDATE testruns SET project_name = ? WHERE project_name = ?;`, newName, oldName); err != nil {
+		return err
+	}
+
+	// 6. Delete old project entry
+	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE name = ?;`, oldName); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// CloneProject creates a new project and copies all testfiles from the source project.
+func (s *TestStore) CloneProject(ctx context.Context, srcName, targetName string) error {
+	if s == nil || s.db == nil {
+		return errors.New("test store is not initialized")
+	}
+	if err := validateProjectName(srcName); err != nil {
+		return err
+	}
+	if err := validateProjectName(targetName); err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// 1. Create target project
+	if _, err := tx.ExecContext(ctx, `INSERT INTO projects(name, created_at) VALUES(?, ?) ON CONFLICT(name) DO NOTHING;`, targetName, now); err != nil {
+		return err
+	}
+
+	// 2. Insert testfiles from src into target
+	// Uses INSERT OR IGNORE so if a testfile already exists in the target, it won't crash
+	if _, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO testfiles(name, project_name, content, created_at, updated_at)
+		SELECT name, ?, content, ?, ? FROM testfiles WHERE project_name = ?;
+	`, targetName, now, now, srcName); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 // ListProjects returns all stored projects.
 func (s *TestStore) ListProjects(ctx context.Context) ([]ProjectRow, error) {
 	if s == nil || s.db == nil {

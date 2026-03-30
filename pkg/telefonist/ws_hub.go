@@ -30,7 +30,7 @@ type WsHub struct {
 	// Outbound broadcast messages (serialized through the hub).
 	broadcast chan []byte
 
-	bm *BaresipManager
+	bm       *BaresipManager
 	agentMsg chan AgentMsg
 
 	// activeAgent is the current target for commands (set by uafind)
@@ -67,6 +67,10 @@ type WsHub struct {
 	DataDir string
 
 	cmdCounter atomic.Uint64
+
+	// Message history for persistence across refreshes
+	history      [][]byte
+	historyLimit int
 }
 
 type AgentMsg struct {
@@ -89,24 +93,44 @@ func (h *WsHub) broadcastToClients(msg []byte) {
 	}
 }
 
+// recordAndBroadcast adds a message to the hub's recent history and then
+// broadcasts it to all connected clients. History is replayed to new clients.
+func (h *WsHub) recordAndBroadcast(msg []byte) {
+	if h.historyLimit <= 0 {
+		h.broadcastToClients(msg)
+		return
+	}
+	if len(h.history) < h.historyLimit {
+		h.history = append(h.history, msg)
+	} else {
+		// Overwrite the oldest message with the latest to keep O(1) memory.
+		// copy handles the shift, aiding GC by dropping the oldest reference.
+		copy(h.history, h.history[1:])
+		h.history[h.historyLimit-1] = msg
+	}
+	h.broadcastToClients(msg)
+}
+
 func NewWsHub(dataDir string, maxCalls uint, rtpNet string, rtpPorts string, rtpTimeout uint, useAlsa bool, sipListen string) *WsHub {
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &WsHub{
-		clients:        make(map[*client]bool),
-		command:        make(chan []byte, 128),
-		register:       make(chan *client, 128),
-		unregister:     make(chan *client, 128),
-		broadcast:      make(chan []byte, 1024),
-		bm:             nil, // Set later
-		agentMsg:       make(chan AgentMsg, 1024),
-		onEvent:        nil,
-		onResponse:     nil,
-		testStore:      nil,
-		syncWaiters:    make(map[string]chan struct{}),
-		ctx:            ctx,
-		cancel:         cancel,
-		internalCmd:    make(chan func(), 128),
-		DataDir:        dataDir,
+		clients:      make(map[*client]bool),
+		command:      make(chan []byte, 128),
+		register:     make(chan *client, 128),
+		unregister:   make(chan *client, 128),
+		broadcast:    make(chan []byte, 1024),
+		bm:           nil, // Set later
+		agentMsg:     make(chan AgentMsg, 1024),
+		onEvent:      nil,
+		onResponse:   nil,
+		testStore:    nil,
+		syncWaiters:  make(map[string]chan struct{}),
+		ctx:          ctx,
+		cancel:       cancel,
+		internalCmd:  make(chan func(), 128),
+		DataDir:      dataDir,
+		history:      make([][]byte, 0, 3333),
+		historyLimit: 3333,
 	}
 	h.bm = NewBaresipManager(h, dataDir, maxCalls, rtpNet, rtpPorts, rtpTimeout, useAlsa, sipListen)
 	return h
@@ -158,6 +182,14 @@ func (h *WsHub) Run() {
 			f()
 
 		case client := <-h.register:
+			// Replay history to the new client first
+			for _, msg := range h.history {
+				select {
+				case client.send <- msg:
+				default:
+					// drop it if buffer is full; should not happen with increased buffer
+				}
+			}
 			h.clients[client] = true
 
 		case client := <-h.unregister:
@@ -170,7 +202,7 @@ func (h *WsHub) Run() {
 			if h.trainSession != nil {
 				h.trainSession.recordRaw(msg)
 			}
-			h.broadcastToClients(msg)
+			h.recordAndBroadcast(msg)
 
 		case <-h.ctx.Done():
 			return
@@ -244,7 +276,7 @@ func (h *WsHub) Run() {
 				json.Unmarshal(e.RawJSON, &mEvent)
 				mEvent["_agent"] = am.Alias
 				enriched, _ := json.Marshal(mEvent)
-				h.broadcastToClients(enriched)
+				h.recordAndBroadcast(enriched)
 
 			case m.Response != nil:
 				r := *m.Response
@@ -267,7 +299,7 @@ func (h *WsHub) Run() {
 				mResp["type"] = "RESPONSE"
 				mResp["param"] = r.Data
 				enriched, _ := json.Marshal(mResp)
-				h.broadcastToClients(enriched)
+				h.recordAndBroadcast(enriched)
 
 			case m.Log != "":
 				l := m.Log
@@ -283,7 +315,7 @@ func (h *WsHub) Run() {
 				if h.trainSession != nil {
 					h.trainSession.recordRaw(msg)
 				}
-				h.broadcastToClients(msg)
+				h.recordAndBroadcast(msg)
 
 			case m.SIP != "":
 				s := m.SIP
@@ -300,12 +332,11 @@ func (h *WsHub) Run() {
 				if h.trainSession != nil {
 					h.trainSession.recordRaw(msg)
 				}
-				h.broadcastToClients(msg)
+				h.recordAndBroadcast(msg)
 			}
 		}
 	}
 }
-
 
 func (h *WsHub) executeSmartCommand(cmd string) {
 	h.BroadcastCommandHint(cmd)
@@ -382,7 +413,7 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 				}
 			}
 		}
-		
+
 		if alias != "" {
 			// Stop existing agent if it already exists to ensure fresh config for uanew
 			if _, ok := h.bm.GetAgent(alias); ok {

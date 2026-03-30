@@ -53,6 +53,8 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 
 	// REST API handlers for testfile and project management
 	mux.HandleFunc("/api/projects", AuthMiddleware(HandleAPIProjects(hub)))
+	mux.HandleFunc("/api/projects/rename", AuthMiddleware(HandleAPIProjectRename(hub)))
+	mux.HandleFunc("/api/projects/clone", AuthMiddleware(HandleAPIProjectClone(hub)))
 	mux.HandleFunc("/api/testfiles", AuthMiddleware(HandleAPITestfiles(hub)))
 	mux.HandleFunc("/api/testfile", AuthMiddleware(HandleAPITestfile(hub)))
 	mux.HandleFunc("/api/testfile/rename", AuthMiddleware(HandleAPITestfileRename(hub)))
