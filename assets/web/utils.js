@@ -282,44 +282,109 @@ function applyOnlyResultsFilterFromCheckbox(onlyResultsEl) {
 
 function initResizer(resizer, topRow, bottomRow) {
   if (!resizer || !topRow || !bottomRow) return;
+
+  var minTopPx = 100;
+  var minBottomPx = 100;
   var isResizing = false;
+  var activePointerId = null;
+  var latestClientY = 0;
+  var ticking = false;
+  var topPx = 0;
+  var lastAppliedTopPx = -1;
+  var rootStyle = document.documentElement.style;
+  var ro = null;
 
-  resizer.addEventListener("mousedown", function (e) {
-    isResizing = true;
-    document.body.classList.add("resizing");
-    document.body.style.cursor = "ns-resize";
-    e.preventDefault();
-  });
+  function clampTopPx(px, totalH) {
+    var min = minTopPx;
+    var max = Math.max(min, totalH - minBottomPx);
+    if (px < min) return min;
+    if (px > max) return max;
+    return px;
+  }
 
-  let ticking = false;
-  document.addEventListener("mousemove", function (e) {
-    if (!isResizing || ticking) return;
+  function totalHeight() {
+    return document.body.clientHeight || window.innerHeight || 0;
+  }
 
+  function applyTopPx(px) {
+    if (px === lastAppliedTopPx) return;
+    rootStyle.setProperty("--split-top", px + "px");
+    lastAppliedTopPx = px;
+  }
+
+  function scheduleApply() {
+    if (ticking) return;
     ticking = true;
     requestAnimationFrame(function () {
-      var totalH = document.body.clientHeight;
-      var topH = e.clientY;
-      if (topH < 100) topH = 100;
-      if (totalH - topH < 100) topH = totalH - 100;
-      var topPct = (topH / totalH) * 100;
-
-      document.documentElement.style.setProperty("--split-top", topPct + "%");
-      document.documentElement.style.setProperty(
-        "--split-bottom",
-        100 - topPct + "%",
-      );
-
+      var h = totalHeight();
+      topPx = clampTopPx(latestClientY, h);
+      applyTopPx(topPx);
       ticking = false;
     });
+  }
+
+  function startResize(e) {
+    isResizing = true;
+    activePointerId = e.pointerId;
+    latestClientY = e.clientY;
+    document.body.classList.add("resizing");
+    document.body.style.cursor = "ns-resize";
+    if (resizer.setPointerCapture) {
+      resizer.setPointerCapture(activePointerId);
+    }
+    scheduleApply();
+    e.preventDefault();
+  }
+
+  function stopResize() {
+    if (!isResizing) return;
+    isResizing = false;
+    if (resizer.releasePointerCapture && activePointerId != null) {
+      try {
+        resizer.releasePointerCapture(activePointerId);
+      } catch (_) {}
+    }
+    activePointerId = null;
+    document.body.classList.remove("resizing");
+    document.body.style.cursor = "";
+  }
+
+  resizer.addEventListener("pointerdown", function (e) {
+    if (e.button !== 0) return;
+    startResize(e);
   });
 
-  document.addEventListener("mouseup", function () {
-    if (isResizing) {
-      isResizing = false;
-      document.body.classList.remove("resizing");
-      document.body.style.cursor = "";
-    }
+  resizer.addEventListener("pointermove", function (e) {
+    if (!isResizing) return;
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    latestClientY = e.clientY;
+    scheduleApply();
   });
+
+  resizer.addEventListener("pointerup", function (e) {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    stopResize();
+  });
+
+  resizer.addEventListener("pointercancel", function (e) {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    stopResize();
+  });
+
+  window.addEventListener("blur", stopResize);
+
+  if (window.ResizeObserver) {
+    ro = new ResizeObserver(function () {
+      var h = totalHeight();
+      topPx = clampTopPx(topPx || Math.round(h / 2), h);
+      applyTopPx(topPx);
+    });
+    ro.observe(document.body);
+  }
+
+  var initialH = totalHeight();
+  topPx = clampTopPx(Math.round(initialH / 2), initialH);
+  applyTopPx(topPx);
 }
 
 function computeLCSDiff(aItems, bItems) {

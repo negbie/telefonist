@@ -1,8 +1,11 @@
 /* style.css */
 
 :root {
-    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --font-sans:
+        system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --font-mono:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
     --lh-main: 1.7;
     --lh-cmd: 1.15;
     --bg: #f7f7f8;
@@ -13,7 +16,6 @@
     --radius: 8px;
     --input-radius: 8px;
     --split-top: 50%;
-    --split-bottom: 50%;
 }
 
 *,
@@ -80,7 +82,7 @@ pre {
 }
 
 #bottom-row {
-    flex: 1 1 var(--split-bottom);
+    flex: 1 1 calc(100% - var(--split-top));
     display: flex;
     flex-direction: row;
     overflow: hidden;
@@ -140,19 +142,27 @@ pre {
 }
 
 /* PASS/FAIL Highlights in Flow */
-details.event>summary .evt-peer.pass {
+details.event > summary .evt-peer.pass {
     color: #0f7b0f;
     font-weight: 600;
 }
 
-details.event>summary .evt-peer.fail {
+details.event > summary .evt-peer.fail {
     color: #b00020;
     font-weight: 600;
 }
 
 /* Filter: show only test/testfile + testfiles (management) messages */
-body[data-only-tests="1"] #flow .list:not([data-token="test"]):not([data-token="testfile"]):not([data-token="testfiles"]),
-body[data-only-tests="1"] #flow .run-separator:not([data-token="test"]):not([data-token="testfile"]):not([data-token="testfiles"]) {
+body[data-only-tests="1"]
+    #flow
+    .list:not([data-token="test"]):not([data-token="testfile"]):not(
+        [data-token="testfiles"]
+    ),
+body[data-only-tests="1"]
+    #flow
+    .run-separator:not([data-token="test"]):not([data-token="testfile"]):not(
+        [data-token="testfiles"]
+    ) {
     display: none !important;
 }
 
@@ -248,11 +258,22 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     cursor: pointer;
     user-select: none;
 }
-.run-separator.start { color: #8b5cf6; }
-.run-separator.end-pass { color: #10b981; }
-.run-separator.end-fail { color: #ef4444; }
-.run-separator.cmd { color: #8b5cf6; font-size: 11px; }
-.run-separator.cmd:hover { color: #7c3aed; }
+.run-separator.start {
+    color: #8b5cf6;
+}
+.run-separator.end-pass {
+    color: #10b981;
+}
+.run-separator.end-fail {
+    color: #ef4444;
+}
+.run-separator.cmd {
+    color: #8b5cf6;
+    font-size: 11px;
+}
+.run-separator.cmd:hover {
+    color: #7c3aed;
+}
 
 /* SIP Action Buttons */
 .sip-actions {
@@ -281,7 +302,6 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     border-color: #2563eb;
 }
 
-
 /* Download Buttons */
 .download-container {
     text-align: center;
@@ -305,8 +325,11 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     border-color: #9ca3af;
 }
 /* Optimization during resizing */
-body.resizing * {
-    pointer-events: none !important;
+body.resizing #top-row,
+body.resizing #bottom-row,
+body.resizing #flow,
+body.resizing #log-view,
+body.resizing #sip-view {
     user-select: none !important;
     transition: none !important;
 }
