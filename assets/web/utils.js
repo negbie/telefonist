@@ -41,7 +41,10 @@ function scrollToBottom(el) {
 
 function trimChildrenToMax(parent, max) {
   if (!parent || !max || max <= 0) return;
-  while (parent.children && parent.children.length > max) {
+  var children = parent.children;
+  if (!children) return;
+  var overflow = children.length - max;
+  for (var i = 0; i < overflow; i++) {
     parent.removeChild(parent.firstChild);
   }
 }
@@ -51,6 +54,19 @@ function ensureElement(parent, tag, className) {
   if (className) el.className = className;
   parent.appendChild(el);
   return el;
+}
+
+function appendAndMaintain(container, el, opts) {
+  if (!container || !el) return;
+  var options = opts || {};
+  var maxItems = options.maxItems || 0;
+  var autoscroll = !!options.autoscroll;
+
+  container.appendChild(el);
+  trimChildrenToMax(container, maxItems);
+  if (autoscroll) {
+    container.scrollTop = container.scrollHeight;
+  }
 }
 
 function tagToken(el, token) {
@@ -77,8 +93,12 @@ function escapeHTML(str) {
 
 function wireSearchFilter(inputEl, containerEl, selector) {
   if (!inputEl || !containerEl) return;
+  var lastFilter = null;
   var apply = function () {
     var filter = (inputEl.value || "").toLowerCase();
+    if (filter === lastFilter) return;
+    lastFilter = filter;
+
     var nodes = containerEl.querySelectorAll(selector);
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
@@ -344,6 +364,7 @@ window.isNearBottom = isNearBottom;
 window.scrollToBottom = scrollToBottom;
 window.trimChildrenToMax = trimChildrenToMax;
 window.ensureElement = ensureElement;
+window.appendAndMaintain = appendAndMaintain;
 window.tagToken = tagToken;
 window.sanitizeTestfileName = sanitizeTestfileName;
 window.escapeHTML = escapeHTML;

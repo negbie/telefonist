@@ -22,7 +22,30 @@ function createSocketHandler(wsURL, callbacks) {
   };
 
   conn.onmessage = function (evt) {
-    var messages = safeText(evt.data).split("\n");
+    var payload = safeText(evt.data);
+
+    // Fast path: most frames are a single JSON object.
+    if (payload.indexOf("\n") === -1) {
+      if (payload.length < MIN_JSON_LINE_LENGTH) return;
+
+      var parsedSingle;
+      try {
+        parsedSingle = JSON.parse(payload);
+      } catch (e) {
+        return;
+      }
+
+      var singleEvent = normalizeEvent(parsedSingle);
+      if (!singleEvent) return;
+
+      if (callbacks.onMessage) {
+        callbacks.onMessage(singleEvent);
+      }
+      return;
+    }
+
+    // Fallback: handle newline-delimited JSON payloads.
+    var messages = payload.split("\n");
     for (var i = 0; i < messages.length; i++) {
       if (messages[i].length < MIN_JSON_LINE_LENGTH) continue;
 
