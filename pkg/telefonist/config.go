@@ -53,7 +53,7 @@ func CreateConfig(dataDir string, maxCalls uint, rtpNet, rtpPorts string, rtpTim
 	// Update data paths
 	absDataDir, _ := filepath.Abs(dataDir)
 	c = regexp.MustCompile(`(?m)^audio_path\s+sounds`).ReplaceAllString(c, "audio_path              "+filepath.Join(absDataDir, "sounds"))
-	
+
 	if recordsDir == "" {
 		recordsDir = filepath.Join(absDataDir, "recorded_temp")
 	} else {

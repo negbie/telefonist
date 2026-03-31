@@ -33,7 +33,10 @@ func sendResultWebhook(webhookUrl string, fileName, projectName string, total in
 		},
 	}
 
-	data, _ := json.Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 	return postWebhook(webhookUrl, string(data))
 }
 

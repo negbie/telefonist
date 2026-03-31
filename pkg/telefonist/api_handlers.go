@@ -686,12 +686,12 @@ func generatePcap(events []map[string]interface{}) []byte {
 		// IP Header
 		ipTotalLen := uint16(28 + len(payload)) // 20 ip + 8 udp + payload
 		ipHeader := []byte{
-			0x45, 0x00,                                          // Version/IHL, TOS
-			byte(ipTotalLen >> 8), byte(ipTotalLen),              // Total Length
-			0x00, 0x01,                                          // ID
-			0x40, 0x00,                                          // Flags (DF), Fragment
-			0x40, 17,                                            // TTL, Protocol (UDP)
-			0x00, 0x00,                                          // Checksum (filled below)
+			0x45, 0x00, // Version/IHL, TOS
+			byte(ipTotalLen >> 8), byte(ipTotalLen), // Total Length
+			0x00, 0x01, // ID
+			0x40, 0x00, // Flags (DF), Fragment
+			0x40, 17, // TTL, Protocol (UDP)
+			0x00, 0x00, // Checksum (filled below)
 			srcIP.To4()[0], srcIP.To4()[1], srcIP.To4()[2], srcIP.To4()[3],
 			dstIP.To4()[0], dstIP.To4()[1], dstIP.To4()[2], dstIP.To4()[3],
 		}

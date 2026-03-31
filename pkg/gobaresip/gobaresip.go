@@ -343,7 +343,7 @@ func (b *Baresip) connectCtrl() error {
 	b.ctrlConn, err = net.Dial("tcp", b.ctrlAddr)
 	if err != nil {
 		atomic.StoreUint32(&b.ctrlConnAlive, 0)
-		return fmt.Errorf("%v: please make sure ctrl_tcp is enabled", err)
+		return fmt.Errorf("%w: please make sure ctrl_tcp is enabled", err)
 	}
 
 	b.ctrlStream = newReader(b.ctrlConn)
@@ -405,7 +405,7 @@ func (b *Baresip) read() {
 		} else if bytes.Contains(msg, responseMarker) {
 			var r ResponseMsg
 			if err := json.Unmarshal(msg, &r); err != nil {
-				log.Println(err, string(msg)) 
+				log.Println(err, string(msg))
 				continue
 			}
 			r.RawJSON = msg

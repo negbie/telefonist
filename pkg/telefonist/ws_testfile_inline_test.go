@@ -31,13 +31,13 @@ case1: USER says GREETING
 	// Sequence: alice says MSG, USER_EMAIL
 	// Then MSG -> Hello USER
 	// Sequence: alice says Hello USER, alice@example.com
-	
+
 	// Wait, since we replacement in one pass over keys, recursive defines ONLY work if the replaced text contains a key that comes LATER in the sorted key list.
 	// USER_EMAIL (10)
 	// GREETING (8)
 	// USER (4)
 	// MSG (3)
-	
+
 	// USER says GREETING
 	// i=0: USER_EMAIL (no match)
 	// i=1: GREETING -> MSG, USER_EMAIL
@@ -46,7 +46,7 @@ case1: USER says GREETING
 	//   Sequence: alice says MSG, USER_EMAIL
 	// i=3: MSG -> Hello USER
 	//   Sequence: alice says Hello USER, USER_EMAIL
-	
+
 	// If we want FULLY recursive, we'd need multiple passes.
 	// But let's see what the current fix does for the sorting issue.
 }

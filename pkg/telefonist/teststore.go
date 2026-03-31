@@ -822,7 +822,7 @@ func (s *TestStore) RenameProject(ctx context.Context, oldName, newName string) 
 	if newP == "" {
 		newP = "default"
 	}
-	
+
 	oldDir := filepath.Join(s.wavDir, oldP)
 	newDir := filepath.Join(s.wavDir, newP)
 

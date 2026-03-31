@@ -176,8 +176,10 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	}
 
 	if err != nil {
-		cmd.Process.Kill()
-		return fmt.Errorf("failed to connect to agent %s: %v", alias, err)
+		if killErr := cmd.Process.Kill(); killErr != nil {
+			log.Printf("hub: failed to kill agent process %s: %v", alias, killErr)
+		}
+		return fmt.Errorf("failed to connect to agent %s: %w", alias, err)
 	}
 
 	agent := &Agent{

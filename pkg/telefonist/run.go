@@ -38,7 +38,6 @@ func newBaresipInstance(f AppFlags) (*gobaresip.Baresip, error) {
 	)
 }
 
-
 func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux := http.NewServeMux()
 
@@ -110,7 +109,6 @@ func Run() error {
 	}
 	SetSessionCookieName("session_" + port)
 
-
 	// Setup websocket hub
 	hub := NewWsHub(f.DataDir, f.MaxCalls, f.RtpNet, f.RtpPorts, f.RtpTimeout, f.UseAlsa, f.SipListen)
 
@@ -127,7 +125,6 @@ func Run() error {
 		log.Printf("teststore: enabled: %s", store.Path())
 	}
 
-
 	go hub.Run()
 
 	startHTTPServer(f, hub)
@@ -140,4 +137,3 @@ func Run() error {
 	hub.bm.CloseAll()
 	return nil
 }
-

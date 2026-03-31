@@ -32,7 +32,9 @@ func statusJSON(kvPairs ...string) string {
 	for i := 0; i < len(kvPairs); i += 2 {
 		m[kvPairs[i]] = kvPairs[i+1]
 	}
-	b, _ := json.Marshal(m)
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
 	return string(b)
 }
-

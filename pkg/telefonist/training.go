@@ -46,10 +46,10 @@ func OrderIndependentHash(s string) (string, []string) {
 // through the WsHub's internalCmd channel (actor/monitor pattern).
 // Do NOT add a mutex here — the hub's single goroutine owns this value.
 type TrainSession struct {
-	active        bool
-	outputBuf     bytes.Buffer // For hashing (filtered/clean)
-	fullBuf       bytes.Buffer // For downloads/storage (raw)
-	ignoredEvents []string
+	active         bool
+	outputBuf      bytes.Buffer // For hashing (filtered/clean)
+	fullBuf        bytes.Buffer // For downloads/storage (raw)
+	ignoredEvents  []string
 	acceptedEvents []string
 	failMsg        string
 }

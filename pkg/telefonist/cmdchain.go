@@ -174,7 +174,7 @@ func isKnownCommand(s string) bool {
 		return false
 	}
 	firstWord := strings.SplitN(s, " ", 2)[0]
-	
+
 	// Check for agent: prefix (e.g. ua1:dial)
 	if idx := strings.Index(firstWord, ":"); idx != -1 {
 		// Ensure it's not a SIP URI (which starts with sip:)
