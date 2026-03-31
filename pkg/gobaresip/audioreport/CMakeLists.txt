@@ -7,13 +7,13 @@ cmake_minimum_required(VERSION 3.10)
 # - register module name into MODULES_DETECTED so parent can pick it up
 # - build as OBJECT when STATIC is enabled, else as a loadable MODULE (.so)
 
-project(rtcpsummary C)
+project(audioreport C)
 
 list(APPEND MODULES_DETECTED ${PROJECT_NAME})
 set(MODULES_DETECTED ${MODULES_DETECTED} PARENT_SCOPE)
 
 set(SRCS
-  rtcpsummary.c
+  audioreport.c
 )
 
 if(STATIC)

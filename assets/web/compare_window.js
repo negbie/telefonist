@@ -386,8 +386,14 @@ window.initCompareWindow = (deps) => {
 
                 fetch(`/api/testrun/wavs?id=${id}`).then(r => r.json()).then(wj => {
                     if (wj.status === "finished") {
-                        if (side === "a") wavsA = wj.items || [];
-                        else wavsB = wj.items || [];
+                        const items = wj.items || [];
+                        items.sort((a, b) => {
+                            const tsA = (a.filename.match(/\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/) || [""])[0];
+                            const tsB = (b.filename.match(/\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/) || [""])[0];
+                            return tsA.localeCompare(tsB) || a.filename.localeCompare(b.filename);
+                        });
+                        if (side === "a") wavsA = items;
+                        else wavsB = items;
                         applyCurrentMode();
                     }
                 });

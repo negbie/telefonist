@@ -277,7 +277,7 @@ module_app              ctrl_tcp.so
 #module_app             httpreq.so
 #module_app             multicast.so
 module_app              netroam.so
-module_app              rtcpsummary.so
+module_app              audioreport.so
 
 
 

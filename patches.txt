@@ -23,7 +23,7 @@ replace:
 	default: return "?";
 with:
 	case BEVENT_CUSTOM:               return "CUSTOM";
-	case BEVENT_RTCP_SUMMARY:         return "RTCP_SUMMARY";
+	case BEVENT_AUDIO_REPORT:         return "AUDIO_REPORT";
 	default: return "?";
 
 
@@ -33,7 +33,7 @@ replace:
 	BEVENT_SIPSESS_CONN,
 with:
 	BEVENT_CUSTOM,
-	BEVENT_RTCP_SUMMARY,
+	BEVENT_AUDIO_REPORT,
 	BEVENT_SIPSESS_CONN,
 
 

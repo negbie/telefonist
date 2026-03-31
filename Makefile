@@ -85,7 +85,7 @@ HDR_STAGE_REM := $(STAGE_REM)/include/rem.h
 HDR_STAGE_BARESIP := $(STAGE_BARESIP)/include/baresip.h
 
 # Common module sets
-BASE_MODULES := account contact cons ctrl_tcp debug_cmd echo httpd menu mwi netroam natpmp presence ice stun turn rtcpsummary serreg uuid stdio
+BASE_MODULES := account contact cons ctrl_tcp debug_cmd echo httpd menu mwi netroam natpmp presence ice stun turn audioreport serreg uuid stdio
 AUDIO_MODULES_NOALSA := aubridge aufile ausine auconv auresamp mixminus sndfile
 AUDIO_MODULES_ALSA := alsa $(AUDIO_MODULES_NOALSA)
 
@@ -196,18 +196,18 @@ stage_patches: $(BARESIP_DIR)
 	fi
 
 ###############################################################################
-# Custom rtcpsummary module staging (copy into vendored baresip tree)
+# Custom audioreport module staging (copy into vendored baresip tree)
 ###############################################################################
-.PHONY: stage_rtcpsummary
-stage_rtcpsummary: $(BARESIP_DIR)
+.PHONY: stage_audioreport
+stage_audioreport: $(BARESIP_DIR)
 	@set -eu; \
-	if [ ! -d "$(ROOT_DIR)/pkg/gobaresip/rtcpsummary" ]; then \
-	  echo "ERROR: custom rtcpsummary module directory not found at: $(ROOT_DIR)/pkg/gobaresip/rtcpsummary" >&2; \
+	if [ ! -d "$(ROOT_DIR)/pkg/gobaresip/audioreport" ]; then \
+	  echo "ERROR: custom audioreport module directory not found at: $(ROOT_DIR)/pkg/gobaresip/audioreport" >&2; \
 	  exit 1; \
 	fi; \
-	src_dir="$(ROOT_DIR)/pkg/gobaresip/rtcpsummary"; \
+	src_dir="$(ROOT_DIR)/pkg/gobaresip/audioreport"; \
 	mkdir -p "$(BARESIP_DIR)/modules"; \
-	rm -rf "$(BARESIP_DIR)/modules/rtcpsummary"; \
+	rm -rf "$(BARESIP_DIR)/modules/audioreport"; \
 	cp -a "$$src_dir" "$(BARESIP_DIR)/modules/"
 
 ###############################################################################
@@ -330,9 +330,9 @@ $(REM_LIB): $(REM_DIR) $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO) | $(GIT_DIR)
 	cp build/librem.a "$(REM_LIB)"
 
 # Ensure our custom modules are present in the baresip/modules tree before building baresip
-$(BARESIP_LIB): stage_g722 stage_rtcpsummary stage_presence stage_aufile
-$(BARESIP_LIB).alsa: stage_g722 stage_rtcpsummary stage_presence stage_aufile
-$(BARESIP_EXE): stage_g722 stage_rtcpsummary stage_presence stage_aufile
+$(BARESIP_LIB): stage_g722 stage_audioreport stage_presence stage_aufile
+$(BARESIP_LIB).alsa: stage_g722 stage_audioreport stage_presence stage_aufile
+$(BARESIP_EXE): stage_g722 stage_audioreport stage_presence stage_aufile
 
 # After (re)building baresip, stage any produced shared-object modules for runtime dlopen()
 all: stage_modules

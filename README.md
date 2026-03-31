@@ -128,7 +128,7 @@ Testfiles are line-based and support the following syntax:
    _define ua1 sip:alice@192.168.1.100
    _define ua2 sip:bob@192.168.1.100
    _define ua3 sip:charlie@192.168.1.100
-   _accept CALL_RINGING, CALL_ESTABLISHED, CALL_RTPESTAB, CALL_CLOSED, RTCP_SUMMARY
+   _accept CALL_RINGING, CALL_ESTABLISHED, CALL_RTPESTAB, CALL_CLOSED, AUDIO_REPORT
    _run 1
 
    uanew <ua1;transport=udp>;auth_pass=secret1;input_wav=alice.wav
