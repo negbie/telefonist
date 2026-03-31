@@ -13,8 +13,6 @@
     const logViewEl = document.getElementById("log-view");
     const sipViewEl = document.getElementById("sip-view");
 
-
-
     const onlyTestsEl = document.getElementById("only-tests");
     const autoScrollEl = document.getElementById("autoscroll");
     const collapseAllEl = document.getElementById("collapse-all");
@@ -34,38 +32,43 @@
     });
 
     setBodyFlowView();
-    
+
     // Centralized search filtering
     const searchInput = document.getElementById("search");
     if (searchInput) {
-        window.wireSearchFilter(searchInput, document.body, ".list");
+      window.wireSearchFilter(searchInput, document.body, ".list");
     }
 
     const searchSipInput = document.getElementById("search-sip");
     if (searchSipInput && sipViewEl) {
-        window.wireSearchFilter(searchSipInput, sipViewEl, ".sip-ladder-row");
+      window.wireSearchFilter(searchSipInput, sipViewEl, ".sip-ladder-row");
     }
 
     const searchLogInput = document.getElementById("search-log");
     if (searchLogInput && logViewEl) {
-        window.wireSearchFilter(searchLogInput, logViewEl, ".log-row");
+      window.wireSearchFilter(searchLogInput, logViewEl, ".log-row");
     }
 
-    if (onlyTestsEl) {
-      applyOnlyTestsFilterFromCheckbox(onlyTestsEl);
-      onlyTestsEl.onchange = () => applyOnlyTestsFilterFromCheckbox(onlyTestsEl);
+    function wireCheckbox(el, applyFn) {
+      if (!el || !applyFn) return;
+      applyFn(el);
+      el.onchange = function () {
+        applyFn(el);
+      };
     }
+
+    wireCheckbox(onlyTestsEl, applyOnlyTestsFilterFromCheckbox);
 
     const onlyResultsEl = document.getElementById("only-results");
-    if (onlyResultsEl) {
-      applyOnlyResultsFilterFromCheckbox(onlyResultsEl);
-      onlyResultsEl.onchange = () => applyOnlyResultsFilterFromCheckbox(onlyResultsEl);
-    }
+    wireCheckbox(onlyResultsEl, applyOnlyResultsFilterFromCheckbox);
 
-    const flow = flowEl && window.createSequentialFlowRenderer ? createSequentialFlowRenderer(flowEl, getOptions) : null;
+    const flow =
+      flowEl && window.createSequentialFlowRenderer
+        ? window.createSequentialFlowRenderer(flowEl, getOptions)
+        : null;
 
     const clearMessages = () => {
-      [flowEl, logViewEl, sipViewEl].forEach(el => {
+      [flowEl, logViewEl, sipViewEl].forEach((el) => {
         if (!el) return;
         el.innerHTML = "";
         el.scrollTop = 0;
@@ -92,17 +95,19 @@
     const sipComparePanel = document.getElementById("sip-compare-panel");
     const closeSipCompareBtn = document.getElementById("close-sip-compare");
     if (window.initSipCompare) {
-        window.initSipCompare({ sipViewEl, sipComparePanel, closeSipCompareBtn });
+      window.initSipCompare({ sipViewEl, sipComparePanel, closeSipCompareBtn });
     }
 
     if (collapseAllEl && flow) {
-      collapseAllEl.onchange = () => flow.setCollapseAll(!!collapseAllEl.checked);
+      collapseAllEl.onchange = () =>
+        flow.setCollapseAll(!!collapseAllEl.checked);
     }
-
 
     const socketWrapper = {
       isOpen: () => socket && socket.isOpen(),
-      send: (m) => { if (socket && socket.isOpen()) socket.send(m); }
+      send: (m) => {
+        if (socket && socket.isOpen()) socket.send(m);
+      },
     };
 
     let tfManager = null;
@@ -118,11 +123,13 @@
         testfilesRenameEl: document.getElementById("testfiles-rename"),
         testfilesDeleteEl: document.getElementById("testfiles-delete"),
         testfileHighlightsEl: document.getElementById("testfile-highlights"),
-        renderError: (j) => { if (flow) flow.renderEvent(j); },
+        renderError: (j) => {
+          if (flow) flow.renderEvent(j);
+        },
         onActiveFileChange: (key) => {
           const [project, name] = key ? key.split(":") : ["", ""];
           EventBus.emit("testfile:changed", name, project);
-        }
+        },
       });
       window._tfManager = tfManager;
     }
@@ -137,8 +144,10 @@
     const setBottomMode = (mode) => {
       if (!bottomRow) return;
       bottomRow.setAttribute("data-bottom-mode", mode);
-      if (btnModeTests) btnModeTests.classList.toggle("active", mode === "tests");
-      if (btnModeCompare) btnModeCompare.classList.toggle("active", mode === "compare");
+      if (btnModeTests)
+        btnModeTests.classList.toggle("active", mode === "tests");
+      if (btnModeCompare)
+        btnModeCompare.classList.toggle("active", mode === "compare");
       if (mode === "compare") {
         const key = tfManager?.getActiveKey?.() || "";
         const [project, name] = key ? key.split(":") : ["", ""];
@@ -153,10 +162,10 @@
     const testControls = document.getElementById("test-controls");
     const sidebarToggle = document.getElementById("sidebar-toggle");
     if (sidebarToggle && testControls) {
-        sidebarToggle.onclick = (e) => {
-            e.stopPropagation();
-            testControls.classList.toggle("expanded");
-        };
+      sidebarToggle.onclick = (e) => {
+        e.stopPropagation();
+        testControls.classList.toggle("expanded");
+      };
     }
 
     // WebSocket Handler
@@ -181,26 +190,38 @@
           }
           // Only return if it's a pure testfile/projects management message.
           // Test status updates (running, finished, progress) should still be rendered in the flow.
-          if (!j.status || (j.status !== "running" && j.status !== "finished" && j.status !== "progress")) {
+          if (
+            !j.status ||
+            (j.status !== "running" &&
+              j.status !== "finished" &&
+              j.status !== "progress")
+          ) {
             return;
           }
         }
 
-        if ((j.token === "testfile" || j.token === "test") && j.status === "running") {
+        if (
+          (j.token === "testfile" || j.token === "test") &&
+          j.status === "running"
+        ) {
           if (sipViewEl) {
             sipViewEl._msgCount = 0;
-            sipViewEl.querySelectorAll(".sip-ladder-row.selected").forEach(el => el.classList.remove("selected"));
+            sipViewEl
+              .querySelectorAll(".sip-ladder-row.selected")
+              .forEach((el) => el.classList.remove("selected"));
             if (window.updateSipCompare) window.updateSipCompare();
           }
         }
 
         const renderContext = { logViewEl, sipViewEl, flowEl, searchLogInput };
         if (window.renderLogEvent?.(j, renderContext, getOptions)) return;
-        if (window.renderSipEvent?.(j, { sipViewEl, searchSipInput }, getOptions)) return;
+        if (
+          window.renderSipEvent?.(j, { sipViewEl, searchSipInput }, getOptions)
+        )
+          return;
 
         if (flow) flow.renderEvent(j);
-      }
+      },
     });
-
   };
 })();
