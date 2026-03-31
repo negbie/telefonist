@@ -85,11 +85,9 @@ window.renderSipEvent = function (j, elements, getOptions) {
     arrowCont.className = "sip-arrow-container";
 
     var localNodeEl = document.createElement("div");
-    localNodeEl.className = "sip-node";
-    localNodeEl.style.textAlign = "center";
+    localNodeEl.className = "sip-node sip-node-center";
     var remoteNodeEl = document.createElement("div");
-    remoteNodeEl.className = "sip-node";
-    remoteNodeEl.style.textAlign = "center";
+    remoteNodeEl.className = "sip-node sip-node-center";
 
     var srcNodeHtml =
       src +
@@ -162,17 +160,9 @@ window.renderSipEvent = function (j, elements, getOptions) {
     }
 
     var headEl = document.createElement("div");
-    headEl.style.position = "absolute";
-    headEl.style.top = "-4px";
-    headEl.style.borderTop = "5px solid transparent";
-    headEl.style.borderBottom = "5px solid transparent";
-    if (dir === "TX") {
-      headEl.style.right = "-2px";
-      headEl.style.borderLeft = "6px solid #000";
-    } else {
-      headEl.style.left = "-2px";
-      headEl.style.borderRight = "6px solid #000";
-    }
+    headEl.className =
+      "sip-arrow-head " +
+      (dir === "TX" ? "sip-arrow-head-tx" : "sip-arrow-head-rx");
 
     lineEl.appendChild(methodTopEl);
     if (methodBotEl) lineEl.appendChild(methodBotEl);
@@ -211,6 +201,19 @@ window.renderSipEvent = function (j, elements, getOptions) {
 window.initSipCompare = function (elements) {
   const { sipViewEl, sipComparePanel, closeSipCompareBtn } = elements;
 
+  const compareLeftRoot = document.getElementById("sip-compare-left");
+  const compareRightRoot = document.getElementById("sip-compare-right");
+  const compareLeftHeader =
+    compareLeftRoot?.querySelector(".sip-ladder-header");
+  const compareRightHeader =
+    compareRightRoot?.querySelector(".sip-ladder-header");
+  const compareLeftContent = document.getElementById(
+    "sip-compare-content-left",
+  );
+  const compareRightContent = document.getElementById(
+    "sip-compare-content-right",
+  );
+
   if (closeSipCompareBtn) {
     closeSipCompareBtn.onclick = () => {
       if (sipViewEl) {
@@ -231,24 +234,36 @@ window.initSipCompare = function (elements) {
     sipComparePanel.style.display = selected.length ? "flex" : "none";
     if (!selected.length) return;
 
-    [
-      { side: "left", c: "sip-compare-content-left", d: selected[0]?._sipData },
-      {
-        side: "right",
-        c: "sip-compare-content-right",
-        d: selected[1]?._sipData,
-      },
-    ].forEach((s) => {
-      const hEl = document
-        .getElementById(`sip-compare-${s.side}`)
-        ?.querySelector(".sip-ladder-header");
-      const cEl = document.getElementById(s.c);
-      if (hEl) hEl.textContent = s.d ? "(" + s.d.seq + ") " + s.d.method : "";
-      if (cEl) {
-        cEl.textContent = s.d ? s.d.raw : "";
-        if (cEl.parentElement)
-          cEl.parentElement.style.display = s.d ? "flex" : "none";
+    const leftData = selected[0]?._sipData;
+    const rightData = selected[1]?._sipData;
+
+    if (compareLeftHeader) {
+      compareLeftHeader.textContent = leftData
+        ? "(" + leftData.seq + ") " + leftData.method
+        : "";
+    }
+    if (compareRightHeader) {
+      compareRightHeader.textContent = rightData
+        ? "(" + rightData.seq + ") " + rightData.method
+        : "";
+    }
+
+    if (compareLeftContent) {
+      compareLeftContent.textContent = leftData ? leftData.raw : "";
+      if (compareLeftContent.parentElement) {
+        compareLeftContent.parentElement.style.display = leftData
+          ? "flex"
+          : "none";
       }
-    });
+    }
+
+    if (compareRightContent) {
+      compareRightContent.textContent = rightData ? rightData.raw : "";
+      if (compareRightContent.parentElement) {
+        compareRightContent.parentElement.style.display = rightData
+          ? "flex"
+          : "none";
+      }
+    }
   };
 };

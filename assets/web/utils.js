@@ -65,7 +65,10 @@ function appendAndMaintain(container, el, opts) {
   container.appendChild(el);
   trimChildrenToMax(container, maxItems);
   if (autoscroll) {
-    container.scrollTop = container.scrollHeight;
+    var targetScrollTop = container.scrollHeight - container.clientHeight;
+    if (container.scrollTop !== targetScrollTop) {
+      container.scrollTop = targetScrollTop;
+    }
   }
 }
 

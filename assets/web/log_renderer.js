@@ -60,11 +60,13 @@ window.renderLogEvent = (j, elements, getOptions) => {
 
     sep.onclick = () => {
       const attr = isStart ? "data-run-start-id" : "data-run-finish-id";
-      document
-        .querySelectorAll(`div[${attr}="${runId}"]`)
-        .forEach((el) =>
-          el.scrollIntoView({ behavior: "smooth", block: "center" }),
-        );
+      requestAnimationFrame(() => {
+        document
+          .querySelectorAll(`div[${attr}="${runId}"]`)
+          .forEach((el) =>
+            el.scrollIntoView({ behavior: "smooth", block: "center" }),
+          );
+      });
     };
 
     appendAndMaintain(container, sep);
@@ -135,11 +137,13 @@ window.renderLogEvent = (j, elements, getOptions) => {
         el.dataset.cmdId = j._cmdId;
         el.style.cursor = "pointer";
         el.onclick = () => {
-          document
-            .querySelectorAll(`div[data-cmd-id="${j._cmdId}"]`)
-            .forEach((e) =>
-              e.scrollIntoView({ behavior: "smooth", block: "center" }),
-            );
+          requestAnimationFrame(() => {
+            document
+              .querySelectorAll(`div[data-cmd-id="${j._cmdId}"]`)
+              .forEach((e) =>
+                e.scrollIntoView({ behavior: "smooth", block: "center" }),
+              );
+          });
         };
       }
       el.textContent = "─── " + safeText(j.param) + " ───";

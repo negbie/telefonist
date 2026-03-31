@@ -58,6 +58,10 @@
     max-width: 180px;
 }
 
+.sip-node-center {
+    text-align: center;
+}
+
 .sip-arrow-line {
     flex: 1;
     height: 2px;
@@ -71,13 +75,21 @@
     min-width: 50px;
 }
 
-.sip-arrow-head-right {
+.sip-arrow-head {
     position: absolute;
-    right: -2px;
     top: -4px;
     border-top: 5px solid transparent;
     border-bottom: 5px solid transparent;
+}
+
+.sip-arrow-head-tx {
+    right: -2px;
     border-left: 6px solid #cbd5e1;
+}
+
+.sip-arrow-head-rx {
+    left: -2px;
+    border-right: 6px solid #cbd5e1;
 }
 
 .sip-method-top,
