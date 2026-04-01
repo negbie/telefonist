@@ -77,6 +77,30 @@ Once started, open your browser to `http://localhost:8080` (or whatever ui_addre
 - A testfile editor to write and execute automated test sequences
 - A testfile compare browser to view past test runs (events and wav's) to compare them
 
+## REST API
+
+Telefonist provides a password-protected REST API for triggering automated test runs from external scripts or CI/CD pipelines.
+
+### Trigger Project Run
+
+Runs all testfiles associated with a specific project in alphabetical order.
+
+- **Endpoint**: `POST /api/project/run?name=<project_name>`
+- **Authentication**: Requires `X-API-Key` header with your `ui_admin_password` (default: `telefonist`).
+
+**Example using `curl`**:
+
+```bash
+curl -X POST "http://localhost:8080/api/project/run?name=my_project" \
+     -H "X-API-Key: telefonist"
+```
+
+**Responses**:
+- `200 OK`: Test run successfully started.
+- `401 Unauthorized`: Missing or incorrect `X-API-Key`.
+- `404 Not Found`: Project not found or has no testfiles.
+- `409 Conflict`: Another test run is already active.
+
 ## Architecture
 
 Telefonist follows a multi-process **Agents Architecture**:
