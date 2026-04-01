@@ -292,7 +292,6 @@ function initResizer(resizer, topRow, bottomRow) {
   var topPx = 0;
   var lastAppliedTopPx = -1;
   var rootStyle = document.documentElement.style;
-  var ro = null;
 
   function clampTopPx(px, totalH) {
     var min = minTopPx;
@@ -372,15 +371,6 @@ function initResizer(resizer, topRow, bottomRow) {
   });
 
   window.addEventListener("blur", stopResize);
-
-  if (window.ResizeObserver) {
-    ro = new ResizeObserver(function () {
-      var h = totalHeight();
-      topPx = clampTopPx(topPx || Math.round(h / 2), h);
-      applyTopPx(topPx);
-    });
-    ro.observe(document.body);
-  }
 
   var initialH = totalHeight();
   topPx = clampTopPx(Math.round(initialH / 2), initialH);

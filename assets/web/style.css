@@ -333,3 +333,9 @@ body.resizing #sip-view {
     user-select: none !important;
     transition: none !important;
 }
+
+/* Hide heavy expanded payload blocks while dragging splitter */
+body.resizing #flow pre.evt-json,
+body.resizing #sip-view .sip-details {
+    display: none !important;
+}
