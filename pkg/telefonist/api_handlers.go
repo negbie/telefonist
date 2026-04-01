@@ -830,7 +830,10 @@ func HandleAPIProjectRun(hub *WsHub, adminPassword string) http.HandlerFunc {
 		})
 
 		// Trigger batch run (asynchronously as it takes time)
-		go runTestfilesBatch(hub, batch)
+		if !runTestfilesBatch(hub, batch) {
+			http.Error(w, "cannot start test: another run is already active", http.StatusConflict)
+			return
+		}
 
 		jsonResponse(w, http.StatusOK, map[string]interface{}{
 			"status":  "finished",

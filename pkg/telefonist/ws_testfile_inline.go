@@ -80,18 +80,19 @@ func handleTestfileInlineCommand(h *WsHub, input string) {
 }
 
 // runTestfilesBatch executes multiple test files sequentially.
-func runTestfilesBatch(h *WsHub, batch []TestfileData) {
+// Returns true if the batch run was successfully started, false if another run is active.
+func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 	if len(batch) == 0 {
-		return
+		return false
 	}
 
 	if h == nil {
-		return
+		return false
 	}
 
 	if !h.inlineRunActive.CompareAndSwap(false, true) {
 		broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "message", "cannot start test: another run is already active"))
-		return
+		return false
 	}
 
 	go func() {
@@ -142,6 +143,8 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) {
 			}
 		}
 	}()
+
+	return true
 }
 
 func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, content string) {
