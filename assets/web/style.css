@@ -89,8 +89,7 @@ pre {
 }
 
 #bottom-row {
-    flex: none;
-    height: calc(100% - var(--split-top) - 6px);
+    flex: 1;
     display: flex;
     flex-direction: row;
     overflow: hidden;

@@ -316,8 +316,6 @@ function initResizer(resizer, topRow, bottomRow) {
       var px = clampTopPx(latestClientY, cachedTotalH);
       if (px !== lastAppliedTopPx) {
         if (topRowEl) topRowEl.style.height = px + "px";
-        if (bottomRowEl)
-          bottomRowEl.style.height = cachedTotalH - px - 6 + "px"; // 6 is resizer H
         lastAppliedTopPx = px;
       }
       ticking = false;
@@ -378,8 +376,6 @@ function initResizer(resizer, topRow, bottomRow) {
   var initialH = totalHeight();
   topPx = clampTopPx(Math.round(initialH / 2), initialH);
   if (topRowEl) topRowEl.style.height = topPx + "px";
-  if (bottomRowEl)
-    bottomRowEl.style.height = initialH - topPx - 6 + "px";
   lastAppliedTopPx = topPx;
 }
 
