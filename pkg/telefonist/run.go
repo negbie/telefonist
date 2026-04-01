@@ -63,6 +63,7 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/testrun/wav", AuthMiddleware(HandleAPITestrunWav(hub)))
 	mux.HandleFunc("/api/testrun/download", AuthMiddleware(HandleAPITestrunDownload(hub)))
 	mux.HandleFunc("/api/maintenance", AuthMiddleware(HandleAPIDatabaseMaintenance(hub.testStore)))
+	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UiAdminPassword))
 
 	// Static assets: all embedded web/* files are served automatically.
 	// New JS/CSS files added to web/ need no code changes here.

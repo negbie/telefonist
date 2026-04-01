@@ -774,6 +774,71 @@ func HandleAPIDatabaseMaintenance(ts *TestStore) http.HandlerFunc {
 	}
 }
 
+func HandleAPIProjectRun(hub *WsHub, adminPassword string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Header-based password protection
+		if r.Header.Get("X-API-Key") != adminPassword {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if hub.testStore == nil {
+			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
+			return
+		}
+
+		projectName := r.URL.Query().Get("name")
+		if projectName == "" {
+			http.Error(w, "project name required", http.StatusBadRequest)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// List all testfiles with content
+		all, err := hub.testStore.List(ctx, true)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		var batch []TestfileData
+		for _, tf := range all {
+			if tf.ProjectName == projectName {
+				batch = append(batch, TestfileData{
+					Name:        tf.Name,
+					ProjectName: tf.ProjectName,
+					Content:     tf.Content,
+				})
+			}
+		}
+
+		if len(batch) == 0 {
+			http.Error(w, "no testfiles found for project", http.StatusNotFound)
+			return
+		}
+
+		// Sort by name for deterministic order
+		sort.Slice(batch, func(i, j int) bool {
+			return batch[i].Name < batch[j].Name
+		})
+
+		// Trigger batch run (asynchronously as it takes time)
+		go runTestfilesBatch(hub, batch)
+
+		jsonResponse(w, http.StatusOK, map[string]interface{}{
+			"status":  "finished",
+			"message": fmt.Sprintf("started batch run for %d files in project %q", len(batch), projectName),
+		})
+	}
+}
+
 func jsonResponse(w http.ResponseWriter, code int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
