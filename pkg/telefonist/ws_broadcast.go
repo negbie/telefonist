@@ -1,6 +1,12 @@
 package telefonist
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+)
 
 // broadcastInfo broadcasts an informational JSON message to all connected WebSocket clients.
 //
@@ -37,4 +43,61 @@ func statusJSON(kvPairs ...string) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+var ansiRegex = regexp.MustCompile(`[\x1b\x9b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]`)
+
+func stripANSI(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
+
+func formatEventDetails(m map[string]interface{}) string {
+	var sb strings.Builder
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		if k == "event" || k == "time" || k == "_details" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		v := m[k]
+		if k == "data" {
+			if s, ok := v.(string); ok {
+				s = strings.TrimSpace(stripANSI(s))
+				lines := strings.Split(s, "\n")
+				for _, line := range lines {
+					trimmed := strings.TrimSpace(line)
+					if trimmed == "" {
+						continue
+					}
+					v = lines // use the slice for formatting
+					break
+				}
+			}
+		}
+
+		valStr := ""
+		switch val := v.(type) {
+		case []string:
+			valStr = strings.Join(val, "\n        ") // indent data lines
+		case string:
+			valStr = val
+		case []byte:
+			valStr = string(val)
+		default:
+			b, err := json.MarshalIndent(val, "", "  ")
+			if err == nil {
+				valStr = string(b)
+			} else {
+				valStr = fmt.Sprintf("%v", val)
+			}
+		}
+
+		prettyKey := strings.Title(k)
+		fmt.Fprintf(&sb, "%s: %s\n", prettyKey, valStr)
+	}
+	return strings.TrimSpace(sb.String())
 }

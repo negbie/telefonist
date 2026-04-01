@@ -291,7 +291,6 @@ function initResizer(resizer, topRow, bottomRow) {
   var ticking = false;
   var topPx = 0;
   var lastAppliedTopPx = -1;
-  var rootStyle = document.documentElement.style;
 
   function clampTopPx(px, totalH) {
     var min = minTopPx;
@@ -302,22 +301,25 @@ function initResizer(resizer, topRow, bottomRow) {
   }
 
   function totalHeight() {
-    return document.body.clientHeight || window.innerHeight || 0;
+    return window.innerHeight || 0;
   }
 
-  function applyTopPx(px) {
-    if (px === lastAppliedTopPx) return;
-    rootStyle.setProperty("--split-top", px + "px");
-    lastAppliedTopPx = px;
-  }
+
+  var cachedTotalH = 0;
+  var topRowEl = topRow;
+  var bottomRowEl = bottomRow;
 
   function scheduleApply() {
     if (ticking) return;
     ticking = true;
     requestAnimationFrame(function () {
-      var h = totalHeight();
-      topPx = clampTopPx(latestClientY, h);
-      applyTopPx(topPx);
+      var px = clampTopPx(latestClientY, cachedTotalH);
+      if (px !== lastAppliedTopPx) {
+        if (topRowEl) topRowEl.style.height = px + "px";
+        if (bottomRowEl)
+          bottomRowEl.style.height = cachedTotalH - px - 6 + "px"; // 6 is resizer H
+        lastAppliedTopPx = px;
+      }
       ticking = false;
     });
   }
@@ -326,6 +328,7 @@ function initResizer(resizer, topRow, bottomRow) {
     isResizing = true;
     activePointerId = e.pointerId;
     latestClientY = e.clientY;
+    cachedTotalH = totalHeight();
     document.body.classList.add("resizing");
     document.body.style.cursor = "ns-resize";
     if (resizer.setPointerCapture) {
@@ -374,7 +377,10 @@ function initResizer(resizer, topRow, bottomRow) {
 
   var initialH = totalHeight();
   topPx = clampTopPx(Math.round(initialH / 2), initialH);
-  applyTopPx(topPx);
+  if (topRowEl) topRowEl.style.height = topPx + "px";
+  if (bottomRowEl)
+    bottomRowEl.style.height = initialH - topPx - 6 + "px";
+  lastAppliedTopPx = topPx;
 }
 
 function computeLCSDiff(aItems, bItems) {

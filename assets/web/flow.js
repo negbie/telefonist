@@ -5,10 +5,7 @@ function normalizeEvent(j) {
     j.time = nowLocalString();
   }
 
-  if (Object.prototype.hasOwnProperty.call(j, "data")) {
-    j.data = stripANSI(safeText(j.data).trim());
-  }
-
+  // Most stripping and normalization is now done in Go
   return j;
 }
 
@@ -143,7 +140,11 @@ function createSequentialFlowRenderer(flowEl, getOptions) {
     eventDetails.appendChild(eventSummary);
 
     var jsonPre = ensureElement(eventDetails, "pre", "evt-json");
-    jsonPre.textContent = formatJSON(j);
+    if (j._details) {
+      jsonPre.textContent = j._details;
+    } else {
+      jsonPre.textContent = formatJSON(j);
+    }
 
     var searchInput = document.getElementById("search");
     if (searchInput && searchInput.value) {

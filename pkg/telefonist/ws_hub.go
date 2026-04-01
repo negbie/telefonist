@@ -275,6 +275,10 @@ func (h *WsHub) Run() {
 				var mEvent map[string]interface{}
 				json.Unmarshal(e.RawJSON, &mEvent)
 				mEvent["_agent"] = am.Alias
+
+				// Enrichment: Pre-format details in Go
+				mEvent["_details"] = formatEventDetails(mEvent)
+
 				enriched, _ := json.Marshal(mEvent)
 				h.recordAndBroadcast(enriched)
 
@@ -298,37 +302,38 @@ func (h *WsHub) Run() {
 				mResp["event"] = true
 				mResp["type"] = "RESPONSE"
 				mResp["param"] = r.Data
+
+				// Enrichment: Pre-format details in Go
+				mResp["_details"] = formatEventDetails(mResp)
+
 				enriched, _ := json.Marshal(mResp)
 				h.recordAndBroadcast(enriched)
 
 			case m.Log != "":
-				l := m.Log
-				msg, err := json.Marshal(map[string]interface{}{
+				l := stripANSI(m.Log)
+				mLog := map[string]interface{}{
 					"event":  true,
 					"type":   "LOG",
 					"param":  l,
 					"_agent": am.Alias,
-				})
-				if err != nil {
-					continue
 				}
+				mLog["_details"] = formatEventDetails(mLog)
+				msg, _ := json.Marshal(mLog)
 				if h.trainSession != nil {
 					h.trainSession.recordRaw(msg)
 				}
 				h.recordAndBroadcast(msg)
 
 			case m.SIP != "":
-				s := m.SIP
-
-				msg, err := json.Marshal(map[string]interface{}{
+				s := stripANSI(m.SIP)
+				mSIP := map[string]interface{}{
 					"event":  true,
 					"type":   "SIP",
 					"param":  s,
 					"_agent": am.Alias,
-				})
-				if err != nil {
-					continue
 				}
+				mSIP["_details"] = formatEventDetails(mSIP)
+				msg, _ := json.Marshal(mSIP)
 				if h.trainSession != nil {
 					h.trainSession.recordRaw(msg)
 				}
@@ -454,12 +459,14 @@ func (h *WsHub) BroadcastCommandHint(cmd string) {
 	}
 
 	count := h.cmdCounter.Add(1)
-	msg, _ := json.Marshal(map[string]interface{}{
+	mCmd := map[string]interface{}{
 		"event":  true,
 		"type":   "CMD",
 		"param":  "CMD: " + display,
 		"token":  "test",
 		"_cmdId": fmt.Sprintf("cmd_%d_%d", time.Now().Unix(), count),
-	})
+	}
+	mCmd["_details"] = formatEventDetails(mCmd)
+	msg, _ := json.Marshal(mCmd)
 	h.broadcast <- msg
 }

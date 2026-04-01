@@ -15,6 +15,9 @@
     --muted: #6b7280;
     --radius: 8px;
     --input-radius: 8px;
+}
+
+#layout {
     --split-top: 50%;
 }
 
@@ -58,7 +61,8 @@ pre {
 }
 
 #top-row {
-    flex: 1 1 var(--split-top);
+    flex: none;
+    height: var(--split-top);
     display: flex;
     flex-direction: row;
     overflow: hidden;
@@ -71,6 +75,9 @@ pre {
     cursor: ns-resize;
     flex: 0 0 auto;
     z-index: 10;
+    /* GPU acceleration for smoother dragging */
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 #resizer:hover,
@@ -82,7 +89,8 @@ pre {
 }
 
 #bottom-row {
-    flex: 1 1 calc(100% - var(--split-top));
+    flex: none;
+    height: calc(100% - var(--split-top) - 6px);
     display: flex;
     flex-direction: row;
     overflow: hidden;
@@ -122,6 +130,9 @@ pre {
     overflow-y: auto;
     box-sizing: border-box;
     padding: 10px;
+    /* Isolate layout of thousands of items from external changes */
+    /* contain: strict means size, layout and paint are isolated. */
+    contain: strict;
 }
 
 .log-row {
@@ -140,6 +151,24 @@ pre {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
+}
+
+/* Optimization for many items: only layout what is visible */
+.event.list,
+.sip-ladder-row {
+    content-visibility: auto;
+    contain-intrinsic-size: 300px 30px; /* skeleton size while loading */
+    contain: layout paint;
+}
+
+.col-pane {
+    contain: strict;
+    display: flex;
+    flex-direction: column;
+    border-right: 2px solid #ccc;
+    overflow: hidden;
+    background: #fff;
+    flex: 1 1 auto;
 }
 
 /* Utilities */
@@ -331,6 +360,11 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     border-color: #9ca3af;
 }
 /* Optimization during resizing */
+body.resizing * {
+    transition: none !important;
+    animation: none !important;
+}
+
 body.resizing #top-row,
 body.resizing #bottom-row,
 body.resizing #flow,
@@ -338,10 +372,10 @@ body.resizing #log-view,
 body.resizing #sip-view {
     user-select: none !important;
     transition: none !important;
+    will-change: height, flex-basis;
+    pointer-events: none !important;
+    transform: translateZ(0); /* Force GPU layer */
 }
 
 /* Hide heavy expanded payload blocks while dragging splitter */
-body.resizing #flow pre.evt-json,
-body.resizing #sip-view .sip-details {
-    display: none !important;
-}
+/* Removed as it causes jumpiness; replaced by content-visibility: auto */
