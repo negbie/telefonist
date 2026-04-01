@@ -124,14 +124,15 @@ function createSequentialFlowRenderer(flowEl, getOptions) {
     setDetailsOpenState(eventDetails, !opts.collapseAll);
 
     var eventSummary = document.createElement("summary");
-
-    var tTime = ensureElement(eventSummary, "span", "evt-time");
+    var row1 = ensureElement(eventSummary, "div", "evt-summary-row");
+    var tTime = ensureElement(row1, "span", "evt-time");
     tTime.textContent = f.time;
 
-    var tType = ensureElement(eventSummary, "span", "evt-type");
+    var tType = ensureElement(row1, "span", "evt-type");
     tType.textContent = f.type || f.token || "(no type)";
 
-    var tPeer = ensureElement(eventSummary, "span", "evt-peer");
+    var row2 = ensureElement(eventSummary, "div", "evt-summary-row");
+    var tPeer = ensureElement(row2, "span", "evt-peer");
     if (f.peer) tPeer.textContent = f.peer;
     else tPeer.textContent = "";
 

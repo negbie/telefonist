@@ -161,8 +161,6 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 	// Stop all active agents before starting a test run to ensure a clean state
 	h.bm.CloseAll()
 
-	globalStatus := "PASS"
-
 	for rep := 1; rep <= repeatCount; rep++ {
 		select {
 		case <-ctx.Done():
@@ -230,7 +228,6 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		status := "PASS"
 		if expectedGlobalHash != "" && actualHash != expectedGlobalHash {
 			status = "FAIL"
-			globalStatus = "FAIL"
 		}
 
 		var runID int64
@@ -258,9 +255,9 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 				}
 			}()
 		}
-	}
 
-	log.Printf("finished testfile: %s (result: %s)", fileName, globalStatus)
+		log.Printf("--- Finished: %s [%s] --- Project: %s, Hash: %s, Run: %d", fileName, status, projectName, actualHash, runID)
+	}
 }
 
 func checkTestFailure(h *WsHub, fileName, projectName string) {

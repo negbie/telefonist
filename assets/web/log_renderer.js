@@ -27,7 +27,7 @@ window.renderLogEvent = (j, elements, getOptions) => {
     if (opts.autoscroll) container.scrollTop = container.scrollHeight;
   };
 
-  const runLabel = (isStart, type, token, name, result) => {
+  const runLabel = (isStart, type, token, name, result, project, hash, runId) => {
     const prefix = token === "testfile" ? "─── " : "─── Run ";
     const phase = isStart
       ? "Testfile "
@@ -35,7 +35,13 @@ window.renderLogEvent = (j, elements, getOptions) => {
         ? "Finished: "
         : "Started: ";
     const suffix = type === "finished" && result ? ` [${result}]` : "";
-    return `${prefix}${phase}${safeText(name)}${suffix} ───`;
+    let label = `${prefix}${phase}${safeText(name)}${suffix} ───`;
+    if (type === "finished" && token === "testfile") {
+      if (project) label += ` Project: ${safeText(project)}`;
+      if (hash) label += `, Hash: ${safeText(hash)}`;
+      if (runId) label += `, Run: ${safeText(runId)}`;
+    }
+    return label;
   };
 
   const addSep = (container, type) => {
@@ -53,7 +59,16 @@ window.renderLogEvent = (j, elements, getOptions) => {
       (isStart ? "start" : j.result === "FAIL" ? "end-fail" : "end-pass");
     sep.setAttribute("data-token", j.token || "test");
 
-    sep.textContent = runLabel(isStart, type, j.token, name, j.result);
+    sep.textContent = runLabel(
+      isStart,
+      type,
+      j.token,
+      name,
+      j.result,
+      j.project,
+      j.actual_hash,
+      runId,
+    );
     sep.title = "Click to sync scroll";
     if (isStart) sep.dataset.runStartId = runId;
     else sep.dataset.runFinishId = runId;
@@ -111,7 +126,7 @@ window.renderLogEvent = (j, elements, getOptions) => {
     )
       return true;
     [logViewEl, sipViewEl, flowEl].forEach((c) => addSep(c, "finished"));
-    return false;
+    return true;
   }
 
   if (j.type === "LOG" && logViewEl) {

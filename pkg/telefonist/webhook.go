@@ -15,8 +15,8 @@ func sendResultWebhook(webhookUrl string, fileName, projectName string, total in
 		color = "FF0000" // Red for FAIL
 	}
 
-	msg := fmt.Sprintf("Status: finished\nToken: testfile\nFile: %s\nProject: %s\nTotal: %d\nExpected_hash: %s\nActual_hash: %s\nResult: %s\nRun_id: %d",
-		fileName, projectName, total, expectedHash, actualHash, result, runID)
+	msg := fmt.Sprintf("--- Finished: %s [%s] --- Project: %s, Hash: %s, Run: %d",
+		fileName, result, projectName, actualHash, runID)
 
 	// Use MessageCard format for Teams styling support
 	payload := map[string]interface{}{

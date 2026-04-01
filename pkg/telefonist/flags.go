@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-var Version = "0.8.1"
+var Version = "0.8.2"
 
 // AppFlags mirrors the CLI flags for the telefonist process.
 // Keep these fields aligned with the flags defined in parseFlags()

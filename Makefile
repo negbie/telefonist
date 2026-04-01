@@ -27,7 +27,7 @@ endef
 
 SHELL := /bin/sh
 
-VERSION ?= 0.8.1
+VERSION ?= 0.8.2
 JOBS ?= 16
 CC ?= gcc
 CXX ?= g++
@@ -101,10 +101,13 @@ STAGE_MODULES_DIR := $(STAGE_BARESIP)/modules
 MODULES_NOALSA := $(BASE_MODULES) $(AUDIO_MODULES_NOALSA) $(CODEC_MODULES) $(TLS_MODULES)
 MODULES_ALSA := $(BASE_MODULES) $(AUDIO_MODULES_ALSA) $(CODEC_MODULES) $(TLS_MODULES)
 
-# Extra include/library flags to match build_libs.sh behavior.
 # NOTE: These are passed to baresip CMake build (EXTRA_CFLAGS / EXTRA_LFLAGS).
 SL_EXTRA_CFLAGS := -I ../opus/include -I ../g722
 SL_EXTRA_LFLAGS := -L ../opus -L ../openssl -L ../g722 ../openssl/libssl.a ../openssl/libcrypto.a -lg722
+
+# OpenSSL pkgconfig path for CMake isolation
+OPENSSL_LIBDIR_PC := $(shell if [ -d "$(OPENSSL_PREFIX)/lib64/pkgconfig" ]; then echo "lib64"; else echo "lib"; fi)
+OPENSSL_PKG_CONFIG_PATH := $(OPENSSL_PREFIX)/$(OPENSSL_LIBDIR_PC)/pkgconfig
 
 # libre (re) zlib control:
 # - re defines USE_ZLIB if CMake finds zlib (find_package(ZLIB)).
@@ -266,7 +269,7 @@ $(OPENSSL_SRC): $(OPENSSL_TAR)
 $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO): $(OPENSSL_SRC) | $(GIT_DIR)
 	@set -eu; \
 	cd "$(OPENSSL_SRC)"; \
-	CC="$(CC)" ./Configure linux-x86_64 no-shared no-tests no-unit-test no-external-tests no-engine no-legacy --prefix="$(OPENSSL_PREFIX)" --openssldir="$(OPENSSL_PREFIX)"; \
+	CC="$(CC)" ./Configure linux-x86_64 no-shared no-zlib no-comp no-tests no-unit-test no-external-tests no-engine no-legacy --prefix="$(OPENSSL_PREFIX)" --openssldir="$(OPENSSL_PREFIX)"; \
 	make -j"$(JOBS)"; \
 	make install_sw; \
 	openssl_libdir=""; \
@@ -293,10 +296,9 @@ $(RE_LIB): $(RE_DIR) $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO) | $(GIT_DIR)
 	openssl_libdir=""; \
 	if [ -d "$(OPENSSL_PREFIX)/lib" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib"; \
 	elif [ -d "$(OPENSSL_PREFIX)/lib64" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib64"; fi; \
-	CC="$(CC)" CXX="$(CXX)" cmake -S . -B build \
+	CC="$(CC)" CXX="$(CXX)" PKG_CONFIG_PATH="$(OPENSSL_PKG_CONFIG_PATH)" cmake -S . -B build \
 	  -DCMAKE_BUILD_TYPE=Release \
 	  -DOPENSSL_ROOT_DIR="$(OPENSSL_PREFIX)" \
-	  -DOPENSSL_USE_STATIC_LIBS=TRUE \
 	  -DOPENSSL_INCLUDE_DIR="$(OPENSSL_PREFIX)/include" \
 	  -DOPENSSL_SSL_LIBRARY="$$openssl_libdir/libssl.a" \
 	  -DOPENSSL_CRYPTO_LIBRARY="$$openssl_libdir/libcrypto.a" \
@@ -315,13 +317,13 @@ $(REM_LIB): $(REM_DIR) $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO) | $(GIT_DIR)
 	openssl_libdir=""; \
 	if [ -d "$(OPENSSL_PREFIX)/lib" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib"; \
 	elif [ -d "$(OPENSSL_PREFIX)/lib64" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib64"; fi; \
-	CC="$(CC)" CXX="$(CXX)" cmake -S . -B build \
+	CC="$(CC)" CXX="$(CXX)" PKG_CONFIG_PATH="$(OPENSSL_PKG_CONFIG_PATH)" cmake -S . -B build \
 	  -DCMAKE_BUILD_TYPE=Release \
 	  -DOPENSSL_ROOT_DIR="$(OPENSSL_PREFIX)" \
-	  -DOPENSSL_USE_STATIC_LIBS=TRUE \
 	  -DOPENSSL_INCLUDE_DIR="$(OPENSSL_PREFIX)/include" \
 	  -DOPENSSL_SSL_LIBRARY="$$openssl_libdir/libssl.a" \
 	  -DOPENSSL_CRYPTO_LIBRARY="$$openssl_libdir/libcrypto.a" \
+	  $(RE_ZLIB_CMAKE_FLAGS) \
 	  -DCMAKE_FIND_ROOT_PATH="$(ROOT_DIR)" \
 	  -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
 	  -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH; \
@@ -408,16 +410,16 @@ $(BARESIP_LIB): stage_patches $(BARESIP_DIR) $(RE_LIB) $(REM_LIB) $(OPUS_LIB) $(
 	openssl_libdir=""; \
 	if [ -d "$(OPENSSL_PREFIX)/lib" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib"; \
 	elif [ -d "$(OPENSSL_PREFIX)/lib64" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib64"; fi; \
-	CC="$(CC)" CXX="$(CXX)" cmake .. \
+	CC="$(CC)" CXX="$(CXX)" PKG_CONFIG_PATH="$(OPENSSL_PKG_CONFIG_PATH)" cmake .. \
 	  -DCMAKE_BUILD_TYPE=Release \
 	  -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
 	  -DSTATIC=ON \
 	  -DMODULES="$$(printf "%s" "$(MODULES)" | tr ' ' ';')" \
 	  -DOPENSSL_ROOT_DIR="$(OPENSSL_PREFIX)" \
-	  -DOPENSSL_USE_STATIC_LIBS=TRUE \
 	  -DOPENSSL_INCLUDE_DIR="$(OPENSSL_PREFIX)/include" \
 	  -DOPENSSL_SSL_LIBRARY="$$openssl_libdir/libssl.a" \
 	  -DOPENSSL_CRYPTO_LIBRARY="$$openssl_libdir/libcrypto.a" \
+	  $(RE_ZLIB_CMAKE_FLAGS) \
 	  -DOPUS_INCLUDE_DIR="$(STAGE_OPUS)/include" \
 	  -DOPUS_LIBRARY="$(OPUS_LIB)" \
 	  -DSNDFILE_INCLUDE_DIR="$(STAGE_SNDFILE)/include" \
@@ -459,7 +461,7 @@ $(BARESIP_EXE): $(BARESIP_LIB)
 	fi
 
 ###############################################################################
-# Header staging (mirrors build_libs.sh EXIT trap)
+# Header staging
 ###############################################################################
 stage_headers: $(HDR_STAGE_RE) $(HDR_STAGE_REM) $(HDR_STAGE_BARESIP)
 

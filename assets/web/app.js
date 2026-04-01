@@ -188,6 +188,9 @@
           if (j.token === "testfiles" && j.name) {
             EventBus.emit("testfile:changed", j.name, j.project);
           }
+          if (j.token === "testfiles" || j.token === "projects") {
+            return;
+          }
           // Only return if it's a pure testfile/projects management message.
           // Test status updates (running, finished, progress) should still be rendered in the flow.
           if (

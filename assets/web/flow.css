@@ -22,14 +22,22 @@ details.event {
 details.event>summary {
     list-style: none;
     cursor: pointer;
-    display: grid;
-    grid-template-columns: auto auto auto 1fr;
-    gap: 4ch;
-    align-items: baseline;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     font-family:
         ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
         "Liberation Mono", "Courier New", monospace;
     font-size: 12px;
+}
+
+.evt-summary-row {
+    display: flex;
+    gap: 2ch;
+    align-items: baseline;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 details.event>summary::-webkit-details-marker {
@@ -38,7 +46,7 @@ details.event>summary::-webkit-details-marker {
 
 .evt-time {
     color: #333;
-
+    font-size: 10.5px;
 }
 
 .evt-type {

@@ -156,7 +156,8 @@ pre {
 .event.list,
 .sip-ladder-row {
     content-visibility: auto;
-    contain-intrinsic-size: 300px 30px; /* skeleton size while loading */
+    contain-intrinsic-size: 300px 30px;
+    /* skeleton size while loading */
     contain: layout paint;
 }
 
@@ -176,27 +177,19 @@ pre {
 }
 
 /* PASS/FAIL Highlights in Flow */
-details.event > summary .evt-peer.pass {
+details.event>summary .evt-peer.pass {
     color: #0f7b0f;
     font-weight: 600;
 }
 
-details.event > summary .evt-peer.fail {
+details.event>summary .evt-peer.fail {
     color: #b00020;
     font-weight: 600;
 }
 
 /* Filter: show only test/testfile + testfiles (management) messages */
-body[data-only-tests="1"]
-    #flow
-    .list:not([data-token="test"]):not([data-token="testfile"]):not(
-        [data-token="testfiles"]
-    ),
-body[data-only-tests="1"]
-    #flow
-    .run-separator:not([data-token="test"]):not([data-token="testfile"]):not(
-        [data-token="testfiles"]
-    ) {
+body[data-only-tests="1"] #flow .list:not([data-token="test"]):not([data-token="testfile"]):not([data-token="testfiles"]),
+body[data-only-tests="1"] #flow .run-separator:not([data-token="test"]):not([data-token="testfile"]):not([data-token="testfiles"]) {
     display: none !important;
 }
 
@@ -290,21 +283,26 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     letter-spacing: 0.5px;
     font-family: var(--font-mono);
     cursor: pointer;
-    user-select: none;
+    user-select: text;
 }
+
 .run-separator.start {
     color: #8b5cf6;
 }
+
 .run-separator.end-pass {
     color: #10b981;
 }
+
 .run-separator.end-fail {
     color: #ef4444;
 }
+
 .run-separator.cmd {
     color: #8b5cf6;
     font-size: 11px;
 }
+
 .run-separator.cmd:hover {
     color: #7c3aed;
 }
@@ -315,6 +313,7 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     margin-left: 8px;
     vertical-align: middle;
 }
+
 .btn-sip {
     padding: 1px 6px;
     font-size: 9px;
@@ -326,10 +325,12 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     line-height: 1;
     height: 16px;
 }
+
 .btn-sip:hover {
     background: #f1f5f9;
     border-color: #94a3b8;
 }
+
 .btn-sip.compare-active {
     background: #3b82f6;
     color: white;
@@ -344,6 +345,7 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     justify-content: center;
     gap: 8px;
 }
+
 .btn-download {
     padding: 4px 12px;
     font-size: 11px;
@@ -354,10 +356,12 @@ body[data-only-results="1"] #flow .run-separator:not(.end-pass):not(.end-fail) {
     cursor: pointer;
     transition: all 0.2s;
 }
+
 .btn-download:hover {
     background-color: #374151;
     border-color: #9ca3af;
 }
+
 /* Optimization during resizing */
 body.resizing * {
     transition: none !important;
@@ -371,10 +375,5 @@ body.resizing #log-view,
 body.resizing #sip-view {
     user-select: none !important;
     transition: none !important;
-    will-change: height, flex-basis;
     pointer-events: none !important;
-    transform: translateZ(0); /* Force GPU layer */
 }
-
-/* Hide heavy expanded payload blocks while dragging splitter */
-/* Removed as it causes jumpiness; replaced by content-visibility: auto */

@@ -53,7 +53,6 @@ window.initTestfileManager = function (deps) {
     }
 
     function requestLists(overrides = {}) {
-        isTestRunning = false;
         updateEnabledStates();
         if (!wsIsOpen()) return Promise.resolve();
         const p1 = api.getProjects().then(j => {
@@ -391,11 +390,13 @@ window.initTestfileManager = function (deps) {
         requestTestfilesList: requestLists,
         getActiveKey: () => activeKey,
         handleTestfilesMessage: (j) => {
-            const isTF = j.token === "testfile" || j.token === "testfiles";
+            const isTF = j.token === "testfile" || j.token === "testfiles" || j.token === "test";
             if (!isTF && j.token !== "projects") return false;
 
-            if (j.status === "running" || j.status === "progress") isTestRunning = true;
-            else if (["finished", "stopped", "error"].indexOf(j.status) !== -1) isTestRunning = false;
+            if (j.token === "testfile" || j.token === "test") {
+                if (j.status === "running" || j.status === "progress") isTestRunning = true;
+                else if (["finished", "stopped", "error"].indexOf(j.status) !== -1) isTestRunning = false;
+            }
             updateEnabledStates();
 
             if (j.action === "save" || j.action === "delete" || j.action === "rename" || j.token === "projects") {
