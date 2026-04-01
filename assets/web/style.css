@@ -124,6 +124,12 @@ pre {
     padding: 10px;
 }
 
+.log-row {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
 #test-controls {
     flex: 0 0 auto;
     display: flex;

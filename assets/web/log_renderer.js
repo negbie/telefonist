@@ -117,9 +117,6 @@ window.renderLogEvent = (j, elements, getOptions) => {
   if (j.type === "LOG" && logViewEl) {
     const el = document.createElement("div");
     el.className = "log-row";
-    el.style.fontFamily = "var(--font-mono)";
-    el.style.fontSize = "12px";
-    el.style.whiteSpace = "pre-wrap";
     el.textContent = j.param;
 
     appendAndMaintain(logViewEl, el);
