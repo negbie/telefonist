@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -17,6 +18,12 @@ func RunAgent(f AppFlags) error {
 	if err := os.MkdirAll(f.DataDir, 0755); err != nil {
 		return err
 	}
+
+	if f.SoundsDir == "" {
+		f.SoundsDir = filepath.Join(f.DataDir, "sounds")
+	}
+
+	EnsureAssets(f.SoundsDir, filepath.Join(f.DataDir, "recorded_temp"))
 
 	gb, err := newBaresipInstance(f)
 	if err != nil {
@@ -29,7 +36,7 @@ func RunAgent(f AppFlags) error {
 func newBaresipInstance(f AppFlags) (*gobaresip.Baresip, error) {
 	ua := fmt.Sprintf("telefonist/%s (baresip)", Version)
 	return gobaresip.New(
-		gobaresip.SetAudioPath("sounds"),
+		gobaresip.SetAudioPath(f.SoundsDir),
 		gobaresip.SetConfigPath(f.DataDir),
 		gobaresip.SetAlias(f.Alias),
 		gobaresip.SetUserAgent(ua),
@@ -102,6 +109,12 @@ func Run() error {
 	if err := os.MkdirAll(f.DataDir, 0755); err != nil {
 		return err
 	}
+
+	if f.SoundsDir == "" {
+		f.SoundsDir = filepath.Join(f.DataDir, "sounds")
+	}
+
+	EnsureAssets(f.SoundsDir, filepath.Join(f.DataDir, "recorded_temp"))
 
 	// Set unique session cookie name based on UI port to avoid logout conflicts when running multiple instances on localhost.
 	port := "8080"

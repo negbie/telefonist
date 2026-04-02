@@ -122,11 +122,12 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// Write config and accounts
 	// We pass baresipAddr to CreateConfig so Baresip listens there
 	globalRecordsDir, _ := filepath.Abs(filepath.Join(m.dataDir, "recorded_temp"))
+	globalSoundsDir, _ := filepath.Abs(filepath.Join(m.dataDir, "sounds"))
 	sipAddr := ""
 	if m.HasSipListen {
 		sipAddr = fmt.Sprintf("%s:%d", m.BaseSipIP, sipPort)
 	}
-	CreateConfig(agentDir, m.MaxCalls, m.RtpNet, rtpPorts, m.RtpTimeout, baresipAddr, sipAddr, m.UseAlsa, true, globalRecordsDir)
+	CreateConfig(agentDir, m.MaxCalls, m.RtpNet, rtpPorts, m.RtpTimeout, baresipAddr, sipAddr, m.UseAlsa, true, globalRecordsDir, globalSoundsDir)
 
 	// Write empty accounts file to prevent initial registration before bridge is ready.
 	// Baresip will load UAs via explicit uanew command later.
@@ -146,6 +147,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 
 	cmd := exec.CommandContext(ctx, self,
 		"-data_dir", agentDir,
+		"-sounds_dir", globalSoundsDir,
 		"-ctrl_address", proxyAddr)
 	cmd.Env = append(os.Environ(),
 		"TELEFONIST_AGENT=1",

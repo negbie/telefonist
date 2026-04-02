@@ -26,6 +26,7 @@ type AppFlags struct {
 	UseAlsa         bool
 	Version         bool
 	DataDir         string
+	SoundsDir       string
 	Agent           bool
 	Alias           string
 }
@@ -48,6 +49,7 @@ func ParseFlags() AppFlags {
 	flag.BoolVar(&f.UseAlsa, "use_alsa", false, "Use ALSA for audio (uncomments alsa lines in config)")
 	flag.BoolVar(&f.Version, "version", false, "Print version")
 	flag.StringVar(&f.DataDir, "data_dir", "data", "Directory for configuration files and data")
+	flag.StringVar(&f.SoundsDir, "sounds_dir", "", "Directory for sound files (optional, defaults to data_dir/sounds)")
 
 	flag.Parse()
 	return f
