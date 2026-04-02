@@ -275,6 +275,7 @@ func (h *WsHub) Run() {
 				var mEvent map[string]interface{}
 				json.Unmarshal(e.RawJSON, &mEvent)
 				mEvent["_agent"] = am.Alias
+				mEvent["time"] = time.Now().Format("2.1.2006 15:04:05.000")
 
 				// Enrichment: Pre-format details in Go
 				mEvent["_details"] = formatEventDetails(mEvent)
@@ -302,6 +303,7 @@ func (h *WsHub) Run() {
 				mResp["event"] = true
 				mResp["type"] = "RESPONSE"
 				mResp["param"] = r.Data
+				mResp["time"] = time.Now().Format("2.1.2006 15:04:05.000")
 
 				// Enrichment: Pre-format details in Go
 				mResp["_details"] = formatEventDetails(mResp)
@@ -316,6 +318,7 @@ func (h *WsHub) Run() {
 					"type":   "LOG",
 					"param":  l,
 					"_agent": am.Alias,
+					"time":   time.Now().Format("2.1.2006 15:04:05.000"),
 				}
 				mLog["_details"] = formatEventDetails(mLog)
 				msg, _ := json.Marshal(mLog)
@@ -331,6 +334,7 @@ func (h *WsHub) Run() {
 					"type":   "SIP",
 					"param":  s,
 					"_agent": am.Alias,
+					"time":   time.Now().Format("2.1.2006 15:04:05.000"),
 				}
 				mSIP["_details"] = formatEventDetails(mSIP)
 				msg, _ := json.Marshal(mSIP)
@@ -465,6 +469,7 @@ func (h *WsHub) BroadcastCommandHint(cmd string, agent string) {
 		"token":  "test",
 		"_agent": agent,
 		"_cmdId": fmt.Sprintf("cmd_%d_%d", time.Now().Unix(), count),
+		"time":   time.Now().Format("2.1.2006 15:04:05.000"),
 	}
 	mCmd["_details"] = formatEventDetails(mCmd)
 	msg, _ := json.Marshal(mCmd)

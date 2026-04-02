@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // broadcastInfo broadcasts an informational JSON message to all connected WebSocket clients.
@@ -34,10 +35,11 @@ func statusJSON(kvPairs ...string) string {
 	if len(kvPairs)%2 != 0 {
 		kvPairs = append(kvPairs, "")
 	}
-	m := make(map[string]string, len(kvPairs)/2)
+	m := make(map[string]string, len(kvPairs)/2+1)
 	for i := 0; i < len(kvPairs); i += 2 {
 		m[kvPairs[i]] = kvPairs[i+1]
 	}
+	m["time"] = time.Now().Format("2.1.2006 15:04:05.000")
 	b, err := json.Marshal(m)
 	if err != nil {
 		return "{}"

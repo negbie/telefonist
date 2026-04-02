@@ -59,7 +59,7 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"projects","action":"save","message":"saved","name":%q}`, req.Name))
+			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "save", "message", "saved", "name", req.Name))
 			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "saved"})
 
 		case http.MethodDelete:
@@ -72,7 +72,7 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"projects","action":"delete","message":"deleted","name":%q}`, name))
+			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "delete", "message", "deleted", "name", name))
 			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "deleted"})
 
 		default:
@@ -105,7 +105,7 @@ func HandleAPIProjectRename(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"projects","action":"rename","message":"renamed","old_name":%q,"new_name":%q}`, req.OldName, req.NewName))
+		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "rename", "message", "renamed", "old_name", req.OldName, "new_name", req.NewName))
 		json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "renamed"})
 	}
 }
@@ -134,7 +134,7 @@ func HandleAPIProjectClone(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"projects","action":"clone","message":"cloned","src_name":%q,"target_name":%q}`, req.SrcName, req.TargetName))
+		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "clone", "message", "cloned", "src_name", req.SrcName, "target_name", req.TargetName))
 		json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "cloned"})
 	}
 }
@@ -228,7 +228,7 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"testfiles","action":"save","message":"saved","name":%q,"project":%q}`, req.Name, req.Project))
+			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "save", "message", "saved", "name", req.Name, "project", req.Project))
 			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "saved"})
 
 		case http.MethodDelete:
@@ -244,7 +244,7 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"testfiles","action":"delete","message":"deleted","name":%q,"project":%q}`, name, project))
+			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "delete", "message", "deleted", "name", name, "project", project))
 			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "deleted"})
 
 		default:
@@ -279,7 +279,7 @@ func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"testfiles","action":"rename","message":"renamed","old_name":%q,"old_project":%q,"new_name":%q,"new_project":%q}`, req.OldName, req.OldProject, req.NewName, req.NewProject))
+		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "rename", "message", "renamed", "old_name", req.OldName, "old_project", req.OldProject, "new_name", req.NewName, "new_project", req.NewProject))
 		json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "renamed"})
 	}
 }
@@ -334,7 +334,7 @@ func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"testruns","action":"delete","testfile":%q,"project":%q,"message":"all runs deleted"}`, name, project))
+			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testruns", "action", "delete", "testfile", name, "project", project, "message", "all runs deleted"))
 			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "all runs deleted"})
 
 		default:
@@ -396,7 +396,7 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			hub.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"testruns","action":"delete","id":%d,"message":"run deleted"}`, id))
+			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testruns", "action", "delete", "id", strconv.Itoa(id), "message", "run deleted"))
 			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "run deleted"})
 
 		default:

@@ -11,6 +11,9 @@ import (
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
 )
 
+var idRegex = regexp.MustCompile(`"id":"[^"]+"`)
+var timeRegex = regexp.MustCompile(`"time":"[^"]+"`)
+
 // OrderIndependentHash computes a hash by summing up the xxhash of each line individually.
 // This ensures that the exact order of events doesn't change the final hash, while being
 // much more precise than counting characters.
@@ -28,7 +31,11 @@ func OrderIndependentHash(s string) (string, []string) {
 		}
 
 		// Hash each individual event/line
-		h := xxhash.Sum64String(line)
+		// Strip dynamic fields like time and id to maintain a deterministic hash
+		cleanLine := idRegex.ReplaceAllString(line, `"id":""`)
+		cleanLine = timeRegex.ReplaceAllString(cleanLine, `"time":""`)
+
+		h := xxhash.Sum64String(cleanLine)
 		totalSum += h
 
 		sortedLines = append(sortedLines, line)
@@ -62,8 +69,6 @@ func newTrainSession(ignoredEvents []string, acceptedEvents []string) *TrainSess
 		acceptedEvents: acceptedEvents,
 	}
 }
-
-var idRegex = regexp.MustCompile(`"id":"[^"]+"`)
 
 // Must only be called from the hub's run loop.
 func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
