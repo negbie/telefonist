@@ -199,7 +199,7 @@
               j.status !== "finished" &&
               j.status !== "progress")
           ) {
-            return;
+            if (j.type !== "CMD") return;
           }
         }
 

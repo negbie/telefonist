@@ -344,8 +344,6 @@ func (h *WsHub) Run() {
 }
 
 func (h *WsHub) executeSmartCommand(cmd string) {
-	h.BroadcastCommandHint(cmd)
-
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return
@@ -431,6 +429,7 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 			} else {
 				h.activeAgent = alias
 			}
+			h.BroadcastCommandHint(cmd, alias)
 		}
 		return
 	}
@@ -444,11 +443,11 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 	} else {
 		log.Printf("hub: no active agent for command %q", cmd)
 	}
-	h.BroadcastCommandHint(cmd)
+	h.BroadcastCommandHint(cmd, target)
 }
 
 // BroadcastCommandHint sends a "hint" of an executed command to the Log and SIP views.
-func (h *WsHub) BroadcastCommandHint(cmd string) {
+func (h *WsHub) BroadcastCommandHint(cmd string, agent string) {
 	if cmd == "" {
 		return
 	}
@@ -464,6 +463,7 @@ func (h *WsHub) BroadcastCommandHint(cmd string) {
 		"type":   "CMD",
 		"param":  "CMD: " + display,
 		"token":  "test",
+		"_agent": agent,
 		"_cmdId": fmt.Sprintf("cmd_%d_%d", time.Now().Unix(), count),
 	}
 	mCmd["_details"] = formatEventDetails(mCmd)
