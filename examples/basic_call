@@ -1,0 +1,11 @@
+_hash replace_with_your_hash
+_define ua1 sip:USER1@DOMAIN1;transport=tls
+_define ua2 sip:USER2@DOMAIN2;transport=tls
+_run 1
+
+uanew <ua1>;auth_pass=USER1PASS;mediaenc=srtp-mand;input_wav=alice.wav
+uanew <ua2>;auth_pass=USER2PASS;mediaenc=srtp-mand;input_wav=bob.wav
+
+# ua1 dials ua2, wait 2 seconds, ua2 accepts the call, wait 6 seconds, ua1 hangups
+ua1:dial ua2|2s|ua2:accept|6s|ua1:hangup
+uadelall
