@@ -163,10 +163,9 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 
 	// Connect to agent's PROXY
 	var gb *gobaresip.Baresip
-	maxRetries := 20
+	maxRetries := 30
+	retryInterval := 20 * time.Millisecond
 	for i := 0; i < maxRetries; i++ {
-		time.Sleep(500 * time.Millisecond)
-		log.Printf("hub: connecting to agent %s at %s (attempt %d)", alias, proxyAddr, i+1)
 		gb, err = gobaresip.New(
 			gobaresip.SetRemote(true),
 			gobaresip.SetCtrlTCPAddr(proxyAddr),
@@ -174,6 +173,10 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		)
 		if err == nil {
 			break
+		}
+		time.Sleep(retryInterval)
+		if retryInterval < 100*time.Millisecond {
+			retryInterval += 20 * time.Millisecond
 		}
 	}
 
