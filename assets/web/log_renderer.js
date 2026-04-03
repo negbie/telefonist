@@ -1,4 +1,5 @@
-import { safeText, trimChildrenToMax } from "./utils.js";
+import { safeText } from "./utils.js";
+import { trimChildrenToMax, appendAndMaintain } from "./dom.js";
 
 let _lastRunId = null;
 
@@ -21,14 +22,10 @@ const createDownloadButton = (label, runId, type) => {
 
 export const renderLogEvent = (j, elements, getOptions) => {
   const { logViewEl, sipViewEl, flowEl } = elements;
-
   const opts = getOptions();
 
-  const appendAndMaintain = (container, el) => {
-    if (!container || !el) return;
-    container.appendChild(el);
-    trimChildrenToMax(container, opts.maxItems);
-    if (opts.autoscroll) container.scrollTop = container.scrollHeight;
+  const wrapAppend = (container, el) => {
+    appendAndMaintain(container, el, opts);
   };
 
   const runLabel = (isStart, type, token, name, result, project, hash, runId) => {
@@ -88,7 +85,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
       });
     };
 
-    appendAndMaintain(container, sep);
+    wrapAppend(container, sep);
 
     if (!isStart && j.run_id) {
       const bc = document.createElement("div");
@@ -106,7 +103,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
         bc.appendChild(
           createDownloadButton("Download Log (.txt)", j.run_id, "log"),
         );
-      appendAndMaintain(container, bc);
+      wrapAppend(container, bc);
     }
   };
 
@@ -138,7 +135,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
     el.className = "log-row";
     el.textContent = j.param;
 
-    appendAndMaintain(logViewEl, el);
+    wrapAppend(logViewEl, el);
     return true;
   }
 
@@ -148,7 +145,6 @@ export const renderLogEvent = (j, elements, getOptions) => {
       const el = document.createElement("div");
       el.className = "run-separator cmd";
       el.setAttribute("data-token", j.token || "test");
-      // Do not set data-has-result="1" as CMD events are not results themselves.
       if (j._cmdId) {
         el.dataset.cmdId = j._cmdId;
         el.style.cursor = "pointer";
@@ -163,7 +159,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
         };
       }
       el.textContent = "─── " + safeText(j.param) + " ───";
-      appendAndMaintain(container, el);
+      wrapAppend(container, el);
     };
     [logViewEl, sipViewEl, flowEl].forEach(renderCmd);
     return true;
@@ -171,4 +167,3 @@ export const renderLogEvent = (j, elements, getOptions) => {
 
   return false;
 };
-

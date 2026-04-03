@@ -1,9 +1,6 @@
 import { EventBus } from "./event_bus.js";
-import {
-  escapeHTML,
-  base64DecodeUTF8,
-  computeLCSDiff,
-} from "./utils.js";
+import { safeText, escapeHTML, base64DecodeUTF8 } from "./utils.js";
+import { computeLCSDiff } from "./diff.js";
 
 export function initCompareWindow(deps) {
   const { getActiveKey } = deps;

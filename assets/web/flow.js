@@ -1,11 +1,12 @@
+import { safeText } from "./utils.js";
 import {
-  safeText,
   isNearBottom,
   ensureElement,
   tagToken,
   trimChildrenToMax,
   scrollToBottom,
-} from "./utils.js";
+  appendAndMaintain,
+} from "./dom.js";
 
 export function normalizeEvent(j) {
   if (!j || typeof j !== "object") return null;
@@ -124,8 +125,6 @@ export function createSequentialFlowRenderer(flowEl, getOptions) {
       ? getOptions()
       : { autoscroll: true, maxItems: 0, collapseAll: false };
 
-    var doScroll = opts.autoscroll || isNearBottom(flowEl);
-
     var eventDetails = document.createElement("details");
     eventDetails.className = "event list";
     tagToken(eventDetails, f.token);
@@ -162,12 +161,7 @@ export function createSequentialFlowRenderer(flowEl, getOptions) {
       }
     }
 
-    flowEl.appendChild(eventDetails);
-    trimChildrenToMax(flowEl, opts.maxItems);
-
-    if (doScroll && eventDetails.style.display !== "none") {
-      scrollToBottom(flowEl);
-    }
+    appendAndMaintain(flowEl, eventDetails, opts);
   }
 
   function setCollapseAll(collapse) {

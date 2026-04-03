@@ -13,8 +13,8 @@ import {
   wireSearchFilter,
   applyOnlyTestsFilterFromCheckbox,
   applyOnlyResultsFilterFromCheckbox,
-  initResizer,
 } from "./utils.js";
+import { initResizer } from "./resizer.js";
 import { API } from "./api.js";
 import { createSocketHandler } from "./socket_handler.js";
 import { createSequentialFlowRenderer } from "./flow.js";

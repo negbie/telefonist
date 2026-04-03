@@ -7,8 +7,8 @@ import {
   base64EncodeUTF8,
   base64DecodeUTF8,
   sanitizeTestfileName,
-  syntaxHighlight,
 } from "./utils.js";
+import { syntaxHighlight } from "./highlighter.js";
 
 export function initTestfileManager(deps) {
   const {

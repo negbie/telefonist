@@ -1,8 +1,5 @@
-import {
-  safeText,
-  trimChildrenToMax,
-  appendAndMaintain,
-} from "./utils.js";
+import { safeText } from "./utils.js";
+import { trimChildrenToMax, appendAndMaintain } from "./dom.js";
 
 function truncateText(text, maxLen) {
   var s = safeText(text);

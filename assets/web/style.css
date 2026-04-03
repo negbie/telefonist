@@ -97,7 +97,6 @@ pre {
 }
 
 .col-pane {
-    contain: strict;
     display: flex;
     flex-direction: column;
     border-right: 2px solid #ccc;
@@ -126,13 +125,11 @@ pre {
 #log-view,
 #sip-view {
     flex: 1 1 auto;
-    height: 100%;
     overflow-y: auto;
     box-sizing: border-box;
     padding: 10px;
-    /* Isolate layout of thousands of items from external changes */
-    /* contain: strict means size, layout and paint are isolated. */
-    contain: strict;
+    /* Ensure the browser maintains the scroll position when items are added/removed */
+    overflow-anchor: auto;
 }
 
 .log-row {
@@ -154,14 +151,7 @@ pre {
 }
 
 /* Optimization for many items: only layout what is visible */
-.event.list,
-.sip-ladder-row {
-    content-visibility: auto;
-    contain-intrinsic-size: 300px 30px;
-    /* skeleton size while loading */
-    contain: layout paint;
-}
-
+/* Removed content-visibility: auto as it causes jumpy scroll estimates */
 
 /* Utilities */
 .hint {
