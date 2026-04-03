@@ -374,8 +374,6 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 		// This second pass ensures agent-specific RECORDS_DIR is expanded if used
 		soundsDir := filepath.Join(h.DataDir, "sounds")
 		cmd = ExpandShortcuts(cmd, soundsDir, a.RecordingsDir)
-
-		log.Printf("hub: sending expanded command to agent %s: %s", target, cmd)
 		if err := a.Baresip.CmdWs([]byte(cmd)); err != nil {
 			log.Printf("hub: error sending command to agent %s: %v", target, err)
 		}

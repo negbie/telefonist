@@ -1,5 +1,5 @@
 /* state_manager.js */
-window.StateManager = function () {
+export function createStateManager() {
   var fileCache = {}; // "project:name" -> { name, project, original, current }
 
   function normalizeText(value) {
@@ -76,4 +76,5 @@ window.StateManager = function () {
     pruneStale: pruneStale,
     deleteEntry: deleteEntry,
   };
-};
+}
+

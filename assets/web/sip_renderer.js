@@ -1,18 +1,15 @@
-// sip_renderer.js
+import {
+  safeText,
+  trimChildrenToMax,
+  appendAndMaintain,
+} from "./utils.js";
 
 function truncateText(text, maxLen) {
   var s = safeText(text);
   return s.length > maxLen ? s.substring(0, maxLen) + "..." : s;
 }
 
-function appendAndMaintain(container, el, opts) {
-  if (!container || !el) return;
-  container.appendChild(el);
-  trimChildrenToMax(container, opts.maxItems);
-  if (opts.autoscroll) container.scrollTop = container.scrollHeight;
-}
-
-window.renderSipEvent = function (j, elements, getOptions) {
+export function renderSipEvent(j, elements, getOptions) {
   var sipViewEl = elements.sipViewEl;
   var opts = getOptions ? getOptions() : { autoscroll: true, maxItems: 0 };
 
@@ -196,9 +193,9 @@ window.renderSipEvent = function (j, elements, getOptions) {
 
   appendAndMaintain(sipViewEl, el, opts);
   return true; // handled
-};
+}
 
-window.initSipCompare = function (elements) {
+export function initSipCompare(elements) {
   const { sipViewEl, sipComparePanel, closeSipCompareBtn } = elements;
 
   const compareLeftRoot = document.getElementById("sip-compare-left");
@@ -266,4 +263,5 @@ window.initSipCompare = function (elements) {
       }
     }
   };
-};
+}
+

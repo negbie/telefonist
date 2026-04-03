@@ -5,237 +5,243 @@
 // Refactored to use utils.js, flow.js, visual_builder.js,
 // sip_renderer.js, log_renderer.js, and testfile_manager.js
 
-(function () {
-  window.onload = function () {
-    const flowEl = document.getElementById("flow");
-    const clearEl = document.getElementById("clear");
-    const logoutEl = document.getElementById("logout");
-    const logViewEl = document.getElementById("log-view");
-    const sipViewEl = document.getElementById("sip-view");
+// Telefonist embedded web UI client script (flow-only).
+import { EventBus } from "./event_bus.js";
+import {
+  wsURL,
+  setBodyFlowView,
+  wireSearchFilter,
+  applyOnlyTestsFilterFromCheckbox,
+  applyOnlyResultsFilterFromCheckbox,
+  initResizer,
+} from "./utils.js";
+import { API } from "./api.js";
+import { createSocketHandler } from "./socket_handler.js";
+import { createSequentialFlowRenderer } from "./flow.js";
+import { renderSipEvent, initSipCompare } from "./sip_renderer.js";
+import { renderLogEvent } from "./log_renderer.js";
+import { initTestfileManager } from "./testfile_manager.js";
+import { initCompareWindow } from "./compare_window.js";
 
-    const onlyTestsEl = document.getElementById("only-tests");
-    const autoScrollEl = document.getElementById("autoscroll");
-    const collapseAllEl = document.getElementById("collapse-all");
+const flowEl = document.getElementById("flow");
+const clearEl = document.getElementById("clear");
+const logoutEl = document.getElementById("logout");
+const logViewEl = document.getElementById("log-view");
+const sipViewEl = document.getElementById("sip-view");
 
-    const resizer = document.getElementById("resizer");
-    const topRow = document.getElementById("top-row");
-    const bottomRow = document.getElementById("bottom-row");
+const onlyTestsEl = document.getElementById("only-tests");
+const autoScrollEl = document.getElementById("autoscroll");
+const collapseAllEl = document.getElementById("collapse-all");
 
-    window.initResizer(resizer, topRow, bottomRow);
+const resizer = document.getElementById("resizer");
+const topRow = document.getElementById("top-row");
+const bottomRow = document.getElementById("bottom-row");
 
-    let socket = null;
+initResizer(resizer, topRow, bottomRow);
 
-    const getOptions = () => ({
-      autoscroll: autoScrollEl ? !!autoScrollEl.checked : true,
-      maxItems: 3333,
-      collapseAll: collapseAllEl ? !!collapseAllEl.checked : false,
-    });
+let socket = null;
 
-    const wireSearch = (id, container, selector) => {
-      const input = document.getElementById(id);
-      if (input && container) {
-        window.wireSearchFilter(input, container, selector);
-      }
-      return input;
-    };
+const getOptions = () => ({
+  autoscroll: autoScrollEl ? !!autoScrollEl.checked : true,
+  maxItems: 3333,
+  collapseAll: collapseAllEl ? !!collapseAllEl.checked : false,
+});
 
-    const wireCheckbox = (el, applyFn) => {
-      if (!el || !applyFn) return;
-      applyFn(el);
-      el.onchange = () => applyFn(el);
-    };
+const wireSearch = (id, container, selector) => {
+  const input = document.getElementById(id);
+  if (input && container) {
+    wireSearchFilter(input, container, selector);
+  }
+  return input;
+};
 
-    setBodyFlowView();
+const wireCheckbox = (el, applyFn) => {
+  if (!el || !applyFn) return;
+  applyFn(el);
+  el.onchange = () => applyFn(el);
+};
 
-    const searchInput = wireSearch("search", document.body, ".list");
-    const searchSipInput = wireSearch(
-      "search-sip",
-      sipViewEl,
-      ".sip-ladder-row",
-    );
-    const searchLogInput = wireSearch("search-log", logViewEl, ".log-row");
+setBodyFlowView();
 
-    wireCheckbox(onlyTestsEl, applyOnlyTestsFilterFromCheckbox);
+const searchInput = wireSearch("search", document.body, ".list");
+const searchSipInput = wireSearch("search-sip", sipViewEl, ".sip-ladder-row");
+const searchLogInput = wireSearch("search-log", logViewEl, ".log-row");
 
-    const onlyResultsEl = document.getElementById("only-results");
-    wireCheckbox(onlyResultsEl, applyOnlyResultsFilterFromCheckbox);
+wireCheckbox(onlyTestsEl, applyOnlyTestsFilterFromCheckbox);
 
-    const flow =
-      flowEl && window.createSequentialFlowRenderer
-        ? window.createSequentialFlowRenderer(flowEl, getOptions)
-        : null;
+const onlyResultsEl = document.getElementById("only-results");
+wireCheckbox(onlyResultsEl, applyOnlyResultsFilterFromCheckbox);
 
-    const clearMessages = () => {
-      [flowEl, logViewEl, sipViewEl].forEach((el) => {
-        if (!el) return;
-        el.innerHTML = "";
-        el.scrollTop = 0;
-        if (el === sipViewEl) {
-          el._msgCount = 0;
-          if (window.updateSipCompare) window.updateSipCompare();
-        }
-      });
-    };
+const flow =
+  flowEl && createSequentialFlowRenderer
+    ? createSequentialFlowRenderer(flowEl, getOptions)
+    : null;
 
-    if (clearEl) clearEl.onclick = clearMessages;
-
-    if (logoutEl) {
-      logoutEl.onclick = () => {
-        if (window.API && window.API.logout) {
-          window.API.logout();
-        } else {
-          window.location.href = "/login.html";
-        }
-      };
+const clearMessages = () => {
+  [flowEl, logViewEl, sipViewEl].forEach((el) => {
+    if (!el) return;
+    el.innerHTML = "";
+    el.scrollTop = 0;
+    if (el === sipViewEl) {
+      el._msgCount = 0;
+      if (window.updateSipCompare) window.updateSipCompare();
     }
+  });
+};
 
-    // SIP Compare logic
-    const sipComparePanel = document.getElementById("sip-compare-panel");
-    const closeSipCompareBtn = document.getElementById("close-sip-compare");
-    if (window.initSipCompare) {
-      window.initSipCompare({ sipViewEl, sipComparePanel, closeSipCompareBtn });
+if (clearEl) clearEl.onclick = clearMessages;
+
+if (logoutEl) {
+  logoutEl.onclick = () => {
+    if (API && API.logout) {
+      API.logout();
+    } else {
+      window.location.href = "/login.html";
     }
+  };
+}
 
-    if (collapseAllEl && flow) {
-      collapseAllEl.onchange = () =>
-        flow.setCollapseAll(!!collapseAllEl.checked);
-    }
+// SIP Compare logic
+const sipComparePanel = document.getElementById("sip-compare-panel");
+const closeSipCompareBtn = document.getElementById("close-sip-compare");
+if (initSipCompare) {
+  initSipCompare({ sipViewEl, sipComparePanel, closeSipCompareBtn });
+}
 
-    const socketWrapper = {
-      isOpen: () => socket && socket.isOpen(),
-      send: (m) => {
-        if (socket && socket.isOpen()) socket.send(m);
-      },
-    };
+if (collapseAllEl && flow) {
+  collapseAllEl.onchange = () => flow.setCollapseAll(!!collapseAllEl.checked);
+}
 
-    let tfManager = null;
-    if (window.initTestfileManager) {
-      tfManager = window.initTestfileManager({
-        socket: socketWrapper,
-        testfileInputEl: document.getElementById("testfile-input"),
-        testfilesRunEl: document.getElementById("testfiles-run"),
-        testfilesStopEl: document.getElementById("testfiles-stop"),
-        testfileSelectEl: document.getElementById("testfile-select"),
-        testfilesSaveEl: document.getElementById("testfiles-save"),
-        testfilesNewEl: document.getElementById("testfiles-new"),
-        testfilesRenameEl: document.getElementById("testfiles-rename"),
-        testfilesDeleteEl: document.getElementById("testfiles-delete"),
-        testfileHighlightsEl: document.getElementById("testfile-highlights"),
-        renderError: (j) => {
-          if (flow) flow.renderEvent(j);
-        },
-        onActiveFileChange: (key) => {
-          const [project, name] = key ? key.split(":") : ["", ""];
-          EventBus.emit("testfile:changed", name, project);
-        },
-      });
-      window._tfManager = tfManager;
-    }
+const socketWrapper = {
+  isOpen: () => socket && socket.isOpen(),
+  send: (m) => {
+    if (socket && socket.isOpen()) socket.send(m);
+  },
+};
 
-    if (window.initCompareWindow) {
-      window.initCompareWindow({});
-    }
-
-    const btnModeTests = document.getElementById("btn-mode-tests");
-    const btnModeCompare = document.getElementById("btn-mode-compare");
-
-    const syncCompareWithActiveTestfile = () => {
-      const key = tfManager?.getActiveKey?.() || "";
+let tfManager = null;
+if (initTestfileManager) {
+  tfManager = initTestfileManager({
+    socket: socketWrapper,
+    testfileInputEl: document.getElementById("testfile-input"),
+    testfilesRunEl: document.getElementById("testfiles-run"),
+    testfilesStopEl: document.getElementById("testfiles-stop"),
+    testfileSelectEl: document.getElementById("testfile-select"),
+    testfilesSaveEl: document.getElementById("testfiles-save"),
+    testfilesNewEl: document.getElementById("testfiles-new"),
+    testfilesRenameEl: document.getElementById("testfiles-rename"),
+    testfilesDeleteEl: document.getElementById("testfiles-delete"),
+    testfileHighlightsEl: document.getElementById("testfile-highlights"),
+    renderError: (j) => {
+      if (flow) flow.renderEvent(j);
+    },
+    onActiveFileChange: (key) => {
       const [project, name] = key ? key.split(":") : ["", ""];
       EventBus.emit("testfile:changed", name, project);
-    };
+    },
+  });
+}
 
-    const setBottomMode = (mode) => {
-      if (!bottomRow) return;
+if (initCompareWindow) {
+  initCompareWindow({ getActiveKey: () => tfManager?.getActiveKey() });
+}
 
-      bottomRow.setAttribute("data-bottom-mode", mode);
+const btnModeTests = document.getElementById("btn-mode-tests");
+const btnModeCompare = document.getElementById("btn-mode-compare");
 
-      if (btnModeTests) {
-        btnModeTests.classList.toggle("active", mode === "tests");
+const syncCompareWithActiveTestfile = () => {
+  const key = tfManager?.getActiveKey?.() || "";
+  const [project, name] = key ? key.split(":") : ["", ""];
+  EventBus.emit("testfile:changed", name, project);
+};
+
+const setBottomMode = (mode) => {
+  if (!bottomRow) return;
+
+  bottomRow.setAttribute("data-bottom-mode", mode);
+
+  if (btnModeTests) {
+    btnModeTests.classList.toggle("active", mode === "tests");
+  }
+  if (btnModeCompare) {
+    btnModeCompare.classList.toggle("active", mode === "compare");
+  }
+
+  if (mode === "compare") {
+    syncCompareWithActiveTestfile();
+  }
+};
+
+if (btnModeTests) btnModeTests.onclick = () => setBottomMode("tests");
+if (btnModeCompare) btnModeCompare.onclick = () => setBottomMode("compare");
+
+// Sidebar Toggle Logic
+const testControls = document.getElementById("test-controls");
+const sidebarToggle = document.getElementById("sidebar-toggle");
+if (sidebarToggle && testControls) {
+  sidebarToggle.onclick = (e) => {
+    e.stopPropagation();
+    testControls.classList.toggle("expanded");
+  };
+}
+
+// WebSocket Handler
+socket = createSocketHandler(wsURL(), {
+  onOpen: () => {
+    if (tfManager) {
+      tfManager.requestTestfilesList();
+      tfManager.updateSaveEnabled();
+    }
+    EventBus.emit("ws:open");
+  },
+  onClose: () => {
+    if (tfManager) tfManager.updateSaveEnabled();
+    EventBus.emit("ws:close");
+  },
+  onMessage: (j) => {
+    EventBus.emit("ws:message", j);
+
+    const isStatusProgressLike =
+      j.status === "running" ||
+      j.status === "finished" ||
+      j.status === "progress";
+    const isTestfileOrProjectToken =
+      j.token === "testfiles" || j.token === "projects";
+
+    if (tfManager?.handleTestfilesMessage(j)) {
+      if (j.token === "testfiles" && j.name) {
+        EventBus.emit("testfile:changed", j.name, j.project);
       }
-      if (btnModeCompare) {
-        btnModeCompare.classList.toggle("active", mode === "compare");
-      }
 
-      if (mode === "compare") {
-        syncCompareWithActiveTestfile();
-      }
-    };
+      if (isTestfileOrProjectToken) return;
 
-    if (btnModeTests) btnModeTests.onclick = () => setBottomMode("tests");
-    if (btnModeCompare) btnModeCompare.onclick = () => setBottomMode("compare");
-
-    // Sidebar Toggle Logic
-    const testControls = document.getElementById("test-controls");
-    const sidebarToggle = document.getElementById("sidebar-toggle");
-    if (sidebarToggle && testControls) {
-      sidebarToggle.onclick = (e) => {
-        e.stopPropagation();
-        testControls.classList.toggle("expanded");
-      };
+      // Keep test lifecycle/status events visible in flow.
+      if (!isStatusProgressLike && j.type !== "CMD") return;
     }
 
-    // WebSocket Handler
-    socket = createSocketHandler(wsURL(), {
-      onOpen: () => {
-        if (tfManager) {
-          tfManager.requestTestfilesList();
-          tfManager.updateSaveEnabled();
-        }
-        EventBus.emit("ws:open");
-      },
-      onClose: () => {
-        if (tfManager) tfManager.updateSaveEnabled();
-        EventBus.emit("ws:close");
-      },
-      onMessage: (j) => {
-        EventBus.emit("ws:message", j);
+    const isTestRunStart =
+      (j.token === "testfile" || j.token === "test") && j.status === "running";
 
-        const isStatusProgressLike =
-          j.status === "running" ||
-          j.status === "finished" ||
-          j.status === "progress";
-        const isTestfileOrProjectToken =
-          j.token === "testfiles" || j.token === "projects";
+    if (isTestRunStart && sipViewEl) {
+      sipViewEl._msgCount = 0;
+      sipViewEl
+        .querySelectorAll(".sip-ladder-row.selected")
+        .forEach((el) => el.classList.remove("selected"));
 
-        if (tfManager?.handleTestfilesMessage(j)) {
-          if (j.token === "testfiles" && j.name) {
-            EventBus.emit("testfile:changed", j.name, j.project);
-          }
+      if (window.updateSipCompare) {
+        window.updateSipCompare();
+      }
+    }
 
-          if (isTestfileOrProjectToken) return;
+    const renderContext = { logViewEl, sipViewEl, flowEl, searchLogInput };
+    if (renderLogEvent?.(j, renderContext, getOptions)) return;
+    if (renderSipEvent?.(j, { sipViewEl, searchSipInput }, getOptions)) {
+      return;
+    }
 
-          // Keep test lifecycle/status events visible in flow.
-          if (!isStatusProgressLike && j.type !== "CMD") return;
-        }
+    if (flow) {
+      flow.renderEvent(j);
+    }
+  },
+});
 
-        const isTestRunStart =
-          (j.token === "testfile" || j.token === "test") &&
-          j.status === "running";
-
-        if (isTestRunStart && sipViewEl) {
-          sipViewEl._msgCount = 0;
-          sipViewEl
-            .querySelectorAll(".sip-ladder-row.selected")
-            .forEach((el) => el.classList.remove("selected"));
-
-          if (window.updateSipCompare) {
-            window.updateSipCompare();
-          }
-        }
-
-        const renderContext = { logViewEl, sipViewEl, flowEl, searchLogInput };
-        if (window.renderLogEvent?.(j, renderContext, getOptions)) return;
-        if (
-          window.renderSipEvent?.(j, { sipViewEl, searchSipInput }, getOptions)
-        ) {
-          return;
-        }
-
-        if (flow) {
-          flow.renderEvent(j);
-        }
-      },
-    });
-  };
-})();

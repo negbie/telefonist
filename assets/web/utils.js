@@ -1,19 +1,19 @@
-function nowLocalString() {
+export function nowLocalString() {
   return new Date().toLocaleString();
 }
 
-function safeText(value) {
+export function safeText(value) {
   return value == null ? "" : String(value);
 }
 
-function stripANSI(s) {
+export function stripANSI(s) {
   return safeText(s).replace(
     /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
     "",
   );
 }
 
-function base64EncodeUTF8(s) {
+export function base64EncodeUTF8(s) {
   return btoa(
     encodeURIComponent(s).replace(/%([0-9A-F]{2})/g, function (_, p1) {
       return String.fromCharCode(parseInt(p1, 16));
@@ -21,7 +21,7 @@ function base64EncodeUTF8(s) {
   );
 }
 
-function base64DecodeUTF8(b64) {
+export function base64DecodeUTF8(b64) {
   var binary = atob(safeText(b64));
   var bytes = new Uint8Array(binary.length);
   for (var i = 0; i < binary.length; i++) {
@@ -30,16 +30,16 @@ function base64DecodeUTF8(b64) {
   return new TextDecoder().decode(bytes);
 }
 
-function isNearBottom(el, thresholdPx) {
+export function isNearBottom(el, thresholdPx) {
   if (thresholdPx === undefined) thresholdPx = 6;
   return el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
 }
 
-function scrollToBottom(el) {
+export function scrollToBottom(el) {
   el.scrollTop = el.scrollHeight - el.clientHeight;
 }
 
-function trimChildrenToMax(parent, max) {
+export function trimChildrenToMax(parent, max) {
   if (!parent || !max || max <= 0) return;
   var children = parent.children;
   if (!children) return;
@@ -49,14 +49,14 @@ function trimChildrenToMax(parent, max) {
   }
 }
 
-function ensureElement(parent, tag, className) {
+export function ensureElement(parent, tag, className) {
   var el = document.createElement(tag);
   if (className) el.className = className;
   parent.appendChild(el);
   return el;
 }
 
-function appendAndMaintain(container, el, opts) {
+export function appendAndMaintain(container, el, opts) {
   if (!container || !el) return;
   var options = opts || {};
   var maxItems = options.maxItems || 0;
@@ -72,20 +72,20 @@ function appendAndMaintain(container, el, opts) {
   }
 }
 
-function tagToken(el, token) {
+export function tagToken(el, token) {
   if (!el) return;
   var t = safeText(token || "");
   if (!t) return;
   el.setAttribute("data-token", t);
 }
 
-function sanitizeTestfileName(raw) {
+export function sanitizeTestfileName(raw) {
   var s = safeText(raw || "").replace(/\s+/g, "");
   s = s.replace(/[^A-Za-z0-9._-]/g, "");
   return s.slice(0, 64);
 }
 
-function escapeHTML(str) {
+export function escapeHTML(str) {
   return safeText(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -94,7 +94,7 @@ function escapeHTML(str) {
     .replace(/'/g, "&#039;");
 }
 
-function wireSearchFilter(inputEl, containerEl, selector) {
+export function wireSearchFilter(inputEl, containerEl, selector) {
   if (!inputEl || !containerEl) return;
 
   var lastFilter = null;
@@ -116,7 +116,7 @@ function wireSearchFilter(inputEl, containerEl, selector) {
   applyFilter();
 }
 
-function syntaxHighlight(inputEl, highlightsEl) {
+export function syntaxHighlight(inputEl, highlightsEl) {
   if (!inputEl || !highlightsEl) return;
 
   var text = safeText(inputEl.value);
@@ -249,16 +249,16 @@ function syntaxHighlight(inputEl, highlightsEl) {
   highlightsEl.innerHTML = html;
 }
 
-function wsURL() {
+export function wsURL() {
   var scheme = window.location.protocol === "https:" ? "wss://" : "ws://";
   return scheme + window.location.host + "/ws";
 }
 
-function setBodyFlowView() {
+export function setBodyFlowView() {
   document.body.setAttribute("data-view", "flow");
 }
 
-function setBodyToggleAttribute(checkboxEl, attrName) {
+export function setBodyToggleAttribute(checkboxEl, attrName) {
   if (!checkboxEl) return;
   if (checkboxEl.checked) {
     document.body.setAttribute(attrName, "1");
@@ -267,15 +267,15 @@ function setBodyToggleAttribute(checkboxEl, attrName) {
   }
 }
 
-function applyOnlyTestsFilterFromCheckbox(onlyTestsEl) {
+export function applyOnlyTestsFilterFromCheckbox(onlyTestsEl) {
   setBodyToggleAttribute(onlyTestsEl, "data-only-tests");
 }
 
-function applyOnlyResultsFilterFromCheckbox(onlyResultsEl) {
+export function applyOnlyResultsFilterFromCheckbox(onlyResultsEl) {
   setBodyToggleAttribute(onlyResultsEl, "data-only-results");
 }
 
-function initResizer(resizer, topRow, bottomRow) {
+export function initResizer(resizer, topRow, bottomRow) {
   if (!resizer || !topRow || !bottomRow) return;
 
   var minTopPx = 100;
@@ -373,7 +373,7 @@ function initResizer(resizer, topRow, bottomRow) {
   lastAppliedTopPx = topPx;
 }
 
-function computeLCSDiff(aItems, bItems) {
+export function computeLCSDiff(aItems, bItems) {
   var m = aItems.length,
     n = bItems.length;
   var dp = Array.from({ length: m + 1 }, function () {
@@ -408,25 +408,4 @@ function computeLCSDiff(aItems, bItems) {
   return result;
 }
 
-// Expose globals for other scripts (optional but helpful for clarity)
-window.nowLocalString = nowLocalString;
-window.safeText = safeText;
-window.stripANSI = stripANSI;
-window.base64EncodeUTF8 = base64EncodeUTF8;
-window.base64DecodeUTF8 = base64DecodeUTF8;
-window.isNearBottom = isNearBottom;
-window.scrollToBottom = scrollToBottom;
-window.trimChildrenToMax = trimChildrenToMax;
-window.ensureElement = ensureElement;
-window.appendAndMaintain = appendAndMaintain;
-window.tagToken = tagToken;
-window.sanitizeTestfileName = sanitizeTestfileName;
-window.escapeHTML = escapeHTML;
-window.wireSearchFilter = wireSearchFilter;
-window.syntaxHighlight = syntaxHighlight;
-window.wsURL = wsURL;
-window.setBodyFlowView = setBodyFlowView;
-window.applyOnlyTestsFilterFromCheckbox = applyOnlyTestsFilterFromCheckbox;
-window.applyOnlyResultsFilterFromCheckbox = applyOnlyResultsFilterFromCheckbox;
-window.initResizer = initResizer;
-window.computeLCSDiff = computeLCSDiff;
+

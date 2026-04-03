@@ -1,4 +1,7 @@
-function createSocketHandler(wsURL, callbacks) {
+import { safeText } from "./utils.js";
+import { normalizeEvent } from "./flow.js";
+
+export function createSocketHandler(wsURL, callbacks) {
   var conn = null;
   var MIN_JSON_LINE_LENGTH = 10;
 
@@ -75,3 +78,4 @@ function createSocketHandler(wsURL, callbacks) {
     },
   };
 }
+

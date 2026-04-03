@@ -1,4 +1,13 @@
-function normalizeEvent(j) {
+import {
+  safeText,
+  isNearBottom,
+  ensureElement,
+  tagToken,
+  trimChildrenToMax,
+  scrollToBottom,
+} from "./utils.js";
+
+export function normalizeEvent(j) {
   if (!j || typeof j !== "object") return null;
 
   // Go backend now provides the 'time' field in 'D.M.YYYY HH:mm:ss.SSS' format.
@@ -94,7 +103,7 @@ function getSummaryFields(j) {
   };
 }
 
-function createSequentialFlowRenderer(flowEl, getOptions) {
+export function createSequentialFlowRenderer(flowEl, getOptions) {
   function setDetailsOpenState(detailsEl, open) {
     if (open) detailsEl.setAttribute("open", "open");
     else detailsEl.removeAttribute("open");
@@ -174,3 +183,4 @@ function createSequentialFlowRenderer(flowEl, getOptions) {
     setCollapseAll: setCollapseAll,
   };
 }
+

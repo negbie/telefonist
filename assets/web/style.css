@@ -97,6 +97,7 @@ pre {
 }
 
 .col-pane {
+    contain: strict;
     display: flex;
     flex-direction: column;
     border-right: 2px solid #ccc;
@@ -161,15 +162,6 @@ pre {
     contain: layout paint;
 }
 
-.col-pane {
-    contain: strict;
-    display: flex;
-    flex-direction: column;
-    border-right: 2px solid #ccc;
-    overflow: hidden;
-    background: #fff;
-    flex: 1 1 auto;
-}
 
 /* Utilities */
 .hint {

@@ -1,3 +1,7 @@
+import { safeText, trimChildrenToMax } from "./utils.js";
+
+let _lastRunId = null;
+
 const createDownloadButton = (label, runId, type) => {
   const btn = document.createElement("button");
   btn.textContent = label;
@@ -15,7 +19,7 @@ const createDownloadButton = (label, runId, type) => {
   return btn;
 };
 
-window.renderLogEvent = (j, elements, getOptions) => {
+export const renderLogEvent = (j, elements, getOptions) => {
   const { logViewEl, sipViewEl, flowEl } = elements;
 
   const opts = getOptions();
@@ -49,7 +53,7 @@ window.renderLogEvent = (j, elements, getOptions) => {
     const isStart = type === "start";
     const runId = isStart
       ? j._runId
-      : j.run_id || window._lastRunId || `fin_${Date.now()}`;
+      : j.run_id || _lastRunId || `fin_${Date.now()}`;
     const name =
       j.file || j.name || (j.token === "test" ? "Interactive Run" : "Test Run");
 
@@ -111,7 +115,7 @@ window.renderLogEvent = (j, elements, getOptions) => {
     j.status === "running"
   ) {
     j._runId = `run_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    window._lastRunId = j._runId;
+    _lastRunId = j._runId;
     [logViewEl, sipViewEl, flowEl].forEach((c) => addSep(c, "start"));
     return false;
   }
@@ -167,3 +171,4 @@ window.renderLogEvent = (j, elements, getOptions) => {
 
   return false;
 };
+
