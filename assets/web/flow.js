@@ -143,11 +143,7 @@ function createSequentialFlowRenderer(flowEl, getOptions) {
     eventDetails.appendChild(eventSummary);
 
     var jsonPre = ensureElement(eventDetails, "pre", "evt-json");
-    if (j._details) {
-      jsonPre.textContent = j._details;
-    } else {
-      jsonPre.textContent = formatJSON(j);
-    }
+    jsonPre.textContent = formatJSON(j);
 
     var searchInput = document.getElementById("search");
     if (searchInput && searchInput.value) {

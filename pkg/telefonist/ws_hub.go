@@ -52,9 +52,6 @@ type WsHub struct {
 	// Cancellation for the current test run
 	testCancel context.CancelFunc
 
-	// Waiters for barrier synchronization
-	syncWaiters map[string]chan struct{}
-
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -69,8 +66,7 @@ type WsHub struct {
 	cmdCounter atomic.Uint64
 
 	// Message history for persistence across refreshes
-	history      [][]byte
-	historyLimit int
+	history *RingBuffer
 }
 
 type AgentMsg struct {
@@ -96,41 +92,28 @@ func (h *WsHub) broadcastToClients(msg []byte) {
 // recordAndBroadcast adds a message to the hub's recent history and then
 // broadcasts it to all connected clients. History is replayed to new clients.
 func (h *WsHub) recordAndBroadcast(msg []byte) {
-	if h.historyLimit <= 0 {
-		h.broadcastToClients(msg)
-		return
-	}
-	if len(h.history) < h.historyLimit {
-		h.history = append(h.history, msg)
-	} else {
-		// Overwrite the oldest message with the latest to keep O(1) memory.
-		// copy handles the shift, aiding GC by dropping the oldest reference.
-		copy(h.history, h.history[1:])
-		h.history[h.historyLimit-1] = msg
-	}
+	h.history.Add(msg)
 	h.broadcastToClients(msg)
 }
 
 func NewWsHub(dataDir string, maxCalls uint, rtpNet string, rtpPorts string, rtpTimeout uint, useAlsa bool, sipListen string) *WsHub {
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &WsHub{
-		clients:      make(map[*client]bool),
-		command:      make(chan []byte, 128),
-		register:     make(chan *client, 128),
-		unregister:   make(chan *client, 128),
-		broadcast:    make(chan []byte, 1024),
-		bm:           nil, // Set later
-		agentMsg:     make(chan AgentMsg, 1024),
-		onEvent:      nil,
-		onResponse:   nil,
-		testStore:    nil,
-		syncWaiters:  make(map[string]chan struct{}),
-		ctx:          ctx,
-		cancel:       cancel,
-		internalCmd:  make(chan func(), 128),
-		DataDir:      dataDir,
-		history:      make([][]byte, 0, 3333),
-		historyLimit: 3333,
+		clients:     make(map[*client]bool),
+		command:     make(chan []byte, 128),
+		register:    make(chan *client, 128),
+		unregister:  make(chan *client, 128),
+		broadcast:   make(chan []byte, 1024),
+		bm:          nil, // Set later
+		agentMsg:    make(chan AgentMsg, 1024),
+		onEvent:     nil,
+		onResponse:  nil,
+		testStore:   nil,
+		ctx:         ctx,
+		cancel:      cancel,
+		internalCmd: make(chan func(), 128),
+		DataDir:     dataDir,
+		history:     NewRingBuffer(3333),
 	}
 	h.bm = NewBaresipManager(h, dataDir, maxCalls, rtpNet, rtpPorts, rtpTimeout, useAlsa, sipListen)
 	return h
@@ -183,7 +166,7 @@ func (h *WsHub) Run() {
 
 		case client := <-h.register:
 			// Replay history to the new client first
-			for _, msg := range h.history {
+			for _, msg := range h.history.GetAll() {
 				select {
 				case client.send <- msg:
 				default:
@@ -276,22 +259,11 @@ func (h *WsHub) Run() {
 				json.Unmarshal(e.RawJSON, &mEvent)
 				mEvent["_agent"] = am.Alias
 				mEvent["time"] = time.Now().Format("2.1.2006 15:04:05.000")
-
-				// Enrichment: Pre-format details in Go
-				mEvent["_details"] = formatEventDetails(mEvent)
-
 				enriched, _ := json.Marshal(mEvent)
 				h.recordAndBroadcast(enriched)
 
 			case m.Response != nil:
 				r := *m.Response
-				if strings.HasPrefix(r.Token, "sync_") {
-					if ch, ok := h.syncWaiters[r.Token]; ok {
-						close(ch)
-						delete(h.syncWaiters, r.Token)
-					}
-					continue
-				}
 
 				if h.onResponse != nil {
 					h.onResponse(r)
@@ -304,23 +276,17 @@ func (h *WsHub) Run() {
 				mResp["type"] = "RESPONSE"
 				mResp["param"] = r.Data
 				mResp["time"] = time.Now().Format("2.1.2006 15:04:05.000")
-
-				// Enrichment: Pre-format details in Go
-				mResp["_details"] = formatEventDetails(mResp)
-
 				enriched, _ := json.Marshal(mResp)
 				h.recordAndBroadcast(enriched)
 
 			case m.Log != "":
-				l := stripANSI(m.Log)
 				mLog := map[string]interface{}{
 					"event":  true,
 					"type":   "LOG",
-					"param":  l,
+					"param":  m.Log,
 					"_agent": am.Alias,
 					"time":   time.Now().Format("2.1.2006 15:04:05.000"),
 				}
-				mLog["_details"] = formatEventDetails(mLog)
 				msg, _ := json.Marshal(mLog)
 				if h.trainSession != nil {
 					h.trainSession.recordRaw(msg)
@@ -328,15 +294,13 @@ func (h *WsHub) Run() {
 				h.recordAndBroadcast(msg)
 
 			case m.SIP != "":
-				s := stripANSI(m.SIP)
 				mSIP := map[string]interface{}{
 					"event":  true,
 					"type":   "SIP",
-					"param":  s,
+					"param":  m.SIP,
 					"_agent": am.Alias,
 					"time":   time.Now().Format("2.1.2006 15:04:05.000"),
 				}
-				mSIP["_details"] = formatEventDetails(mSIP)
 				msg, _ := json.Marshal(mSIP)
 				if h.trainSession != nil {
 					h.trainSession.recordRaw(msg)
@@ -348,51 +312,14 @@ func (h *WsHub) Run() {
 }
 
 func (h *WsHub) executeSmartCommand(cmd string) {
+	target, cleanedCmd := h.bm.ResolveTarget(cmd, h.activeAgent)
+	cmd = cleanedCmd
+
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return
 	}
-
-	target := h.activeAgent
-	first := ""
-	if len(parts) > 0 {
-		first = strings.ToLower(parts[0])
-
-		// Robust prefix detection: look for agentAlias:cmd
-		// Since agentAlias can be a SIP URI (sip:user@host), we look for ALL colons in the first word.
-		h.bm.mu.RLock()
-		var bestAlias string
-		var bestColonIdx int
-		for a := range h.bm.agents {
-			for i := len(parts[0]) - 1; i >= 0; i-- {
-				if parts[0][i] == ':' {
-					prefix := parts[0][:i]
-					// Normalize prefix: strip SIP parameters (part after ;)
-					if semi := strings.Index(prefix, ";"); semi != -1 {
-						prefix = prefix[:semi]
-					}
-					if strings.EqualFold(a, prefix) {
-						if len(a) > len(bestAlias) {
-							bestAlias = a
-							bestColonIdx = i
-						}
-					}
-				}
-			}
-		}
-		h.bm.mu.RUnlock()
-
-		if bestAlias != "" {
-			target = bestAlias
-			// The command part starts after the colon of bestAlias
-			cmd = parts[0][bestColonIdx+1:] + " " + strings.Join(parts[1:], " ")
-			cmd = strings.TrimSpace(cmd)
-			parts = strings.Fields(cmd)
-			if len(parts) > 0 {
-				first = strings.ToLower(parts[0])
-			}
-		}
-	}
+	first := strings.ToLower(parts[0])
 
 	// Handle orchestration commands
 	if first == "uafind" && len(parts) >= 2 {
@@ -471,7 +398,6 @@ func (h *WsHub) BroadcastCommandHint(cmd string, agent string) {
 		"_cmdId": fmt.Sprintf("cmd_%d_%d", time.Now().Unix(), count),
 		"time":   time.Now().Format("2.1.2006 15:04:05.000"),
 	}
-	mCmd["_details"] = formatEventDetails(mCmd)
 	msg, _ := json.Marshal(mCmd)
 	h.broadcast <- msg
 }

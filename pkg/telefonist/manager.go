@@ -213,10 +213,6 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 func (m *BaresipManager) forwardMessages(a *Agent) {
 	msgChan := a.Baresip.GetMsgChan()
 	for msg := range msgChan {
-		// We could enrich the message with the agent alias here if needed
-		// But for now, we just pass it to the master hub's message logic
-		// Wait, WsHub.Run() currently reads from ONE channel.
-		// We need to either make WsHub listen to multiple channels or use a central channel.
 		m.master.ForwardAgentMsg(a.Alias, msg)
 	}
 }
@@ -267,4 +263,41 @@ func (m *BaresipManager) CloseAll() {
 	for _, a := range m.agents {
 		m.stopAgent(a)
 	}
+}
+
+func (m *BaresipManager) ResolveTarget(cmd string, fallbackTarget string) (target string, finalCmd string) {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return fallbackTarget, cmd
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var bestAlias string
+	var bestColonIdx int
+	for a := range m.agents {
+		for i := len(parts[0]) - 1; i >= 0; i-- {
+			if parts[0][i] == ':' {
+				prefix := parts[0][:i]
+				if semi := strings.Index(prefix, ";"); semi != -1 {
+					prefix = prefix[:semi]
+				}
+				if strings.EqualFold(a, prefix) {
+					if len(a) > len(bestAlias) {
+						bestAlias = a
+						bestColonIdx = i
+					}
+				}
+			}
+		}
+	}
+
+	if bestAlias != "" {
+		target = bestAlias
+		finalCmd = parts[0][bestColonIdx+1:] + " " + strings.Join(parts[1:], " ")
+		return target, strings.TrimSpace(finalCmd)
+	}
+
+	return fallbackTarget, cmd
 }

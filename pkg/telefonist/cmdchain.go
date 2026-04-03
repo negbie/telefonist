@@ -175,23 +175,8 @@ func isKnownCommand(s string) bool {
 	}
 	firstWord := strings.SplitN(s, " ", 2)[0]
 
-	// Check for agent: prefix (e.g. ua1:dial)
-	if idx := strings.Index(firstWord, ":"); idx != -1 {
-		// Ensure it's not a SIP URI (which starts with sip:)
-		if !strings.HasPrefix(strings.ToLower(firstWord), "sip:") {
-			firstWord = firstWord[idx+1:]
-		} else {
-			// Even for SIP URIs, there might be a SECOND colon for the command
-			// e.g. sip:test1@host:dial
-			// We look for the colon that's NOT part of sip:
-			remaining := firstWord[4:]
-			if idx2 := strings.Index(remaining, ":"); idx2 != -1 {
-				firstWord = remaining[idx2+1:]
-			} else {
-				// It's just a SIP URI, probably an argument, not a command prefix
-				return false
-			}
-		}
+	if idx := strings.LastIndex(firstWord, ":"); idx != -1 {
+		firstWord = firstWord[idx+1:]
 	}
 
 	return knownCommands[firstWord] || knownCommands[strings.ToLower(firstWord)]
