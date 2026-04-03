@@ -55,6 +55,7 @@ Run telefonist with its various configuration flags.
 - `-data_dir` - Directory for configuration files and runtime data (default: "data")
 - `-ui_address` - UI listen address (default: "0.0.0.0:8080")
 - `-ui_admin_password` - UI admin password (default: "telefonist")
+- `-ui_api_key` - API Key for X-API-Key header (optional, defaults to a random 32-character string if empty)
 - `-sip_listen` - SIP listen address and base port for agents (default: "0.0.0.0:5060")
 - `-ctrl_address` - Local control listen address (default: "127.0.0.1:4444")
 - `-max_calls` - Maximum number of incoming calls for agents (default: 10)
@@ -86,13 +87,17 @@ Telefonist provides a password-protected REST API for triggering automated test 
 Runs all testfiles associated with a specific project in alphabetical order.
 
 - **Endpoint**: `POST /api/project/run?name=<project_name>`
-- **Authentication**: Requires `X-API-Key` header with your `ui_admin_password` (default: `telefonist`).
+- **Authentication**: Requires `X-API-Key` header with your configured `-ui_api_key`.
+
+> [!IMPORTANT]
+> If no `-ui_api_key` is provided at startup, Telefonist generates a random 32-character string and prints it to the console. You must use this string for API authentication.
 
 **Example using `curl`**:
 
 ```bash
+# If you started with -ui_api_key=mysecret
 curl -X POST "http://localhost:8080/api/project/run?name=my_project" \
-     -H "X-API-Key: telefonist"
+     -H "X-API-Key: mysecret"
 ```
 
 **Responses**:

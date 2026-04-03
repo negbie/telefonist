@@ -68,7 +68,7 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/testrun/wav", AuthMiddleware(HandleAPITestrunWav(hub)))
 	mux.HandleFunc("/api/testrun/download", AuthMiddleware(HandleAPITestrunDownload(hub)))
 	mux.HandleFunc("/api/maintenance", AuthMiddleware(HandleAPIDatabaseMaintenance(hub.testStore)))
-	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UiAdminPassword))
+	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UiApiKey))
 
 	// Static assets: all embedded web/* files are served automatically.
 	// New JS/CSS files added to web/ need no code changes here.
@@ -138,6 +138,11 @@ func Run() error {
 	}
 
 	go hub.Run()
+
+	if f.UiApiKey == "" {
+		f.UiApiKey = GenerateSessionToken()
+	}
+	log.Printf("UI Admin API Key (X-API-Key): %s", f.UiApiKey)
 
 	startHTTPServer(f, hub)
 

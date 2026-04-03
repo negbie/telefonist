@@ -774,15 +774,15 @@ func HandleAPIDatabaseMaintenance(ts *TestStore) http.HandlerFunc {
 	}
 }
 
-func HandleAPIProjectRun(hub *WsHub, adminPassword string) http.HandlerFunc {
+func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Header-based password protection
-		if r.Header.Get("X-API-Key") != adminPassword {
+		// Header-based API key protection
+		if r.Header.Get("X-API-Key") != apiKey {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

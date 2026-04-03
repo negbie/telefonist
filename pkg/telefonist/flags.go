@@ -29,6 +29,7 @@ type AppFlags struct {
 	SoundsDir       string
 	Agent           bool
 	Alias           string
+	UiApiKey        string
 }
 
 // ParseFlags defines and parses CLI flags, returning the collected values.
@@ -50,6 +51,7 @@ func ParseFlags() AppFlags {
 	flag.BoolVar(&f.Version, "version", false, "Print version")
 	flag.StringVar(&f.DataDir, "data_dir", "data", "Directory for configuration files and data")
 	flag.StringVar(&f.SoundsDir, "sounds_dir", "", "Directory for sound files (optional, defaults to data_dir/sounds)")
+	flag.StringVar(&f.UiApiKey, "ui_api_key", "", "API Key for X-API-Key header (optional, defaults to a random string if empty)")
 
 	flag.Parse()
 	return f
