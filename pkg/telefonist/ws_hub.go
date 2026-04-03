@@ -5,12 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
+)
+
+var (
+	// wavPattern matches the shortcut ;wav=NAME/
+	wavPattern = regexp.MustCompile(`;wav=([^/]+)/`)
 )
 
 // WsHub maintains the set of active clients and broadcasts events to the clients.
@@ -221,8 +228,7 @@ func (h *WsHub) Run() {
 				}(input)
 
 			default:
-				cmd := expandCommand(input, h.DataDir)
-				h.executeSmartCommand(cmd)
+				h.executeSmartCommand(input)
 			}
 
 		case am, ok := <-h.agentMsg:
@@ -312,6 +318,11 @@ func (h *WsHub) Run() {
 }
 
 func (h *WsHub) executeSmartCommand(cmd string) {
+	// 1. Expand shortcuts
+	soundsDir := filepath.Join(h.DataDir, "sounds")
+	cmd = wavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/$1;audio_player=aufile,{{RECORDS_DIR}}/")
+	cmd = strings.ReplaceAll(cmd, ";input_wav=", ";audio_source=aufile,"+soundsDir+"/")
+
 	target, cleanedCmd := h.bm.ResolveTarget(cmd, h.activeAgent)
 	cmd = cleanedCmd
 
@@ -368,6 +379,9 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 	// Direct Routing: All orchestration relies on explicit agent targeting (activeAgent or prefix).
 
 	if a, ok := h.bm.GetAgent(target); ok {
+		if strings.Contains(cmd, "{{RECORDS_DIR}}") {
+			cmd = strings.ReplaceAll(cmd, "{{RECORDS_DIR}}", a.RecordingsDir)
+		}
 		if err := a.Baresip.CmdWs([]byte(cmd)); err != nil {
 			log.Printf("hub: error sending command to agent %s: %v", target, err)
 		}

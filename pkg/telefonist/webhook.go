@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func sendResultWebhook(webhookUrl string, fileName, projectName string, total int, expectedHash, actualHash, result string, runID int64) error {
+func sendResultWebhook(webhookUrl string, fileName, projectName string, actualHash, result string, runID int64) error {
 	color := "008000" // Green for PASS
 	if result != "PASS" {
 		color = "FF0000" // Red for FAIL

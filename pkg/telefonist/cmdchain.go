@@ -3,7 +3,6 @@ package telefonist
 import (
 	"context"
 	"log"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -18,9 +17,6 @@ type chainToken struct {
 
 // durationPattern matches duration strings like "100ms", "10s", "2m".
 var durationPattern = regexp.MustCompile(`^\d+(ms|s|m)$`)
-
-// wavPattern matches the shortcut ;wav=NAME/
-var wavPattern = regexp.MustCompile(`;wav=([^/]+)/`)
 
 // knownCommands is the set of recognized baresip command keywords.
 var knownCommands = map[string]bool{
@@ -182,15 +178,7 @@ func isKnownCommand(s string) bool {
 	return knownCommands[firstWord] || knownCommands[strings.ToLower(firstWord)]
 }
 
-// expandCommand expands shortcuts like ;input_wav=NAME/ into full audio configuration.
-func expandCommand(cmd string, dataDir string) string {
-	soundsDir := filepath.Join(dataDir, "sounds")
-	recordsDir := filepath.Join(dataDir, "recorded_temp")
 
-	cmd = wavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/$1;audio_player=aufile,"+recordsDir+"/")
-	cmd = strings.ReplaceAll(cmd, ";input_wav=", ";audio_source=aufile,"+soundsDir+"/")
-	return cmd
-}
 
 // parseChain parses a pipe-separated input into a slice of chainTokens.
 // Only '|' is treated as the chaining separator.
@@ -238,8 +226,7 @@ func executeChain(ctx context.Context, h *WsHub, tokens []chainToken) {
 				return
 			}
 		} else {
-			cmd := expandCommand(tok.command, h.DataDir)
-			h.executeSmartCommand(cmd)
+			h.executeSmartCommand(tok.command)
 		}
 	}
 }

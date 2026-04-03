@@ -22,8 +22,10 @@ type Agent struct {
 	Baresip   *gobaresip.Baresip
 	Cmd       *exec.Cmd
 	CtrlAddr  string
-	SipPort   int
-	RtpPorts  string
+	SipPort       int
+	RtpPorts      string
+	Done          chan struct{} // Closed when Cmd exits
+	RecordingsDir string
 }
 
 type BaresipManager struct {
@@ -87,6 +89,10 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if !isSafeAlias(alias) {
+		return fmt.Errorf("invalid agent alias %q: only alphanumeric, underscores, and dashes allowed", alias)
+	}
+
 	if _, ok := m.agents[alias]; ok {
 		return fmt.Errorf("agent %s already exists", alias)
 	}
@@ -121,13 +127,13 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 
 	// Write config and accounts
 	// We pass baresipAddr to CreateConfig so Baresip listens there
-	globalRecordsDir, _ := filepath.Abs(filepath.Join(m.dataDir, "recorded_temp"))
+	agentRecordsDir, _ := filepath.Abs(filepath.Join(agentDir, "recorded_temp"))
 	globalSoundsDir, _ := filepath.Abs(filepath.Join(m.dataDir, "sounds"))
 	sipAddr := ""
 	if m.HasSipListen {
 		sipAddr = fmt.Sprintf("%s:%d", m.BaseSipIP, sipPort)
 	}
-	CreateConfig(agentDir, m.MaxCalls, m.RtpNet, rtpPorts, m.RtpTimeout, baresipAddr, sipAddr, m.UseAlsa, true, globalRecordsDir, globalSoundsDir)
+	CreateConfig(agentDir, m.MaxCalls, m.RtpNet, rtpPorts, m.RtpTimeout, baresipAddr, sipAddr, m.UseAlsa, true, agentRecordsDir, globalSoundsDir)
 
 	// Write empty accounts file to prevent initial registration before bridge is ready.
 	// Baresip will load UAs via explicit uanew command later.
@@ -193,14 +199,28 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		Baresip:   gb,
 		Cmd:       cmd,
 		CtrlAddr:  proxyAddr,
-		SipPort:   sipPort,
-		RtpPorts:  rtpPorts,
+		SipPort:       sipPort,
+		RtpPorts:      rtpPorts,
+		Done:          make(chan struct{}),
+		RecordingsDir: agentRecordsDir,
 	}
 
 	m.agents[alias] = agent
 
+	// Monitor agent process exit
+	go func() {
+		err := cmd.Wait()
+		if err != nil && !strings.Contains(err.Error(), "signal: killed") {
+			log.Printf("hub: agent %s exited with error: %v", alias, err)
+		} else {
+			log.Printf("hub: agent %s exited", alias)
+		}
+		close(agent.Done)
+		m.StopAgent(alias)
+	}()
+
 	// Forward agent messages to master hub
-	go m.forwardMessages(agent)
+	go m.forwardMessages(m.master.ctx, agent)
 
 	// Explicitly trigger UA registration now that the telemetry bridge is up
 	if err := agent.Baresip.CmdWs([]byte("uanew " + accountLine)); err != nil {
@@ -210,10 +230,18 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	return nil
 }
 
-func (m *BaresipManager) forwardMessages(a *Agent) {
+func (m *BaresipManager) forwardMessages(ctx context.Context, a *Agent) {
 	msgChan := a.Baresip.GetMsgChan()
-	for msg := range msgChan {
-		m.master.ForwardAgentMsg(a.Alias, msg)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-msgChan:
+			if !ok {
+				return
+			}
+			m.master.ForwardAgentMsg(a.Alias, msg)
+		}
 	}
 }
 
@@ -222,20 +250,16 @@ func (m *BaresipManager) stopAgent(a *Agent) {
 	// Try a graceful shutdown first to allow SIP deregistrations
 	a.Baresip.CmdWs([]byte("quit"))
 
-	// Wait for process to exit naturally
-	done := make(chan error, 1)
-	go func() {
-		done <- a.Cmd.Wait()
-	}()
-
+	// Wait for process to exit
 	select {
-	case <-done:
-		// Process exited naturally
+	case <-a.Done:
+		// Process exited naturally or via quit
 	case <-time.After(2 * time.Second):
 		// Process did not exit in time, force kill
 		if a.Cmd.Process != nil {
 			a.Cmd.Process.Kill()
 		}
+		<-a.Done // Wait for monitor goroutine to finish Wait()
 	}
 
 	a.Baresip.Close()
@@ -300,4 +324,12 @@ func (m *BaresipManager) ResolveTarget(cmd string, fallbackTarget string) (targe
 	}
 
 	return fallbackTarget, cmd
+}
+
+func isSafeAlias(alias string) bool {
+	if alias == "" || strings.HasPrefix(alias, ".") || strings.Contains(alias, "..") ||
+		strings.ContainsAny(alias, "/\\ \t\n\r") {
+		return false
+	}
+	return true
 }

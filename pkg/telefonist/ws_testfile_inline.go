@@ -253,7 +253,7 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 
 		if webhookURL != "" {
 			go func() {
-				if err := sendResultWebhook(webhookURL, fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID); err != nil {
+				if err := sendResultWebhook(webhookURL, fileName, projectName, actualHash, status, runID); err != nil {
 					log.Printf("failed to send result webhook: %v", err)
 				}
 			}()
@@ -388,53 +388,66 @@ func parseTestfile(content string) (cases []testCase, expectedHash string, repea
 }
 
 func processRecordings(ctx context.Context, store *TestStore, runID int64, dataDir string) {
-	recordsDir := filepath.Join(dataDir, "recorded_temp")
-	files, err := os.ReadDir(recordsDir)
+	// Find all agent-specific recorded_temp directories
+	pattern := filepath.Join(dataDir, "agents", "*", "recorded_temp")
+	dirs, err := filepath.Glob(pattern)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("failed to read recorded_temp dir: %v", err)
-		}
+		log.Printf("failed to glob agent recording dirs: %v", err)
 		return
 	}
 
-	log.Printf("processing recordings in %s (found %d files)", recordsDir, len(files))
-	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-
-		path := filepath.Join(recordsDir, f.Name())
-
-		// Skip and remove too small WAV files
-		info, err := f.Info()
+	for _, recordsDir := range dirs {
+		files, err := os.ReadDir(recordsDir)
 		if err != nil {
-			log.Printf("failed to stat recorded file %s: %v", f.Name(), err)
-			continue
-		}
-		if info.Size() < 128 {
-			log.Printf("skipping and removing too small recorded file: %s (%d bytes)", f.Name(), info.Size())
-			os.Remove(path)
+			if !os.IsNotExist(err) {
+				log.Printf("failed to read records dir %s: %v", recordsDir, err)
+			}
 			continue
 		}
 
-		data, err := os.ReadFile(path)
-		if err != nil {
-			log.Printf("failed to read recorded file %s: %v", path, err)
+		if len(files) == 0 {
 			continue
 		}
 
-		newName := strings.TrimPrefix(f.Name(), "dump-")
-		if !strings.HasSuffix(newName, "-enc.wav") {
-			if err := store.SaveWav(ctx, runID, newName, data); err != nil {
-				log.Printf("failed to save wav %s to db: %v", newName, err)
+		log.Printf("processing recordings in %s (found %d files)", recordsDir, len(files))
+		for _, f := range files {
+			if f.IsDir() {
 				continue
 			}
-		}
 
-		if err := os.Remove(path); err != nil {
-			log.Printf("failed to remove recorded file %s: %v", path, err)
-		} else {
-			log.Printf("captured and stored recording: %s", newName)
+			path := filepath.Join(recordsDir, f.Name())
+
+			// Skip and remove too small WAV files
+			info, err := f.Info()
+			if err != nil {
+				log.Printf("failed to stat recorded file %s: %v", f.Name(), err)
+				continue
+			}
+			if info.Size() < 128 {
+				log.Printf("skipping and removing too small recorded file: %s (%d bytes)", f.Name(), info.Size())
+				os.Remove(path)
+				continue
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				log.Printf("failed to read recorded file %s: %v", path, err)
+				continue
+			}
+
+			newName := strings.TrimPrefix(f.Name(), "dump-")
+			if !strings.HasSuffix(newName, "-enc.wav") {
+				if err := store.SaveWav(ctx, runID, newName, data); err != nil {
+					log.Printf("failed to save wav %s to db: %v", newName, err)
+					continue
+				}
+			}
+
+			if err := os.Remove(path); err != nil {
+				log.Printf("failed to remove recorded file %s: %v", path, err)
+			} else {
+				log.Printf("captured and stored recording: %s", newName)
+			}
 		}
 	}
 }
