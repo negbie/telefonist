@@ -12,24 +12,20 @@ import (
 	"github.com/negbie/telefonist/assets/zip"
 )
 
-func EnsureAssets(soundsDir, recordsDir string) {
-	if soundsDir != "" {
-		if _, err := os.Stat(soundsDir); os.IsNotExist(err) {
-			// Only decompress into the target soundsDir.
-			// If it's a global directory, we decompress the parent of 'sounds' (i.e. the dataDir equivalent)
-			targetDir := filepath.Dir(soundsDir)
-			if err := zip.Decompress(bytes.NewReader(assets.BaresipSounds), targetDir); err != nil {
-				panic(err)
-			}
-		}
+func EnsureAssets(soundsDir string) {
+	if soundsDir == "" {
+		return
 	}
 
-	if recordsDir != "" {
-		if _, err := os.Stat(recordsDir); os.IsNotExist(err) {
-			if err := os.MkdirAll(recordsDir, 0755); err != nil {
-				panic(err)
-			}
-		}
+	// Check if soundsDir exists and has files
+	if entries, err := os.ReadDir(soundsDir); err == nil && len(entries) > 0 {
+		return // Assets already present, skip extraction
+	}
+
+	// Decompress into the parent of soundsDir (e.g. data/)
+	targetDir := filepath.Dir(soundsDir)
+	if err := zip.Decompress(bytes.NewReader(assets.BaresipSounds), targetDir); err != nil {
+		panic(err)
 	}
 }
 
@@ -95,8 +91,6 @@ func CreateConfig(dataDir string, maxCalls uint, rtpNet, rtpPorts string, rtpTim
 	if recordsDir == "" {
 		recordsDir = filepath.Join(dataDir, "recorded_temp")
 	}
-
-	EnsureAssets(soundsDir, recordsDir)
 
 	configFile := filepath.Join(dataDir, "config")
 	if err := os.WriteFile(configFile, []byte(c), 0644); err != nil {

@@ -26,6 +26,7 @@ type Agent struct {
 	RtpPorts      string
 	Done          chan struct{} // Closed when Cmd exits
 	RecordingsDir string
+	RtpOffset     int
 }
 
 type BaresipManager struct {
@@ -43,6 +44,10 @@ type BaresipManager struct {
 	HasSipListen bool
 
 	dataDir string
+
+	portMu   sync.Mutex
+	sipPorts map[int]bool // offset from BaseSipPort -> used
+	rtpPorts map[int]bool // offset from BaseRtpPort -> used
 }
 
 func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string, rtpPorts string, rtpTimeout uint, useAlsa bool, sipListen string) *BaresipManager {
@@ -82,7 +87,41 @@ func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string,
 		UseAlsa:      useAlsa,
 		HasSipListen: hasSipListen,
 		dataDir:      dataDir,
+		sipPorts:     make(map[int]bool),
+		rtpPorts:     make(map[int]bool),
 	}
+}
+
+func (m *BaresipManager) allocatePorts() (int, string, int) {
+	m.portMu.Lock()
+	defer m.portMu.Unlock()
+
+	// Find free SIP port offset
+	sipOffset := 0
+	for ; m.sipPorts[sipOffset]; sipOffset += 2 {
+	}
+	m.sipPorts[sipOffset] = true
+	sipPort := m.BaseSipPort + sipOffset
+
+	// Find free RTP range offset
+	rtpOffset := 0
+	for ; m.rtpPorts[rtpOffset]; rtpOffset += 102 {
+	}
+	m.rtpPorts[rtpOffset] = true
+	rtpStart := m.BaseRtpPort + rtpOffset
+	rtpEnd := rtpStart + 100
+	rtpPortsStr := fmt.Sprintf("%d-%d", rtpStart, rtpEnd)
+
+	return sipPort, rtpPortsStr, rtpOffset
+}
+
+func (m *BaresipManager) releasePorts(sipPort, rtpOffset int) {
+	m.portMu.Lock()
+	defer m.portMu.Unlock()
+
+	sipOffset := sipPort - m.BaseSipPort
+	delete(m.sipPorts, sipOffset)
+	delete(m.rtpPorts, rtpOffset)
 }
 
 func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLine string) error {
@@ -103,11 +142,8 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		return err
 	}
 
-	// Allocate ports
-	sipPort := m.BaseSipPort + (len(m.agents) * 2)
-	rtpStart := m.BaseRtpPort + (len(m.agents) * 102)
-	rtpEnd := rtpStart + 100
-	rtpPorts := fmt.Sprintf("%d-%d", rtpStart, rtpEnd)
+	// Allocate ports from the pool
+	sipPort, rtpPorts, rtpOffset := m.allocatePorts()
 
 	// 1. Proxy listener address (Master Hub connects here)
 	lProxy, err := net.Listen("tcp", "127.0.0.1:0")
@@ -128,6 +164,9 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// Write config and accounts
 	// We pass baresipAddr to CreateConfig so Baresip listens there
 	agentRecordsDir, _ := filepath.Abs(filepath.Join(agentDir, "recorded_temp"))
+	if err := os.MkdirAll(agentRecordsDir, 0755); err != nil {
+		return err
+	}
 	globalSoundsDir, _ := filepath.Abs(filepath.Join(m.dataDir, "sounds"))
 	sipAddr := ""
 	if m.HasSipListen {
@@ -201,6 +240,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		CtrlAddr:  proxyAddr,
 		SipPort:       sipPort,
 		RtpPorts:      rtpPorts,
+		RtpOffset:     rtpOffset,
 		Done:          make(chan struct{}),
 		RecordingsDir: agentRecordsDir,
 	}
@@ -263,6 +303,7 @@ func (m *BaresipManager) stopAgent(a *Agent) {
 	}
 
 	a.Baresip.Close()
+	m.releasePorts(a.SipPort, a.RtpOffset)
 	delete(m.agents, a.Alias)
 }
 
@@ -304,10 +345,7 @@ func (m *BaresipManager) ResolveTarget(cmd string, fallbackTarget string) (targe
 		for i := len(parts[0]) - 1; i >= 0; i-- {
 			if parts[0][i] == ':' {
 				prefix := parts[0][:i]
-				if semi := strings.Index(prefix, ";"); semi != -1 {
-					prefix = prefix[:semi]
-				}
-				if strings.EqualFold(a, prefix) {
+				if strings.EqualFold(a, ExtractAlias(prefix)) {
 					if len(a) > len(bestAlias) {
 						bestAlias = a
 						bestColonIdx = i

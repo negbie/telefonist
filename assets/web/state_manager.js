@@ -2,55 +2,78 @@
 window.StateManager = function () {
   var fileCache = {}; // "project:name" -> { name, project, original, current }
 
+  function normalizeText(value) {
+    return String(value || "").replace(/\r/g, "");
+  }
+
+  function keyExists(key) {
+    return Object.prototype.hasOwnProperty.call(fileCache, key);
+  }
+
   function getKeys() {
     return Object.keys(fileCache);
   }
 
+  function getEntry(key) {
+    return fileCache[key];
+  }
+
   function isDirty(key) {
-    if (!fileCache[key]) return false;
-    var cur = (fileCache[key].current || "").replace(/\r/g, "");
-    var orig = (fileCache[key].original || "").replace(/\r/g, "");
-    return cur !== orig;
+    var entry = getEntry(key);
+    if (!entry) return false;
+    return normalizeText(entry.current) !== normalizeText(entry.original);
   }
 
   function updateCache(key, data) {
-    if (!fileCache[key]) {
+    var existing = getEntry(key);
+
+    if (!existing) {
       fileCache[key] = {
         name: data.name,
         project: data.project,
         original: data.original || "",
-        current: data.current || data.original || "",
+        current:
+          data.current !== undefined ? data.current : data.original || "",
       };
-    } else {
-      if (data.original !== undefined) fileCache[key].original = data.original;
-      if (data.current !== undefined) fileCache[key].current = data.current;
+      return;
     }
+
+    if (data.original !== undefined) existing.original = data.original;
+    if (data.current !== undefined) existing.current = data.current;
+    if (data.name !== undefined) existing.name = data.name;
+    if (data.project !== undefined) existing.project = data.project;
   }
 
   function pruneStale(serverKeys) {
-    var serverMap = {};
-    serverKeys.forEach((k) => (serverMap[k] = true));
+    var keep = Object.create(null);
 
-    for (var key in fileCache) {
-      if (!serverMap[key] && !isDirty(key)) {
+    for (var i = 0; i < serverKeys.length; i++) {
+      keep[serverKeys[i]] = true;
+    }
+
+    var keys = getKeys();
+    for (var j = 0; j < keys.length; j++) {
+      var key = keys[j];
+      if (!keep[key] && !isDirty(key)) {
         delete fileCache[key];
       }
     }
+  }
+
+  function deleteEntry(key) {
+    if (!keyExists(key)) return false;
+    return delete fileCache[key];
   }
 
   return {
     getCache: function () {
       return fileCache;
     },
-    getEntry: function (key) {
-      return fileCache[key];
-    },
+    getEntry: getEntry,
     getKeys: getKeys,
     isDirty: isDirty,
     updateCache: updateCache,
     pruneStale: pruneStale,
-    deleteEntry: function (key) {
-      return delete fileCache[key];
-    },
+    deleteEntry: deleteEntry,
   };
 };

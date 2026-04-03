@@ -23,8 +23,6 @@ func RunAgent(f AppFlags) error {
 		f.SoundsDir = filepath.Join(f.DataDir, "sounds")
 	}
 
-	EnsureAssets(f.SoundsDir, "")
-
 	gb, err := newBaresipInstance(f)
 	if err != nil {
 		return err
@@ -114,7 +112,7 @@ func Run() error {
 		f.SoundsDir = filepath.Join(f.DataDir, "sounds")
 	}
 
-	EnsureAssets(f.SoundsDir, "")
+	EnsureAssets(f.SoundsDir)
 
 	// Set unique session cookie name based on UI port to avoid logout conflicts when running multiple instances on localhost.
 	port := "8080"

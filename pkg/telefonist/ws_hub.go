@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -16,8 +17,10 @@ import (
 )
 
 var (
-	// wavPattern matches the shortcut ;wav=NAME/
-	wavPattern = regexp.MustCompile(`;wav=([^/]+)/`)
+	// wavPattern matches both ;wav=NAME/ and wav=NAME/ (case-insensitive, optionally with leading whitespace)
+	wavPattern = regexp.MustCompile(`(?i)(?:^|[\s;])wav=([^/\s]+)/`)
+	// inputWavPattern matches both ;input_wav=NAME and input_wav=NAME (case-insensitive, optionally with leading whitespace)
+	inputWavPattern = regexp.MustCompile(`(?i)(?:^|[\s;])input_wav=`)
 )
 
 // WsHub maintains the set of active clients and broadcasts events to the clients.
@@ -172,14 +175,8 @@ func (h *WsHub) Run() {
 			f()
 
 		case client := <-h.register:
-			// Replay history to the new client first
-			for _, msg := range h.history.GetAll() {
-				select {
-				case client.send <- msg:
-				default:
-					// drop it if buffer is full; should not happen with increased buffer
-				}
-			}
+			// Replay history to the new client first (streaming, no allocations)
+			h.history.ReplayTo(client.send)
 			h.clients[client] = true
 
 		case client := <-h.unregister:
@@ -261,11 +258,11 @@ func (h *WsHub) Run() {
 					}
 				}
 
-				var mEvent map[string]interface{}
-				json.Unmarshal(e.RawJSON, &mEvent)
-				mEvent["_agent"] = am.Alias
-				mEvent["time"] = time.Now().Format("2.1.2006 15:04:05.000")
-				enriched, _ := json.Marshal(mEvent)
+				enriched, err := EnrichMessage(e.RawJSON, am.Alias, "")
+				if err != nil {
+					log.Printf("hub: failed to enrich event: %v", err)
+					continue
+				}
 				h.recordAndBroadcast(enriched)
 
 			case m.Response != nil:
@@ -275,13 +272,13 @@ func (h *WsHub) Run() {
 					h.onResponse(r)
 				}
 
-				var mResp map[string]interface{}
-				json.Unmarshal(r.RawJSON, &mResp)
-				mResp["_agent"] = am.Alias
-				mResp["event"] = true
-				mResp["type"] = "RESPONSE"
-				mResp["param"] = r.Data
-				mResp["time"] = time.Now().Format("2.1.2006 15:04:05.000")
+				mResp := map[string]interface{}{
+					"event":  true,
+					"type":   "RESPONSE",
+					"param":  r.Data,
+					"_agent": am.Alias,
+					"time":   FormatNow(),
+				}
 				enriched, _ := json.Marshal(mResp)
 				h.recordAndBroadcast(enriched)
 
@@ -291,7 +288,7 @@ func (h *WsHub) Run() {
 					"type":   "LOG",
 					"param":  m.Log,
 					"_agent": am.Alias,
-					"time":   time.Now().Format("2.1.2006 15:04:05.000"),
+					"time":   FormatNow(),
 				}
 				msg, _ := json.Marshal(mLog)
 				if h.trainSession != nil {
@@ -305,7 +302,7 @@ func (h *WsHub) Run() {
 					"type":   "SIP",
 					"param":  m.SIP,
 					"_agent": am.Alias,
-					"time":   time.Now().Format("2.1.2006 15:04:05.000"),
+					"time":   FormatNow(),
 				}
 				msg, _ := json.Marshal(mSIP)
 				if h.trainSession != nil {
@@ -318,11 +315,12 @@ func (h *WsHub) Run() {
 }
 
 func (h *WsHub) executeSmartCommand(cmd string) {
-	// 1. Expand shortcuts
+	// 1. Expand shortcuts first so they affect orchestration (like uanew)
+	// We use the absolute path for sounds to ensure it works regardless of agent target
 	soundsDir := filepath.Join(h.DataDir, "sounds")
-	cmd = wavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/$1;audio_player=aufile,{{RECORDS_DIR}}/")
-	cmd = strings.ReplaceAll(cmd, ";input_wav=", ";audio_source=aufile,"+soundsDir+"/")
+	cmd = ExpandShortcuts(cmd, soundsDir, "")
 
+	// 2. Resolve Target
 	target, cleanedCmd := h.bm.ResolveTarget(cmd, h.activeAgent)
 	cmd = cleanedCmd
 
@@ -332,7 +330,7 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 	}
 	first := strings.ToLower(parts[0])
 
-	// Handle orchestration commands
+	// 3. Handle orchestration commands
 	if first == "uafind" && len(parts) >= 2 {
 		h.activeAgent = parts[1]
 		return
@@ -341,23 +339,16 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 	if first == "uadelall" {
 		h.bm.CloseAll()
 		h.activeAgent = ""
+		// Only cleanup on a full reset when no test is running
+		if !h.inlineRunActive.Load() {
+			h.CleanupOrphans()
+		}
 		return
 	}
 
 	if first == "uanew" && len(parts) >= 2 {
 		accountLine := strings.Join(parts[1:], " ")
-		// Try to extract alias from <alias;... or <sip:alias@...
-		alias := ""
-		if start := strings.Index(accountLine, "<"); start != -1 {
-			if end := strings.Index(accountLine, ">"); end != -1 && end > start {
-				aor := accountLine[start+1 : end]
-				if semi := strings.Index(aor, ";"); semi != -1 {
-					alias = aor[:semi]
-				} else {
-					alias = aor
-				}
-			}
-		}
+		alias := ExtractAlias(accountLine)
 
 		if alias != "" {
 			// Stop existing agent if it already exists to ensure fresh config for uanew
@@ -379,9 +370,12 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 	// Direct Routing: All orchestration relies on explicit agent targeting (activeAgent or prefix).
 
 	if a, ok := h.bm.GetAgent(target); ok {
-		if strings.Contains(cmd, "{{RECORDS_DIR}}") {
-			cmd = strings.ReplaceAll(cmd, "{{RECORDS_DIR}}", a.RecordingsDir)
-		}
+		// 4. Expand shortcuts ONLY on the cleaned command for this agent
+		// This second pass ensures agent-specific RECORDS_DIR is expanded if used
+		soundsDir := filepath.Join(h.DataDir, "sounds")
+		cmd = ExpandShortcuts(cmd, soundsDir, a.RecordingsDir)
+
+		log.Printf("hub: sending expanded command to agent %s: %s", target, cmd)
 		if err := a.Baresip.CmdWs([]byte(cmd)); err != nil {
 			log.Printf("hub: error sending command to agent %s: %v", target, err)
 		}
@@ -389,6 +383,41 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 		log.Printf("hub: no active agent for command %q", cmd)
 	}
 	h.BroadcastCommandHint(cmd, target)
+}
+
+func ExpandShortcuts(cmd string, soundsDir string, recordsDir string) string {
+	// Ensure recordsDir has a trailing slash for baresip's auplay/aufile
+	if recordsDir != "" && !strings.HasSuffix(recordsDir, "/") {
+		recordsDir += "/"
+	}
+
+	// 1. Expand wav=NAME/ -> ;audio_source=aufile,PATH;audio_player=aufile,PATH
+	cmd = wavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/$1;audio_player=aufile,"+recordsDir)
+
+	// 2. Expand input_wav=NAME -> ;audio_source=aufile,PATH
+	cmd = inputWavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/")
+
+	return cmd
+}
+
+func (h *WsHub) CleanupOrphans() {
+	pattern := filepath.Join(h.DataDir, "agents", "*")
+	dirs, err := filepath.Glob(pattern)
+	if err != nil {
+		return
+	}
+
+	for _, dir := range dirs {
+		alias := filepath.Base(dir)
+		if _, ok := h.bm.GetAgent(alias); !ok {
+			// No active agent matches this directory, safe to delete
+			if err := os.RemoveAll(dir); err != nil {
+				log.Printf("hub: failed to cleanup orphan agent directory %s: %v", dir, err)
+			} else {
+				log.Printf("hub: cleaned up orphan agent directory %s", dir)
+			}
+		}
+	}
 }
 
 // BroadcastCommandHint sends a "hint" of an executed command to the Log and SIP views.
@@ -410,7 +439,7 @@ func (h *WsHub) BroadcastCommandHint(cmd string, agent string) {
 		"token":  "test",
 		"_agent": agent,
 		"_cmdId": fmt.Sprintf("cmd_%d_%d", time.Now().Unix(), count),
-		"time":   time.Now().Format("2.1.2006 15:04:05.000"),
+		"time":   FormatNow(),
 	}
 	msg, _ := json.Marshal(mCmd)
 	h.broadcast <- msg

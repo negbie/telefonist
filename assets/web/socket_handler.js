@@ -2,6 +2,44 @@ function createSocketHandler(wsURL, callbacks) {
   var conn = null;
   var MIN_JSON_LINE_LENGTH = 10;
 
+  function safeCallback(name, arg) {
+    if (!callbacks || typeof callbacks[name] !== "function") return;
+    callbacks[name](arg);
+  }
+
+  function parseJSON(line) {
+    if (!line || line.length < MIN_JSON_LINE_LENGTH) return null;
+    try {
+      return JSON.parse(line);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function dispatchRaw(raw) {
+    var parsed = parseJSON(raw);
+    if (!parsed) return;
+
+    var normalized = normalizeEvent(parsed);
+    if (!normalized) return;
+
+    safeCallback("onMessage", normalized);
+  }
+
+  function handlePayload(payload) {
+    if (!payload) return;
+
+    if (payload.indexOf("\n") === -1) {
+      dispatchRaw(payload);
+      return;
+    }
+
+    var lines = payload.split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      dispatchRaw(lines[i]);
+    }
+  }
+
   if (!window.WebSocket) {
     return {
       send: function () {},
@@ -14,55 +52,16 @@ function createSocketHandler(wsURL, callbacks) {
   conn = new WebSocket(wsURL);
 
   conn.onopen = function () {
-    if (callbacks.onOpen) callbacks.onOpen();
+    safeCallback("onOpen");
   };
 
   conn.onclose = function () {
-    if (callbacks.onClose) callbacks.onClose();
+    safeCallback("onClose");
   };
 
   conn.onmessage = function (evt) {
     var payload = safeText(evt.data);
-
-    // Fast path: most frames are a single JSON object.
-    if (payload.indexOf("\n") === -1) {
-      if (payload.length < MIN_JSON_LINE_LENGTH) return;
-
-      var parsedSingle;
-      try {
-        parsedSingle = JSON.parse(payload);
-      } catch (e) {
-        return;
-      }
-
-      var singleEvent = normalizeEvent(parsedSingle);
-      if (!singleEvent) return;
-
-      if (callbacks.onMessage) {
-        callbacks.onMessage(singleEvent);
-      }
-      return;
-    }
-
-    // Fallback: handle newline-delimited JSON payloads.
-    var messages = payload.split("\n");
-    for (var i = 0; i < messages.length; i++) {
-      if (messages[i].length < MIN_JSON_LINE_LENGTH) continue;
-
-      var parsed;
-      try {
-        parsed = JSON.parse(messages[i]);
-      } catch (e) {
-        continue;
-      }
-
-      var j = normalizeEvent(parsed);
-      if (!j) continue;
-
-      if (callbacks.onMessage) {
-        callbacks.onMessage(j);
-      }
-    }
+    handlePayload(payload);
   };
 
   return {
@@ -72,7 +71,7 @@ function createSocketHandler(wsURL, callbacks) {
       }
     },
     isOpen: function () {
-      return conn && conn.readyState === WebSocket.OPEN;
+      return !!(conn && conn.readyState === WebSocket.OPEN);
     },
   };
 }

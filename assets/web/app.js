@@ -31,31 +31,29 @@
       collapseAll: collapseAllEl ? !!collapseAllEl.checked : false,
     });
 
-    setBodyFlowView();
+    const wireSearch = (id, container, selector) => {
+      const input = document.getElementById(id);
+      if (input && container) {
+        window.wireSearchFilter(input, container, selector);
+      }
+      return input;
+    };
 
-    // Centralized search filtering
-    const searchInput = document.getElementById("search");
-    if (searchInput) {
-      window.wireSearchFilter(searchInput, document.body, ".list");
-    }
-
-    const searchSipInput = document.getElementById("search-sip");
-    if (searchSipInput && sipViewEl) {
-      window.wireSearchFilter(searchSipInput, sipViewEl, ".sip-ladder-row");
-    }
-
-    const searchLogInput = document.getElementById("search-log");
-    if (searchLogInput && logViewEl) {
-      window.wireSearchFilter(searchLogInput, logViewEl, ".log-row");
-    }
-
-    function wireCheckbox(el, applyFn) {
+    const wireCheckbox = (el, applyFn) => {
       if (!el || !applyFn) return;
       applyFn(el);
-      el.onchange = function () {
-        applyFn(el);
-      };
-    }
+      el.onchange = () => applyFn(el);
+    };
+
+    setBodyFlowView();
+
+    const searchInput = wireSearch("search", document.body, ".list");
+    const searchSipInput = wireSearch(
+      "search-sip",
+      sipViewEl,
+      ".sip-ladder-row",
+    );
+    const searchLogInput = wireSearch("search-log", logViewEl, ".log-row");
 
     wireCheckbox(onlyTestsEl, applyOnlyTestsFilterFromCheckbox);
 
@@ -141,17 +139,26 @@
     const btnModeTests = document.getElementById("btn-mode-tests");
     const btnModeCompare = document.getElementById("btn-mode-compare");
 
+    const syncCompareWithActiveTestfile = () => {
+      const key = tfManager?.getActiveKey?.() || "";
+      const [project, name] = key ? key.split(":") : ["", ""];
+      EventBus.emit("testfile:changed", name, project);
+    };
+
     const setBottomMode = (mode) => {
       if (!bottomRow) return;
+
       bottomRow.setAttribute("data-bottom-mode", mode);
-      if (btnModeTests)
+
+      if (btnModeTests) {
         btnModeTests.classList.toggle("active", mode === "tests");
-      if (btnModeCompare)
+      }
+      if (btnModeCompare) {
         btnModeCompare.classList.toggle("active", mode === "compare");
+      }
+
       if (mode === "compare") {
-        const key = tfManager?.getActiveKey?.() || "";
-        const [project, name] = key ? key.split(":") : ["", ""];
-        EventBus.emit("testfile:changed", name, project);
+        syncCompareWithActiveTestfile();
       }
     };
 
@@ -184,35 +191,36 @@
       onMessage: (j) => {
         EventBus.emit("ws:message", j);
 
+        const isStatusProgressLike =
+          j.status === "running" ||
+          j.status === "finished" ||
+          j.status === "progress";
+        const isTestfileOrProjectToken =
+          j.token === "testfiles" || j.token === "projects";
+
         if (tfManager?.handleTestfilesMessage(j)) {
           if (j.token === "testfiles" && j.name) {
             EventBus.emit("testfile:changed", j.name, j.project);
           }
-          if (j.token === "testfiles" || j.token === "projects") {
-            return;
-          }
-          // Only return if it's a pure testfile/projects management message.
-          // Test status updates (running, finished, progress) should still be rendered in the flow.
-          if (
-            !j.status ||
-            (j.status !== "running" &&
-              j.status !== "finished" &&
-              j.status !== "progress")
-          ) {
-            if (j.type !== "CMD") return;
-          }
+
+          if (isTestfileOrProjectToken) return;
+
+          // Keep test lifecycle/status events visible in flow.
+          if (!isStatusProgressLike && j.type !== "CMD") return;
         }
 
-        if (
+        const isTestRunStart =
           (j.token === "testfile" || j.token === "test") &&
-          j.status === "running"
-        ) {
-          if (sipViewEl) {
-            sipViewEl._msgCount = 0;
-            sipViewEl
-              .querySelectorAll(".sip-ladder-row.selected")
-              .forEach((el) => el.classList.remove("selected"));
-            if (window.updateSipCompare) window.updateSipCompare();
+          j.status === "running";
+
+        if (isTestRunStart && sipViewEl) {
+          sipViewEl._msgCount = 0;
+          sipViewEl
+            .querySelectorAll(".sip-ladder-row.selected")
+            .forEach((el) => el.classList.remove("selected"));
+
+          if (window.updateSipCompare) {
+            window.updateSipCompare();
           }
         }
 
@@ -220,10 +228,13 @@
         if (window.renderLogEvent?.(j, renderContext, getOptions)) return;
         if (
           window.renderSipEvent?.(j, { sipViewEl, searchSipInput }, getOptions)
-        )
+        ) {
           return;
+        }
 
-        if (flow) flow.renderEvent(j);
+        if (flow) {
+          flow.renderEvent(j);
+        }
       },
     });
   };

@@ -42,24 +42,38 @@ func (r *RingBuffer) Add(msg []byte) {
 	}
 }
 
-// GetAll returns a copy of all messages in the buffer, ordered from oldest to newest.
-func (r *RingBuffer) GetAll() [][]byte {
+// ReplayTo streams all messages in the buffer to the provided channel.
+// Order is preserved from oldest to newest. Non-blocking send ensures
+// that slower consumers don't block the replayer.
+func (r *RingBuffer) ReplayTo(dest chan []byte) {
 	if r.limit <= 0 {
-		return nil
+		return
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	if !r.full {
-		// Buffer isn't full yet; return from 0 to cursor
-		res := make([][]byte, r.cursor)
-		copy(res, r.data[:r.cursor])
-		return res
+		for i := 0; i < r.cursor; i++ {
+			select {
+			case dest <- r.data[i]:
+			default:
+				// buffer full, skip to keep replayer moving
+			}
+		}
+		return
 	}
 
-	// Buffer is full; return in order [cursor:limit] followed by [0:cursor]
-	res := make([][]byte, r.limit)
-	n := copy(res, r.data[r.cursor:])
-	copy(res[n:], r.data[:r.cursor])
-	return res
+	// Buffer is full; replay [cursor:limit] then [0:cursor]
+	for i := r.cursor; i < r.limit; i++ {
+		select {
+		case dest <- r.data[i]:
+		default:
+		}
+	}
+	for i := 0; i < r.cursor; i++ {
+		select {
+		case dest <- r.data[i]:
+		default:
+		}
+	}
 }

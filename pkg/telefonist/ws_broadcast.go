@@ -2,7 +2,6 @@ package telefonist
 
 import (
 	"encoding/json"
-	"time"
 )
 
 // broadcastInfo broadcasts an informational JSON message to all connected WebSocket clients.
@@ -35,7 +34,7 @@ func statusJSON(kvPairs ...string) string {
 	for i := 0; i < len(kvPairs); i += 2 {
 		m[kvPairs[i]] = kvPairs[i+1]
 	}
-	m["time"] = time.Now().Format("2.1.2006 15:04:05.000")
+	m["time"] = FormatNow()
 	b, err := json.Marshal(m)
 	if err != nil {
 		return "{}"

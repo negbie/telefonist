@@ -2,8 +2,8 @@ function nowLocalString() {
   return new Date().toLocaleString();
 }
 
-function safeText(v) {
-  return v === null || v === undefined ? "" : String(v);
+function safeText(value) {
+  return value == null ? "" : String(value);
 }
 
 function stripANSI(s) {
@@ -22,10 +22,10 @@ function base64EncodeUTF8(s) {
 }
 
 function base64DecodeUTF8(b64) {
-  var bin = atob(String(b64 || ""));
-  var bytes = new Uint8Array(bin.length);
-  for (var i = 0; i < bin.length; i++) {
-    bytes[i] = bin.charCodeAt(i);
+  var binary = atob(safeText(b64));
+  var bytes = new Uint8Array(binary.length);
+  for (var i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
   }
   return new TextDecoder().decode(bytes);
 }
@@ -86,7 +86,7 @@ function sanitizeTestfileName(raw) {
 }
 
 function escapeHTML(str) {
-  return String(str || "")
+  return safeText(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -96,27 +96,30 @@ function escapeHTML(str) {
 
 function wireSearchFilter(inputEl, containerEl, selector) {
   if (!inputEl || !containerEl) return;
+
   var lastFilter = null;
-  var apply = function () {
-    var filter = (inputEl.value || "").toLowerCase();
+
+  function applyFilter() {
+    var filter = safeText(inputEl.value).toLowerCase();
     if (filter === lastFilter) return;
     lastFilter = filter;
 
     var nodes = containerEl.querySelectorAll(selector);
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
-      node.style.display = node.textContent.toLowerCase().includes(filter)
-        ? ""
-        : "none";
+      var text = safeText(node.textContent).toLowerCase();
+      node.style.display = text.includes(filter) ? "" : "none";
     }
-  };
-  inputEl.addEventListener("input", apply);
-  apply();
+  }
+
+  inputEl.addEventListener("input", applyFilter);
+  applyFilter();
 }
 
 function syntaxHighlight(inputEl, highlightsEl) {
   if (!inputEl || !highlightsEl) return;
-  var text = inputEl.value || "";
+
+  var text = safeText(inputEl.value);
   var lines = text.split("\n");
   var html = "";
 
@@ -146,8 +149,22 @@ function syntaxHighlight(inputEl, highlightsEl) {
     }
   }
 
-  var highlightVars = function (text) {
-    var escaped = escapeHTML(text);
+  function escapeRegExp(value) {
+    return value.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+  }
+
+  function wrapVarToken(token) {
+    return (
+      '<span class="hl-var" style="color: ' +
+      vars[token] +
+      '; font-weight: bold;">' +
+      escapeHTML(token) +
+      "</span>"
+    );
+  }
+
+  function highlightVars(rawText) {
+    var escaped = escapeHTML(rawText);
     var varNames = Object.keys(vars);
     if (varNames.length === 0) return escaped;
 
@@ -156,25 +173,14 @@ function syntaxHighlight(inputEl, highlightsEl) {
     });
 
     var pattern = new RegExp(
-      "\\b(" +
-        varNames
-          .map(function (v) {
-            return v.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-          })
-          .join("|") +
-        ")\\b",
+      "\\b(" + varNames.map(escapeRegExp).join("|") + ")\\b",
       "g",
     );
+
     return escaped.replace(pattern, function (matched) {
-      return (
-        '<span class="hl-var" style="color: ' +
-        vars[matched] +
-        '; font-weight: bold;">' +
-        matched +
-        "</span>"
-      );
+      return wrapVarToken(matched);
     });
-  };
+  }
 
   for (var j = 0; j < lines.length; j++) {
     var line = lines[j];
@@ -193,22 +199,12 @@ function syntaxHighlight(inputEl, highlightsEl) {
         if (parts[2] === "_define") {
           var valParts = parts[4].match(/^(\S+)(\s+)(.*)$/);
           if (valParts) {
-            html +=
-              '<span class="hl-var" style="color: ' +
-              vars[valParts[1]] +
-              '; font-weight: bold;">' +
-              escapeHTML(valParts[1]) +
-              "</span>";
+            html += wrapVarToken(valParts[1]);
             html += '<span class="hl-space">' + valParts[2] + "</span>";
             html +=
               '<span class="hl-value">' + escapeHTML(valParts[3]) + "</span>";
           } else {
-            html +=
-              '<span class="hl-var" style="color: ' +
-              vars[parts[4]] +
-              '; font-weight: bold;">' +
-              escapeHTML(parts[4]) +
-              "</span>";
+            html += wrapVarToken(parts[4]);
           }
         } else {
           html +=
@@ -262,22 +258,21 @@ function setBodyFlowView() {
   document.body.setAttribute("data-view", "flow");
 }
 
-function applyOnlyTestsFilterFromCheckbox(onlyTestsEl) {
-  if (!onlyTestsEl) return;
-  if (onlyTestsEl.checked) {
-    document.body.setAttribute("data-only-tests", "1");
+function setBodyToggleAttribute(checkboxEl, attrName) {
+  if (!checkboxEl) return;
+  if (checkboxEl.checked) {
+    document.body.setAttribute(attrName, "1");
   } else {
-    document.body.removeAttribute("data-only-tests");
+    document.body.removeAttribute(attrName);
   }
 }
 
+function applyOnlyTestsFilterFromCheckbox(onlyTestsEl) {
+  setBodyToggleAttribute(onlyTestsEl, "data-only-tests");
+}
+
 function applyOnlyResultsFilterFromCheckbox(onlyResultsEl) {
-  if (!onlyResultsEl) return;
-  if (onlyResultsEl.checked) {
-    document.body.setAttribute("data-only-results", "1");
-  } else {
-    document.body.removeAttribute("data-only-results");
-  }
+  setBodyToggleAttribute(onlyResultsEl, "data-only-results");
 }
 
 function initResizer(resizer, topRow, bottomRow) {
@@ -303,7 +298,6 @@ function initResizer(resizer, topRow, bottomRow) {
   function totalHeight() {
     return window.innerHeight || 0;
   }
-
 
   var cachedTotalH = 0;
   var topRowEl = topRow;

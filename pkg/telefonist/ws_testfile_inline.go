@@ -60,19 +60,12 @@ func handleTestfileInlineCommand(h *WsHub, input string) {
 
 	decoded, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
-		// Try URL-safe variant too (common in browsers).
-		decoded, err = base64.URLEncoding.DecodeString(b64)
-		if err != nil {
-			broadcastInfo(h, fmt.Sprintf(`{"status":"error","token":"testfile","file":%q,"message":"invalid base64 input: %q"}`, fileName, err.Error()))
-			return
-		}
+		broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "file", fileName, "message", "invalid base64 input: "+err.Error()))
+		return
 	}
 
 	if len(decoded) > 256*1024 {
-		broadcastInfo(h, fmt.Sprintf(
-			`{"status":"error","token":"testfile","file":%q,"message":"input too large (%d bytes), max is %d bytes"}`,
-			fileName, len(decoded), 256*1024,
-		))
+		broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "file", fileName, "message", fmt.Sprintf("input too large (%d bytes), max is %d bytes", len(decoded), 256*1024)))
 		return
 	}
 
@@ -448,6 +441,15 @@ func processRecordings(ctx context.Context, store *TestStore, runID int64, dataD
 			} else {
 				log.Printf("captured and stored recording: %s", newName)
 			}
+		}
+
+		// Final Step: Cleanup the agent directory once all recordings are processed.
+		// recordsDir is data/agents/<alias>/recorded_temp, so agentDir is one level up.
+		agentDir := filepath.Dir(recordsDir)
+		if err := os.RemoveAll(agentDir); err != nil {
+			log.Printf("failed to cleanup agent directory %s: %v", agentDir, err)
+		} else {
+			log.Printf("cleaned up agent directory: %s", agentDir)
 		}
 	}
 }
