@@ -1,5 +1,3 @@
-/* api.js */
-/* api.js */
 function redirectToLogin() {
   window.location.href = "/login.html";
 }
@@ -33,67 +31,57 @@ function request(path, options) {
 
 function requestJSON(path, method, payload) {
   return request(path, {
-    method: method,
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
 
-function get(path, query) {
-  return request(path + toQueryString(query));
-}
-
-function del(path, query) {
-  return request(path + toQueryString(query), { method: "DELETE" });
-}
-
-function post(path, payload) {
-  return requestJSON(path, "POST", payload);
-}
-
 export const API = {
-  // Projects
-  getProjects: function () {
-    return get("/api/projects");
+  getProjects() {
+    return request("/api/projects");
   },
-  createProject: function (name) {
-    return post("/api/projects", { name: name });
+  createProject(name) {
+    return requestJSON("/api/projects", "POST", { name });
   },
-  deleteProject: function (name) {
-    return del("/api/projects", { name: name });
+  deleteProject(name) {
+    return request("/api/projects" + toQueryString({ name }), {
+      method: "DELETE",
+    });
   },
-  renameProject: function (oldName, newName) {
-    return post("/api/projects/rename", {
+  renameProject(oldName, newName) {
+    return requestJSON("/api/projects/rename", "POST", {
       old_name: oldName,
       new_name: newName,
     });
   },
-  cloneProject: function (srcName, targetName) {
-    return post("/api/projects/clone", {
+  cloneProject(srcName, targetName) {
+    return requestJSON("/api/projects/clone", "POST", {
       src_name: srcName,
       target_name: targetName,
     });
   },
 
-  // Testfiles
-  getTestfiles: function () {
-    return get("/api/testfiles");
+  getTestfiles() {
+    return request("/api/testfiles");
   },
-  getTestfile: function (name, project) {
-    return get("/api/testfile", { name: name, project: project });
+  getTestfile(name, project) {
+    return request("/api/testfile" + toQueryString({ name, project }));
   },
-  saveTestfile: function (name, project, contentB64) {
-    return post("/api/testfile", {
-      name: name,
-      project: project,
+  saveTestfile(name, project, contentB64) {
+    return requestJSON("/api/testfile", "POST", {
+      name,
+      project,
       content_b64: contentB64,
     });
   },
-  deleteTestfile: function (name, project) {
-    return del("/api/testfile", { name: name, project: project });
+  deleteTestfile(name, project) {
+    return request("/api/testfile" + toQueryString({ name, project }), {
+      method: "DELETE",
+    });
   },
-  renameTestfile: function (oldName, oldProject, newName, newProject) {
-    return post("/api/testfile/rename", {
+  renameTestfile(oldName, oldProject, newName, newProject) {
+    return requestJSON("/api/testfile/rename", "POST", {
       old_name: oldName,
       old_project: oldProject,
       new_name: newName,
@@ -101,11 +89,9 @@ export const API = {
     });
   },
 
-  // Auth
-  logout: function () {
+  logout() {
     return fetch("/api/logout", { method: "POST" }).then(function () {
       redirectToLogin();
     });
   },
 };
-

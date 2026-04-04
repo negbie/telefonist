@@ -1,4 +1,3 @@
-/* testfile_manager.js */
 import { API } from "./api.js";
 import { EventBus } from "./event_bus.js";
 import { createStateManager } from "./state_manager.js";
@@ -268,7 +267,7 @@ export function initTestfileManager(deps) {
         const group = document.createElement("optgroup"); group.label = p || "Uncategorized";
         testfileSelectEl.appendChild(group); container = group;
       }
-      groups[p].sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+      groups[p].sort((a, b) => a.name.localeCompare(b.name)).forEach(e => {
         const k = `${e.project}:${e.name}`;
         let label = state.isDirty(k) ? e.name + " [unsaved]" : e.name;
         const opt = new Option(label.length > 30 ? label.substring(0, 30) + "..." : label, k);

@@ -384,16 +384,15 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 }
 
 func ExpandShortcuts(cmd string, soundsDir string, recordsDir string) string {
-	// Ensure recordsDir has a trailing slash for baresip's auplay/aufile
+	if !strings.HasPrefix(strings.TrimSpace(strings.ToLower(cmd)), "uanew ") {
+		return cmd
+	}
 	if recordsDir != "" && !strings.HasSuffix(recordsDir, "/") {
 		recordsDir += "/"
 	}
 
-	// 1. Expand wav=NAME/ -> ;audio_source=aufile,PATH;audio_player=aufile,PATH
-	cmd = wavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/$1;audio_player=aufile,"+recordsDir)
-
-	// 2. Expand input_wav=NAME -> ;audio_source=aufile,PATH
 	cmd = inputWavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/")
+	cmd = wavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/$1;audio_player=aufile,"+recordsDir)
 
 	return cmd
 }

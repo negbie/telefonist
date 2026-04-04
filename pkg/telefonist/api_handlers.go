@@ -15,9 +15,6 @@ import (
 	"time"
 )
 
-// API handlers for testfile and project management.
-// These replace the brittle WebSocket command system for CRUD operations.
-
 type apiResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
@@ -41,7 +38,7 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
 				"status": "finished",
 				"token":  "projects",
 				"items":  projects,
@@ -60,7 +57,7 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				return
 			}
 			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "save", "message", "saved", "name", req.Name))
-			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "saved"})
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "saved"})
 
 		case http.MethodDelete:
 			name := r.URL.Query().Get("name")
@@ -73,7 +70,7 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				return
 			}
 			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "delete", "message", "deleted", "name", name))
-			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "deleted"})
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "deleted"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -106,7 +103,7 @@ func HandleAPIProjectRename(hub *WsHub) http.HandlerFunc {
 		}
 
 		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "rename", "message", "renamed", "old_name", req.OldName, "new_name", req.NewName))
-		json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "renamed"})
+		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "renamed"})
 	}
 }
 
@@ -135,7 +132,7 @@ func HandleAPIProjectClone(hub *WsHub) http.HandlerFunc {
 		}
 
 		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "clone", "message", "cloned", "src_name", req.SrcName, "target_name", req.TargetName))
-		json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "cloned"})
+		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "cloned"})
 	}
 }
 
@@ -151,13 +148,12 @@ func HandleAPITestfiles(hub *WsHub) http.HandlerFunc {
 
 		switch r.Method {
 		case http.MethodGet:
-			// List all testfiles (metadata only)
 			rows, err := hub.testStore.List(ctx, false)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
 				"status": "finished",
 				"token":  "testfiles",
 				"items":  rows,
@@ -196,7 +192,7 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 
 			contentB64 := base64.StdEncoding.EncodeToString([]byte(row.Content))
 
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
 				"status":      "finished",
 				"token":       "testfiles",
 				"name":        row.Name,
@@ -229,7 +225,7 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 			}
 
 			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "save", "message", "saved", "name", req.Name, "project", req.Project))
-			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "saved"})
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "saved"})
 
 		case http.MethodDelete:
 			name := r.URL.Query().Get("name")
@@ -245,7 +241,7 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 			}
 
 			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "delete", "message", "deleted", "name", name, "project", project))
-			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "deleted"})
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "deleted"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -280,7 +276,7 @@ func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
 		}
 
 		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "rename", "message", "renamed", "old_name", req.OldName, "old_project", req.OldProject, "new_name", req.NewName, "new_project", req.NewProject))
-		json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "renamed"})
+		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "renamed"})
 	}
 }
 
@@ -313,7 +309,7 @@ func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
 				"status": "finished",
 				"token":  "testruns",
 				"action": "list",
@@ -321,7 +317,6 @@ func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 			})
 
 		case http.MethodDelete:
-			// Delete all runs for a testfile
 			name := r.URL.Query().Get("name")
 			project := r.URL.Query().Get("project")
 			if name == "" {
@@ -335,7 +330,7 @@ func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 			}
 
 			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testruns", "action", "delete", "testfile", name, "project", project, "message", "all runs deleted"))
-			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "all runs deleted"})
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "all runs deleted"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -370,7 +365,7 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 
 			contentB64 := base64.StdEncoding.EncodeToString([]byte(row.FlowEvents))
 
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
 				"status":          "finished",
 				"token":           "testruns",
 				"action":          "get",
@@ -397,7 +392,7 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 			}
 
 			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testruns", "action", "delete", "id", strconv.Itoa(id), "message", "run deleted"))
-			json.NewEncoder(w).Encode(apiResponse{Status: "finished", Message: "run deleted"})
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "run deleted"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -428,7 +423,7 @@ func HandleAPITestrunWavs(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		jsonResponse(w, http.StatusOK, map[string]interface{}{
 			"status": "finished",
 			"token":  "testrun_wavs",
 			"items":  wavs,
@@ -462,7 +457,9 @@ func HandleAPITestrunWav(hub *WsHub) http.HandlerFunc {
 		w.Header().Set("Content-Type", "audio/wav")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 		w.Header().Set("Content-Length", strconv.Itoa(len(content)))
-		w.Write(content)
+		if _, err := w.Write(content); err != nil {
+			log.Printf("failed to write wav response: %v", err)
+		}
 	}
 }
 
@@ -480,7 +477,7 @@ func HandleAPITestrunDownload(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		downloadType := r.URL.Query().Get("type") // flow, sip, log, pcap
+		downloadType := r.URL.Query().Get("type")
 
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
@@ -492,7 +489,6 @@ func HandleAPITestrunDownload(hub *WsHub) http.HandlerFunc {
 		}
 
 		var events []map[string]interface{}
-		// Split by double newline as done in OrderIndependentHash
 		parts := strings.Split(row.FlowEvents, "\n\n")
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
@@ -502,7 +498,6 @@ func HandleAPITestrunDownload(hub *WsHub) http.HandlerFunc {
 			if err := json.Unmarshal([]byte(p), &e); err == nil {
 				events = append(events, e)
 			} else {
-				// Raw string broadcast
 				events = append(events, map[string]interface{}{
 					"type":  "RAW",
 					"param": p,
@@ -512,19 +507,17 @@ func HandleAPITestrunDownload(hub *WsHub) http.HandlerFunc {
 
 		switch downloadType {
 		case "flow":
-			content := filterFlowEvents(events)
-			serveTextDownload(w, fmt.Sprintf("%s_%d_flow.txt", row.TestfileName, id), content)
+			serveTextDownload(w, fmt.Sprintf("%s_%d_flow.txt", row.TestfileName, id), filterFlowEvents(events))
 		case "sip":
-			content := filterTypedEvents(events, "SIP")
-			serveTextDownload(w, fmt.Sprintf("%s_%d_sip.txt", row.TestfileName, id), content)
+			serveTextDownload(w, fmt.Sprintf("%s_%d_sip.txt", row.TestfileName, id), filterTypedEvents(events, "SIP"))
 		case "log":
-			content := filterTypedEvents(events, "LOG")
-			serveTextDownload(w, fmt.Sprintf("%s_%d_log.txt", row.TestfileName, id), content)
+			serveTextDownload(w, fmt.Sprintf("%s_%d_log.txt", row.TestfileName, id), filterTypedEvents(events, "LOG"))
 		case "pcap":
-			content := generatePcap(events)
 			w.Header().Set("Content-Type", "application/vnd.tcpdump.pcap")
 			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s_%d_sip.pcap\"", row.TestfileName, id))
-			w.Write(content)
+			if _, err := w.Write(generatePcap(events)); err != nil {
+				log.Printf("failed to write pcap response: %v", err)
+			}
 		default:
 			http.Error(w, "invalid download type", http.StatusBadRequest)
 		}
@@ -555,7 +548,6 @@ func filterFlowEvents(events []map[string]interface{}) string {
 			continue
 		}
 
-		// Skip SIP/LOG events (they have their own download types)
 		if etype == "SIP" || etype == "LOG" {
 			continue
 		}
@@ -569,12 +561,11 @@ func filterFlowEvents(events []map[string]interface{}) string {
 		first = false
 
 		timeStr, _ := e["time"].(string)
-		displayType := etype
-		if displayType == "" {
-			displayType = token
+		if etype == "" {
+			etype = token
 		}
 
-		sb.WriteString(fmt.Sprintf("[%s] %s\n", timeStr, strings.ToUpper(displayType)))
+		sb.WriteString(fmt.Sprintf("[%s] %s\n", timeStr, strings.ToUpper(etype)))
 
 		keys := make([]string, 0, len(e))
 		for k := range e {
@@ -612,12 +603,13 @@ func filterTypedEvents(events []map[string]interface{}, eventType string) string
 func serveTextDownload(w http.ResponseWriter, filename, content string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-	w.Write([]byte(content))
+	if _, err := w.Write([]byte(content)); err != nil {
+		log.Printf("failed to write text download response: %v", err)
+	}
 }
 
 func generatePcap(events []map[string]interface{}) []byte {
 	var buf bytes.Buffer
-	// PCAP Global Header (little-endian)
 	buf.Write([]byte{
 		0xd4, 0xc3, 0xb2, 0xa1, // magic
 		0x02, 0x00, 0x04, 0x00, // version 2.4
@@ -634,7 +626,6 @@ func generatePcap(events []map[string]interface{}) []byte {
 		t, _ := e["type"].(string)
 		param, _ := e["param"].(string)
 
-		// Include SIP events, and LOG events that look like SIP traces
 		if t != "SIP" && !(t == "LOG" && (strings.Contains(param, "|TX ") || strings.Contains(param, "|RX "))) {
 			continue
 		}
@@ -644,7 +635,6 @@ func generatePcap(events []map[string]interface{}) []byte {
 			continue
 		}
 
-		// Extract timestamp from "2026-03-20 16:48:19|TX" or similar
 		sec, usec := lastSec, lastUsec
 		if idx := strings.IndexByte(lines[0], '|'); idx > 0 {
 			if pt, err := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(lines[0][:idx]), time.Local); err == nil {
@@ -657,7 +647,6 @@ func generatePcap(events []map[string]interface{}) []byte {
 		}
 		lastSec, lastUsec = sec, usec
 
-		// Find address line (first line containing "->")
 		addrLine := lines[0]
 		payloadIdx := 1
 		if len(lines) > 1 && strings.Contains(lines[1], " -> ") {
@@ -666,13 +655,11 @@ func generatePcap(events []map[string]interface{}) []byte {
 		}
 		srcIP, srcPort, dstIP, dstPort := parseSipTraceLine(addrLine)
 
-		// Build SIP payload with proper \r\n line endings
 		payloadStr := strings.ReplaceAll(strings.Join(lines[payloadIdx:], "\n"), "\r\n", "\n")
 		payload := []byte(strings.ReplaceAll(strings.TrimSpace(payloadStr), "\n", "\r\n") + "\r\n\r\n")
 
-		totalLen := uint32(len(payload) + 42) // 14 eth + 20 ip + 8 udp
+		totalLen := uint32(len(payload) + 42)
 
-		// Packet Header (ts_sec, ts_usec, incl_len, orig_len)
 		buf.Write([]byte{
 			byte(sec), byte(sec >> 8), byte(sec >> 16), byte(sec >> 24),
 			byte(usec), byte(usec >> 8), byte(usec >> 16), byte(usec >> 24),
@@ -680,11 +667,9 @@ func generatePcap(events []map[string]interface{}) []byte {
 			byte(totalLen), byte(totalLen >> 8), byte(totalLen >> 16), byte(totalLen >> 24),
 		})
 
-		// Ethernet Header (dummy MACs, EtherType IPv4)
 		buf.Write([]byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x08, 0x00})
 
-		// IP Header
-		ipTotalLen := uint16(28 + len(payload)) // 20 ip + 8 udp + payload
+		ipTotalLen := uint16(28 + len(payload))
 		ipHeader := []byte{
 			0x45, 0x00, // Version/IHL, TOS
 			byte(ipTotalLen >> 8), byte(ipTotalLen), // Total Length
@@ -699,7 +684,6 @@ func generatePcap(events []map[string]interface{}) []byte {
 		ipHeader[10], ipHeader[11] = byte(cs>>8), byte(cs)
 		buf.Write(ipHeader)
 
-		// UDP Header
 		udpLen := uint16(8 + len(payload))
 		buf.Write([]byte{
 			byte(srcPort >> 8), byte(srcPort),
@@ -781,7 +765,6 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 			return
 		}
 
-		// Header-based API key protection
 		if r.Header.Get("X-API-Key") != apiKey {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -801,7 +784,6 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// List all testfiles with content
 		all, err := hub.testStore.List(ctx, true)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -811,11 +793,7 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 		var batch []TestfileData
 		for _, tf := range all {
 			if tf.ProjectName == projectName {
-				batch = append(batch, TestfileData{
-					Name:        tf.Name,
-					ProjectName: tf.ProjectName,
-					Content:     tf.Content,
-				})
+				batch = append(batch, TestfileData{Name: tf.Name, ProjectName: tf.ProjectName, Content: tf.Content})
 			}
 		}
 
@@ -824,12 +802,10 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 			return
 		}
 
-		// Sort by name for deterministic order
 		sort.Slice(batch, func(i, j int) bool {
 			return batch[i].Name < batch[j].Name
 		})
 
-		// Trigger batch run (asynchronously as it takes time)
 		if !runTestfilesBatch(hub, batch) {
 			http.Error(w, "cannot start test: another run is already active", http.StatusConflict)
 			return
@@ -845,5 +821,7 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 func jsonResponse(w http.ResponseWriter, code int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("failed to encode json response: %v", err)
+	}
 }

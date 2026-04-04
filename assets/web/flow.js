@@ -10,13 +10,6 @@ import {
 
 export function normalizeEvent(j) {
   if (!j || typeof j !== "object") return null;
-
-  // Go backend now provides the 'time' field in 'D.M.YYYY HH:mm:ss.SSS' format.
-  // We keep this as a fallback for any non-standard messages.
-  //if (!Object.prototype.hasOwnProperty.call(j, "time")) {
-  //  j.time = nowLocalString();
-  //}
-
   // Most stripping and normalization is now done in Go
   return j;
 }

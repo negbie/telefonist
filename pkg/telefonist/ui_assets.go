@@ -2,22 +2,23 @@ package telefonist
 
 import (
 	"io/fs"
+	"log"
 	"net/http"
 
 	"github.com/negbie/telefonist/assets"
 )
 
-// embeddedWebFS returns an fs.FS rooted at the embedded `web/` directory.
-func embeddedWebFS() fs.FS {
-	sub, err := fs.Sub(assets.WebAssets, "web")
+var webFS = mustSubFS(assets.WebAssets, "web")
+
+func mustSubFS(fsys fs.FS, dir string) fs.FS {
+	sub, err := fs.Sub(fsys, dir)
 	if err != nil {
-		// This should never happen unless the embed directive is wrong.
-		panic(err)
+		log.Printf("failed to create sub filesystem for %q: %v", dir, err)
+		return fsys
 	}
 	return sub
 }
 
-// noCacheFS wraps an http.FileSystem to set Cache-Control: no-store on all responses.
 type noCacheFS struct {
 	inner http.Handler
 }
@@ -27,9 +28,6 @@ func (n *noCacheFS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	n.inner.ServeHTTP(w, r)
 }
 
-// StaticHandler returns an http.Handler that serves the embedded web assets
-// with no-cache headers. The "/" path serves index.html, and all other
-// embedded files (JS, CSS) are served at their basename paths.
 func StaticHandler() http.Handler {
-	return &noCacheFS{inner: http.FileServer(http.FS(embeddedWebFS()))}
+	return &noCacheFS{inner: http.FileServer(http.FS(webFS))}
 }

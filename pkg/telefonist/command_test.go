@@ -78,9 +78,9 @@ func TestExpandShortcuts(t *testing.T) {
 		expected string
 	}{
 		{
-			"Expand ;wav= (standalone with space)",
+			"Do not expand ;wav= outside account setup",
 			"dial dest ;wav=hello.wav/",
-			"dial dest ;audio_source=aufile,/abs/sounds/hello.wav;audio_player=aufile,/abs/records/",
+			"dial dest ;wav=hello.wav/",
 		},
 		{
 			"Expand ;input_wav= (in account string, no space)",
@@ -88,19 +88,19 @@ func TestExpandShortcuts(t *testing.T) {
 			"uanew <sip:t@h>;auth=p;audio_source=aufile,/abs/sounds/alice.wav",
 		},
 		{
-			"Expand wav= (no semi, no space)",
+			"Do not expand wav= outside account setup",
 			"dial destwav=test.wav/",
-			"dial dest;audio_source=aufile,/abs/sounds/test.wav;audio_player=aufile,/abs/records/",
+			"dial destwav=test.wav/",
 		},
 		{
-			"Expand input_wav= with no semicolon prefix",
+			"Do not expand input_wav= outside account setup",
 			"dial dest input_wav=test.wav",
-			"dial dest ;audio_source=aufile,/abs/sounds/test.wav",
+			"dial dest input_wav=test.wav",
 		},
 		{
-			"Mixed case expansion",
+			"Do not expand mixed-case wav outside account setup",
 			"dial dest ;WAV=test.wav/",
-			"dial dest ;audio_source=aufile,/abs/sounds/test.wav;audio_player=aufile,/abs/records/",
+			"dial dest ;WAV=test.wav/",
 		},
 	}
 

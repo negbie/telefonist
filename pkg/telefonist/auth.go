@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -12,25 +13,24 @@ import (
 var sessionToken string
 var sessionCookieName = "session"
 
-func SetSessionCookieName(name string) {
-	sessionCookieName = name
-}
-
-func GenerateSessionToken() string {
+func GenerateSessionToken() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		log.Fatalf("failed to generate secure session token: %v", err)
+		return "", fmt.Errorf("generate secure session token: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 func init() {
-	sessionToken = GenerateSessionToken()
+	var err error
+	sessionToken, err = GenerateSessionToken()
+	if err != nil {
+		log.Printf("failed to generate session token: %v", err)
+	}
 }
 
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Allow login page and its dependencies
 		if r.URL.Path == "/login.html" ||
 			r.URL.Path == "/login.js" ||
 			r.URL.Path == "/api/login" ||
@@ -77,10 +77,12 @@ func HandleLogin(adminPassword string) http.HandlerFunc {
 				Path:     "/",
 				HttpOnly: true,
 				SameSite: http.SameSiteStrictMode,
-				MaxAge:   86400 * 1, // 1 day
+				MaxAge:   86400, // 1 day
 			})
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+				log.Printf("failed to encode login response: %v", err)
+			}
 			return
 		}
 

@@ -12,27 +12,21 @@ import (
 	"github.com/negbie/telefonist/assets/zip"
 )
 
-func EnsureAssets(soundsDir string) {
+func EnsureAssets(soundsDir string) error {
 	if soundsDir == "" {
-		return
+		return nil
 	}
 
-	// Check if soundsDir exists and has files
 	if entries, err := os.ReadDir(soundsDir); err == nil && len(entries) > 0 {
-		return // Assets already present, skip extraction
+		return nil
 	}
 
-	// Decompress into the parent of soundsDir (e.g. data/)
-	targetDir := filepath.Dir(soundsDir)
-	if err := zip.Decompress(bytes.NewReader(assets.BaresipSounds), targetDir); err != nil {
-		panic(err)
-	}
+	return zip.Decompress(bytes.NewReader(assets.BaresipSounds), filepath.Dir(soundsDir))
 }
 
-func CreateConfig(dataDir string, maxCalls uint, rtpNet, rtpPorts string, rtpTimeout uint, ctrlAddr, sipAddr string, useAlsa bool, isAgent bool, recordsDir string, soundsDir string) {
-	c := config // Use a local copy to avoid mutating global state
-	ctrlAddrNorm := strings.Replace(ctrlAddr, "localhost", "127.0.0.1", 1)
-	c = strings.Replace(c, "127.0.0.1:4444", ctrlAddrNorm, 1)
+func CreateConfig(dataDir string, maxCalls uint, rtpNet, rtpPorts string, rtpTimeout uint, ctrlAddr, sipAddr string, useAlsa bool, recordsDir, soundsDir string) error {
+	c := config
+	c = strings.Replace(c, "127.0.0.1:4444", strings.Replace(ctrlAddr, "localhost", "127.0.0.1", 1), 1)
 
 	if sipAddr != "" {
 		c = strings.Replace(
@@ -67,17 +61,23 @@ func CreateConfig(dataDir string, maxCalls uint, rtpNet, rtpPorts string, rtpTim
 			"rtp_timeout             "+strconv.Itoa((int(rtpTimeout))), 1)
 	}
 
-	// Update data paths
 	if soundsDir == "" {
 		soundsDir = filepath.Join(dataDir, "sounds")
 	}
-	absSoundsDir, _ := filepath.Abs(soundsDir)
-	c = regexp.MustCompile(`(?m)^audio_path\s+sounds`).ReplaceAllString(c, "audio_path              "+absSoundsDir)
-
 	if recordsDir == "" {
 		recordsDir = filepath.Join(dataDir, "recorded_temp")
 	}
-	absRecordsDir, _ := filepath.Abs(recordsDir)
+
+	absSoundsDir, err := filepath.Abs(soundsDir)
+	if err != nil {
+		return err
+	}
+	c = regexp.MustCompile(`(?m)^audio_path\s+sounds`).ReplaceAllString(c, "audio_path              "+absSoundsDir)
+
+	absRecordsDir, err := filepath.Abs(recordsDir)
+	if err != nil {
+		return err
+	}
 	c = regexp.MustCompile(`(?m)^snd_path\s+records`).ReplaceAllString(c, "snd_path                "+absRecordsDir)
 
 	if useAlsa {
@@ -87,18 +87,10 @@ func CreateConfig(dataDir string, maxCalls uint, rtpNet, rtpPorts string, rtpTim
 		c = regexp.MustCompile(`(?m)^#module\s+alsa\.so`).ReplaceAllString(c, "module                  alsa.so")
 	}
 
-	// Agents now use ctrl_tcp for high-fidelity structured telephony feedback
-	if recordsDir == "" {
-		recordsDir = filepath.Join(dataDir, "recorded_temp")
-	}
-
-	configFile := filepath.Join(dataDir, "config")
-	if err := os.WriteFile(configFile, []byte(c), 0644); err != nil {
-		panic(err)
-	}
+	return os.WriteFile(filepath.Join(dataDir, "config"), []byte(c), 0644)
 }
 
-var config string = `
+const config = `
 #
 # baresip configuration
 #

@@ -129,10 +129,10 @@ CREATE TABLE IF NOT EXISTS testfiles (
 			if _, err := db.ExecContext(ctx, `
 BEGIN TRANSACTION;
 -- 1. Clean up orphan runs that would violate the new FK constraint
-DELETE FROM testruns 
+DELETE FROM testruns
 WHERE NOT EXISTS (
-  SELECT 1 FROM testfiles 
-  WHERE testfiles.name = testruns.testfile_name 
+  SELECT 1 FROM testfiles
+  WHERE testfiles.name = testruns.testfile_name
     AND testfiles.project_name = testruns.project_name
 );
 
@@ -283,8 +283,12 @@ WHERE name = ? AND project_name = ?;
 	}
 
 	// Parse times defensively (if parse fails, keep zero time).
-	r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
-	r.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+	if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+		log.Printf("failed to parse testfile created_at %q for %q (project %q): %v", created, name, projectName, err)
+	}
+	if r.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated); err != nil {
+		log.Printf("failed to parse testfile updated_at %q for %q (project %q): %v", updated, name, projectName, err)
+	}
 
 	return r, nil
 }
@@ -362,7 +366,7 @@ func (s *TestStore) Rename(ctx context.Context, oldName, oldProject, newName, ne
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.ExecContext(ctx, `
-UPDATE testfiles 
+UPDATE testfiles
 SET name = ?, project_name = ?, updated_at = ?
 WHERE name = ? AND project_name = ?;
 `, newName, newProject, now, oldName, oldProject)
@@ -376,15 +380,17 @@ WHERE name = ? AND project_name = ?;
 
 	// Also update file paths in testrun_wavs table if they moved
 	if oldDir != newDir {
-		_, _ = s.db.ExecContext(ctx, `
-			UPDATE testrun_wavs 
+		if _, err := s.db.ExecContext(ctx, `
+			UPDATE testrun_wavs
 			SET file_path = REPLACE(file_path, ?, ?)
 			WHERE testrun_id IN (
 				SELECT id FROM testruns WHERE testfile_name = ? AND project_name = ?
 			);`,
 			filepath.Join(oldP, oldName),
 			filepath.Join(newP, newName),
-			newName, newProject)
+			newName, newProject); err != nil {
+			log.Printf("failed to update wav paths for renamed testfile %q (project %q) -> %q (project %q): %v", oldName, oldProject, newName, newProject, err)
+		}
 	}
 
 	return nil
@@ -423,8 +429,12 @@ ORDER BY name ASC;
 		if err := rows.Scan(&r.Name, &r.ProjectName, &r.Content, &created, &updated); err != nil {
 			return nil, fmt.Errorf("scan list row: %w", err)
 		}
-		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
-		r.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+		if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			log.Printf("failed to parse testfile created_at %q while listing %q (project %q): %v", created, r.Name, r.ProjectName, err)
+		}
+		if r.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated); err != nil {
+			log.Printf("failed to parse testfile updated_at %q while listing %q (project %q): %v", updated, r.Name, r.ProjectName, err)
+		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -460,7 +470,9 @@ VALUES(?, ?, ?, ?, ?, ?, ?);
 	}
 
 	// Prune old runs to prevent boundless database growth
-	_ = s.PruneRuns(ctx, 100)
+	if err := s.PruneRuns(ctx, 100); err != nil {
+		log.Printf("failed to prune old runs after saving run %d for %q (project %q): %v", id, testfileName, projectName, err)
+	}
 
 	return id, nil
 }
@@ -540,7 +552,9 @@ ORDER BY id ASC;
 		if err := rows.Scan(&r.ID, &r.TestrunID, &r.Filename, &created); err != nil {
 			return nil, fmt.Errorf("scan wav row: %w", err)
 		}
-		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			log.Printf("failed to parse wav created_at %q for wav %d: %v", created, r.ID, err)
+		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -609,7 +623,9 @@ ORDER BY id ASC;
 		if err := rows.Scan(&r.ID, &r.TestfileName, &r.ProjectName, &r.RunNumber, &r.Hash, &r.Status, &created); err != nil {
 			return nil, fmt.Errorf("scan testrun row: %w", err)
 		}
-		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			log.Printf("failed to parse testrun created_at %q for run %d: %v", created, r.ID, err)
+		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -641,7 +657,9 @@ ORDER BY id ASC;
 		if err := rows.Scan(&r.ID, &r.TestfileName, &r.ProjectName, &r.RunNumber, &r.Hash, &r.Status, &created); err != nil {
 			return nil, fmt.Errorf("scan testrun row: %w", err)
 		}
-		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			log.Printf("failed to parse testrun created_at %q for run %d: %v", created, r.ID, err)
+		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -674,7 +692,9 @@ WHERE id = ?;
 		return TestRunRow{}, fmt.Errorf("get testrun %d: %w", id, err)
 	}
 
-	r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+		log.Printf("failed to parse testrun created_at %q for run %d: %v", created, r.ID, err)
+	}
 	return r, nil
 }
 
@@ -779,7 +799,11 @@ func (s *TestStore) DeleteProject(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			log.Printf("failed to rollback project delete transaction for %q: %v", name, err)
+		}
+	}()
 
 	if _, err := tx.ExecContext(ctx, `UPDATE testfiles SET project_name = '' WHERE project_name = ?;`, name); err != nil {
 		return err
@@ -811,7 +835,11 @@ func (s *TestStore) RenameProject(ctx context.Context, oldName, newName string) 
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			log.Printf("failed to rollback project rename transaction for %q -> %q: %v", oldName, newName, err)
+		}
+	}()
 
 	// 1. Rename physical WAV folders
 	oldP := oldName
@@ -852,7 +880,7 @@ func (s *TestStore) RenameProject(ctx context.Context, oldName, newName string) 
 		prefixOld := oldP + string(filepath.Separator)
 		prefixNew := newP + string(filepath.Separator)
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE testrun_wavs 
+			UPDATE testrun_wavs
 			SET file_path = ? || SUBSTR(file_path, ?)
 			WHERE file_path LIKE ?;
 		`, prefixNew, len(prefixOld)+1, prefixOld+"%"); err != nil {
@@ -889,7 +917,11 @@ func (s *TestStore) CloneProject(ctx context.Context, srcName, targetName string
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			log.Printf("failed to rollback project clone transaction for %q -> %q: %v", srcName, targetName, err)
+		}
+	}()
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
@@ -929,7 +961,9 @@ func (s *TestStore) ListProjects(ctx context.Context) ([]ProjectRow, error) {
 		if err := rows.Scan(&r.Name, &created); err != nil {
 			return nil, err
 		}
-		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			log.Printf("failed to parse project created_at %q for project %q: %v", created, r.Name, err)
+		}
 		out = append(out, r)
 	}
 	return out, nil
@@ -950,10 +984,10 @@ func (s *TestStore) PruneRuns(ctx context.Context, keep int) error {
 		return errors.New("test store is not initialized")
 	}
 	_, err := s.db.ExecContext(ctx, `
-		DELETE FROM testruns 
+		DELETE FROM testruns
 		WHERE id NOT IN (
-			SELECT id FROM testruns 
-			ORDER BY created_at DESC 
+			SELECT id FROM testruns
+			ORDER BY created_at DESC
 			LIMIT ?
 		);`, keep)
 	return err

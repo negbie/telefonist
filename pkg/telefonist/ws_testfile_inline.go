@@ -13,7 +13,6 @@ import (
 	"strings"
 )
 
-// TestfileData holds the name and content of a test file to be executed.
 type TestfileData struct {
 	Name        string
 	ProjectName string
@@ -27,35 +26,21 @@ type testCase struct {
 	rawLine  string
 }
 
-// handleTestfileInlineCommand runs a list of `test` cases provided inline (pasted from UI)
-// Expected usage: testfile_inline <project|”> <name> <base64(testfile_content)>
 func handleTestfileInlineCommand(h *WsHub, input string) {
-	argsStr := strings.TrimSpace(strings.TrimPrefix(input, "testfile_inline"))
-	if argsStr == "" {
+	args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(input, "testfile_inline")))
+	if len(args) == 0 {
 		broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "message", "usage: testfile_inline <project|''> <name> <base64(testfile_content)>"))
 		return
 	}
 
-	const defaultFileName = "inline"
-
-	projectName := ""
-	fileName := defaultFileName
-	b64 := ""
-
-	parts := strings.Fields(argsStr)
-	if len(parts) >= 3 {
-		projectName = parts[0]
+	projectName, fileName, b64 := "", "inline", args[0]
+	if len(args) >= 3 {
+		projectName, fileName, b64 = args[0], args[1], args[2]
 		if projectName == "''" {
 			projectName = ""
 		}
-		fileName = parts[1]
-		b64 = parts[2]
-	} else if len(parts) == 2 {
-		// Backwards compatibility or minimal: <name> <base64>
-		fileName = parts[0]
-		b64 = parts[1]
-	} else {
-		b64 = parts[0]
+	} else if len(args) == 2 {
+		fileName, b64 = args[0], args[1]
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(b64)
@@ -72,14 +57,8 @@ func handleTestfileInlineCommand(h *WsHub, input string) {
 	runTestfilesBatch(h, []TestfileData{{Name: fileName, ProjectName: projectName, Content: string(decoded)}})
 }
 
-// runTestfilesBatch executes multiple test files sequentially.
-// Returns true if the batch run was successfully started, false if another run is active.
 func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
-	if len(batch) == 0 {
-		return false
-	}
-
-	if h == nil {
+	if h == nil || len(batch) == 0 {
 		return false
 	}
 
@@ -167,8 +146,6 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 
 		broadcastInfo(h, fmt.Sprintf(`{"status":"running","token":"testfile","file":%q,"project":%q,"total":%d}`, fileName, projectName, len(cases)))
 
-		// Synchronously wait for session creation so no stale events
-		// from the previous repetition leak into the new session.
 		sessionReady := make(chan struct{})
 		h.internalCmd <- func() {
 			h.trainSession = newTrainSession(ignoredEvents, acceptedEvents)
@@ -443,8 +420,6 @@ func processRecordings(ctx context.Context, store *TestStore, runID int64, dataD
 			}
 		}
 
-		// Final Step: Cleanup the agent directory once all recordings are processed.
-		// recordsDir is data/agents/<alias>/recorded_temp, so agentDir is one level up.
 		agentDir := filepath.Dir(recordsDir)
 		if err := os.RemoveAll(agentDir); err != nil {
 			log.Printf("failed to cleanup agent directory %s: %v", agentDir, err)

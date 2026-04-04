@@ -1,11 +1,6 @@
 // Telefonist embedded web UI client script (flow-only).
 //
 // Expects the server to serve `/ws` as a WebSocket endpoint and `/` as the UI.
-//
-// Refactored to use utils.js, flow.js, visual_builder.js,
-// sip_renderer.js, log_renderer.js, and testfile_manager.js
-
-// Telefonist embedded web UI client script (flow-only).
 import { EventBus } from "./event_bus.js";
 import {
   wsURL,
@@ -47,14 +42,6 @@ const getOptions = () => ({
   collapseAll: collapseAllEl ? !!collapseAllEl.checked : false,
 });
 
-const wireSearch = (id, container, selector) => {
-  const input = document.getElementById(id);
-  if (input && container) {
-    wireSearchFilter(input, container, selector);
-  }
-  return input;
-};
-
 const wireCheckbox = (el, applyFn) => {
   if (!el || !applyFn) return;
   applyFn(el);
@@ -63,9 +50,20 @@ const wireCheckbox = (el, applyFn) => {
 
 setBodyFlowView();
 
-const searchInput = wireSearch("search", document.body, ".list");
-const searchSipInput = wireSearch("search-sip", sipViewEl, ".sip-ladder-row");
-const searchLogInput = wireSearch("search-log", logViewEl, ".log-row");
+const searchInput = document.getElementById("search");
+if (searchInput) {
+  wireSearchFilter(searchInput, document.body, ".list");
+}
+
+const searchSipInput = document.getElementById("search-sip");
+if (searchSipInput && sipViewEl) {
+  wireSearchFilter(searchSipInput, sipViewEl, ".sip-ladder-row");
+}
+
+const searchLogInput = document.getElementById("search-log");
+if (searchLogInput && logViewEl) {
+  wireSearchFilter(searchLogInput, logViewEl, ".log-row");
+}
 
 wireCheckbox(onlyTestsEl, applyOnlyTestsFilterFromCheckbox);
 
@@ -93,11 +91,7 @@ if (clearEl) clearEl.onclick = clearMessages;
 
 if (logoutEl) {
   logoutEl.onclick = () => {
-    if (API && API.logout) {
-      API.logout();
-    } else {
-      window.location.href = "/login.html";
-    }
+    API.logout();
   };
 }
 
@@ -119,19 +113,29 @@ const socketWrapper = {
   },
 };
 
+const testfileInputEl = document.getElementById("testfile-input");
+const testfilesRunEl = document.getElementById("testfiles-run");
+const testfilesStopEl = document.getElementById("testfiles-stop");
+const testfileSelectEl = document.getElementById("testfile-select");
+const testfilesSaveEl = document.getElementById("testfiles-save");
+const testfilesNewEl = document.getElementById("testfiles-new");
+const testfilesRenameEl = document.getElementById("testfiles-rename");
+const testfilesDeleteEl = document.getElementById("testfiles-delete");
+const testfileHighlightsEl = document.getElementById("testfile-highlights");
+
 let tfManager = null;
 if (initTestfileManager) {
   tfManager = initTestfileManager({
     socket: socketWrapper,
-    testfileInputEl: document.getElementById("testfile-input"),
-    testfilesRunEl: document.getElementById("testfiles-run"),
-    testfilesStopEl: document.getElementById("testfiles-stop"),
-    testfileSelectEl: document.getElementById("testfile-select"),
-    testfilesSaveEl: document.getElementById("testfiles-save"),
-    testfilesNewEl: document.getElementById("testfiles-new"),
-    testfilesRenameEl: document.getElementById("testfiles-rename"),
-    testfilesDeleteEl: document.getElementById("testfiles-delete"),
-    testfileHighlightsEl: document.getElementById("testfile-highlights"),
+    testfileInputEl,
+    testfilesRunEl,
+    testfilesStopEl,
+    testfileSelectEl,
+    testfilesSaveEl,
+    testfilesNewEl,
+    testfilesRenameEl,
+    testfilesDeleteEl,
+    testfileHighlightsEl,
     renderError: (j) => {
       if (flow) flow.renderEvent(j);
     },
@@ -244,4 +248,3 @@ socket = createSocketHandler(wsURL(), {
     }
   },
 });
-

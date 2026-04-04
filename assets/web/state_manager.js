@@ -1,4 +1,3 @@
-/* state_manager.js */
 export function createStateManager() {
   var fileCache = {}; // "project:name" -> { name, project, original, current }
 

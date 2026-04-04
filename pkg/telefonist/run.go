@@ -19,6 +19,16 @@ func RunAgent(f AppFlags) error {
 		return err
 	}
 
+	logFile, err := SetupLogging(f.DataDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			log.Printf("failed to close log file: %v", err)
+		}
+	}()
+
 	if f.SoundsDir == "" {
 		f.SoundsDir = filepath.Join(f.DataDir, "sounds")
 	}
@@ -46,16 +56,11 @@ func newBaresipInstance(f AppFlags) (*gobaresip.Baresip, error) {
 func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux := http.NewServeMux()
 
-	// WebSocket endpoint
 	mux.HandleFunc("/ws", AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		ServeWs(hub, w, r)
 	}))
-
-	// Auth handlers
-	mux.HandleFunc("/api/login", HandleLogin(f.UiAdminPassword))
+	mux.HandleFunc("/api/login", HandleLogin(f.UIAdminPassword))
 	mux.HandleFunc("/api/logout", HandleLogout)
-
-	// REST API handlers for testfile and project management
 	mux.HandleFunc("/api/projects", AuthMiddleware(HandleAPIProjects(hub)))
 	mux.HandleFunc("/api/projects/rename", AuthMiddleware(HandleAPIProjectRename(hub)))
 	mux.HandleFunc("/api/projects/clone", AuthMiddleware(HandleAPIProjectClone(hub)))
@@ -68,27 +73,18 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/testrun/wav", AuthMiddleware(HandleAPITestrunWav(hub)))
 	mux.HandleFunc("/api/testrun/download", AuthMiddleware(HandleAPITestrunDownload(hub)))
 	mux.HandleFunc("/api/maintenance", AuthMiddleware(HandleAPIDatabaseMaintenance(hub.testStore)))
-	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UiApiKey))
-
-	// Static assets: all embedded web/* files are served automatically.
-	// New JS/CSS files added to web/ need no code changes here.
+	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UIAPIKey))
 	mux.HandleFunc("/", AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		StaticHandler().ServeHTTP(w, r)
 	}))
 
-	// Start HTTP server
 	go func() {
-		if f.TlsCert != "" && f.TlsKey != "" {
-			log.Printf("Starting HTTPS server on %s", f.UiAddr)
-			if err := http.ListenAndServeTLS(f.UiAddr, f.TlsCert, f.TlsKey, mux); err != nil {
-				log.Fatal(err)
-			}
-		} else {
-			log.Printf("Starting HTTP server on %s", f.UiAddr)
-			if err := http.ListenAndServe(f.UiAddr, mux); err != nil {
-				log.Fatal(err)
-			}
+		if f.TLSCert != "" && f.TLSKey != "" {
+			log.Printf("Starting HTTPS server on %s", f.UIAddr)
+			log.Fatal(http.ListenAndServeTLS(f.UIAddr, f.TLSCert, f.TLSKey, mux))
 		}
+		log.Printf("Starting HTTP server on %s", f.UIAddr)
+		log.Fatal(http.ListenAndServe(f.UIAddr, mux))
 	}()
 }
 
@@ -96,7 +92,6 @@ func Run() error {
 	f := ParseFlags()
 	MaybePrintVersionAndExit(f.Version)
 
-	// Agent mode is signaled via environment variable for a cleaner sub-process CLI
 	if os.Getenv("TELEFONIST_AGENT") == "1" {
 		f.Agent = true
 		f.Alias = os.Getenv("TELEFONIST_ALIAS")
@@ -108,41 +103,53 @@ func Run() error {
 		return err
 	}
 
+	logFile, err := SetupLogging(f.DataDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			log.Printf("failed to close log file: %v", err)
+		}
+	}()
+
 	if f.SoundsDir == "" {
 		f.SoundsDir = filepath.Join(f.DataDir, "sounds")
 	}
 
-	EnsureAssets(f.SoundsDir)
-
-	// Set unique session cookie name based on UI port to avoid logout conflicts when running multiple instances on localhost.
-	port := "8080"
-	if parts := strings.Split(f.UiAddr, ":"); len(parts) > 1 {
-		port = parts[len(parts)-1]
+	if err := EnsureAssets(f.SoundsDir); err != nil {
+		return err
 	}
-	SetSessionCookieName("session_" + port)
 
-	// Setup websocket hub
-	hub := NewWsHub(f.DataDir, f.MaxCalls, f.RtpNet, f.RtpPorts, f.RtpTimeout, f.UseAlsa, f.SipListen)
+	if parts := strings.Split(f.UIAddr, ":"); len(parts) > 1 {
+		sessionCookieName = "session_" + parts[len(parts)-1]
+	} else {
+		sessionCookieName = "session_8080"
+	}
 
-	// Initialize persistent test store (SQLite next to executable) and attach to hub.
-	// If it fails, we continue without persistence (UI can still use testfile_inline).
-	if store, err := OpenTestStore(context.Background(), f.DataDir); err != nil {
+	hub := NewWsHub(f.DataDir, f.MaxCalls, f.RTPNet, f.RTPPorts, f.RTPTimeout, f.UseALSA, f.SIPListen)
+
+	store, err := OpenTestStore(context.Background(), f.DataDir)
+	if err != nil {
 		log.Printf("teststore: disabled: %v", err)
 	} else {
 		hub.SetTestStore(store)
-		// Close on shutdown (best-effort).
 		defer func() {
-			_ = store.Close()
+			if err := store.Close(); err != nil {
+				log.Printf("failed to close test store: %v", err)
+			}
 		}()
 		log.Printf("teststore: enabled: %s", store.Path())
 	}
 
 	go hub.Run()
 
-	if f.UiApiKey == "" {
-		f.UiApiKey = GenerateSessionToken()
+	if f.UIAPIKey == "" {
+		if f.UIAPIKey, err = GenerateSessionToken(); err != nil {
+			return err
+		}
 	}
-	log.Printf("UI Admin API Key (X-API-Key): %s", f.UiApiKey)
+	log.Printf("UI Admin API Key (X-API-Key): %s", f.UIAPIKey)
 
 	startHTTPServer(f, hub)
 

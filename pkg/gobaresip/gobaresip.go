@@ -330,7 +330,12 @@ func gobaresip_ui_output_handler(str *C.char) {
 		Ok:       true,
 		Data:     s,
 	}
-	r.RawJSON, _ = json.Marshal(r)
+	rawJSON, err := json.Marshal(r)
+	if err != nil {
+		log.Printf("gobaresip: failed to marshal UI output response: %v", err)
+		return
+	}
+	r.RawJSON = rawJSON
 
 	select {
 	case b.msgChan <- Msg{Response: r}:
@@ -478,7 +483,9 @@ func (b *Baresip) Close() {
 		close(b.closeCh)
 		atomic.StoreUint32(&b.ctrlConnAlive, 0)
 		if b.ctrlConn != nil {
-			b.ctrlConn.Close()
+			if err := b.ctrlConn.Close(); err != nil {
+				log.Printf("gobaresip: close ctrl connection failed: %v", err)
+			}
 		}
 
 		b.readWG.Wait()
@@ -622,10 +629,15 @@ func (b *Baresip) startProxy() error {
 	log.Printf("gobaresip: agent proxy listening on %s", b.ctrlAddr)
 
 	go func() {
-		defer l.Close()
+		defer func() {
+			if err := l.Close(); err != nil {
+				log.Printf("gobaresip: agent proxy listener close failed: %v", err)
+			}
+		}()
 		for {
 			conn, err := l.Accept()
 			if err != nil {
+				log.Printf("gobaresip: agent proxy accept failed: %v", err)
 				return
 			}
 			go b.handleProxyConn(conn)
@@ -635,7 +647,11 @@ func (b *Baresip) startProxy() error {
 }
 
 func (b *Baresip) handleProxyConn(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("gobaresip: proxy master connection close failed: %v", err)
+		}
+	}()
 	log.Printf("gobaresip: proxy accepted connection from %s", conn.RemoteAddr())
 
 	// Connect to local Baresip's ctrl_tcp (Internal)
@@ -645,7 +661,11 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 		log.Printf("gobaresip: proxy failed to connect to local baresip: %v", err)
 		return
 	}
-	defer localConn.Close()
+	defer func() {
+		if err := localConn.Close(); err != nil {
+			log.Printf("gobaresip: proxy local connection close failed: %v", err)
+		}
+	}()
 
 	// Use a mutex to protect concurrent writes to the Master Hub connection
 	var writeMu sync.Mutex
@@ -653,8 +673,11 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 		writeMu.Lock()
 		defer writeMu.Unlock()
 		netstring := fmt.Sprintf("%d:%s,", len(data), string(data))
-		_, err := conn.Write([]byte(netstring))
-		return err
+		if _, err := conn.Write([]byte(netstring)); err != nil {
+			log.Printf("gobaresip: proxy write to master failed: %v", err)
+			return err
+		}
+		return nil
 	}
 
 	// 1. Forward Baresip (TCP) -> Master (Events/Responses)
@@ -670,7 +693,12 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 			var m map[string]interface{}
 			if err := json.Unmarshal(msg, &m); err == nil {
 				m["_agent"] = b.alias
-				msg, _ = json.Marshal(m)
+				encoded, err := json.Marshal(m)
+				if err != nil {
+					log.Printf("gobaresip: proxy failed to marshal enriched message: %v", err)
+				} else {
+					msg = encoded
+				}
 			}
 
 			if err := writeToMaster(msg); err != nil {
@@ -690,19 +718,27 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 				var data []byte
 				switch {
 				case m.SIP != "":
-					data, _ = json.Marshal(map[string]interface{}{
+					data, err = json.Marshal(map[string]interface{}{
 						"event":  true,
 						"type":   "SIP",
 						"param":  m.SIP,
 						"_agent": b.alias,
 					})
+					if err != nil {
+						log.Printf("gobaresip: proxy failed to marshal SIP message: %v", err)
+						continue
+					}
 				case m.Log != "":
-					data, _ = json.Marshal(map[string]interface{}{
+					data, err = json.Marshal(map[string]interface{}{
 						"event":  true,
 						"type":   "LOG",
 						"param":  m.Log,
 						"_agent": b.alias,
 					})
+					if err != nil {
+						log.Printf("gobaresip: proxy failed to marshal log message: %v", err)
+						continue
+					}
 				}
 				if len(data) > 0 {
 					if err := writeToMaster(data); err != nil {
@@ -721,11 +757,13 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 		for {
 			msg, err := rMaster.readNetstring()
 			if err != nil {
+				log.Printf("gobaresip: proxy read from master failed: %v", err)
 				return
 			}
 			// Forward exactly as received (netstring wrap)
 			netstring := fmt.Sprintf("%d:%s,", len(msg), string(msg))
 			if _, err := localConn.Write([]byte(netstring)); err != nil {
+				log.Printf("gobaresip: proxy write to local baresip failed: %v", err)
 				return
 			}
 		}

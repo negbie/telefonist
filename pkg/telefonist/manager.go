@@ -17,16 +17,16 @@ import (
 )
 
 type Agent struct {
-	Alias     string
-	ConfigDir string
-	Baresip   *gobaresip.Baresip
-	Cmd       *exec.Cmd
-	CtrlAddr  string
-	SipPort       int
-	RtpPorts      string
+	Alias         string
+	ConfigDir     string
+	Baresip       *gobaresip.Baresip
+	Cmd           *exec.Cmd
+	CtrlAddr      string
+	SIPPort       int
+	RTPPorts      string
 	Done          chan struct{} // Closed when Cmd exits
 	RecordingsDir string
-	RtpOffset     int
+	RTPOffset     int
 }
 
 type BaresipManager struct {
@@ -34,20 +34,20 @@ type BaresipManager struct {
 	agents map[string]*Agent
 	master *WsHub
 
-	BaseSipIP    string
-	BaseSipPort  int
-	BaseRtpPort  int
-	MaxCalls     uint
-	RtpNet       string
-	RtpTimeout   uint
-	UseAlsa      bool
-	HasSipListen bool
+	baseSIPIP    string
+	baseSIPPort  int
+	baseRTPPort  int
+	maxCalls     uint
+	rtpNet       string
+	rtpTimeout   uint
+	useALSA      bool
+	hasSIPListen bool
 
 	dataDir string
 
 	portMu   sync.Mutex
-	sipPorts map[int]bool // offset from BaseSipPort -> used
-	rtpPorts map[int]bool // offset from BaseRtpPort -> used
+	sipPorts map[int]bool // offset from baseSIPPort -> used
+	rtpPorts map[int]bool // offset from baseRTPPort -> used
 }
 
 func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string, rtpPorts string, rtpTimeout uint, useAlsa bool, sipListen string) *BaresipManager {
@@ -78,14 +78,14 @@ func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string,
 	return &BaresipManager{
 		agents:       make(map[string]*Agent),
 		master:       hub,
-		BaseSipIP:    baseIP,
-		BaseSipPort:  basePort,
-		BaseRtpPort:  baseRtpPort,
-		MaxCalls:     maxCalls,
-		RtpNet:       rtpNet,
-		RtpTimeout:   rtpTimeout,
-		UseAlsa:      useAlsa,
-		HasSipListen: hasSipListen,
+		baseSIPIP:    baseIP,
+		baseSIPPort:  basePort,
+		baseRTPPort:  baseRtpPort,
+		maxCalls:     maxCalls,
+		rtpNet:       rtpNet,
+		rtpTimeout:   rtpTimeout,
+		useALSA:      useAlsa,
+		hasSIPListen: hasSipListen,
 		dataDir:      dataDir,
 		sipPorts:     make(map[int]bool),
 		rtpPorts:     make(map[int]bool),
@@ -101,14 +101,14 @@ func (m *BaresipManager) allocatePorts() (int, string, int) {
 	for ; m.sipPorts[sipOffset]; sipOffset += 2 {
 	}
 	m.sipPorts[sipOffset] = true
-	sipPort := m.BaseSipPort + sipOffset
+	sipPort := m.baseSIPPort + sipOffset
 
 	// Find free RTP range offset
 	rtpOffset := 0
 	for ; m.rtpPorts[rtpOffset]; rtpOffset += 102 {
 	}
 	m.rtpPorts[rtpOffset] = true
-	rtpStart := m.BaseRtpPort + rtpOffset
+	rtpStart := m.baseRTPPort + rtpOffset
 	rtpEnd := rtpStart + 100
 	rtpPortsStr := fmt.Sprintf("%d-%d", rtpStart, rtpEnd)
 
@@ -119,7 +119,7 @@ func (m *BaresipManager) releasePorts(sipPort, rtpOffset int) {
 	m.portMu.Lock()
 	defer m.portMu.Unlock()
 
-	sipOffset := sipPort - m.BaseSipPort
+	sipOffset := sipPort - m.baseSIPPort
 	delete(m.sipPorts, sipOffset)
 	delete(m.rtpPorts, rtpOffset)
 }
@@ -151,7 +151,9 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		return err
 	}
 	proxyAddr := lProxy.Addr().String()
-	lProxy.Close()
+	if err := lProxy.Close(); err != nil {
+		log.Printf("hub: failed to close proxy listener for agent %s: %v", alias, err)
+	}
 
 	// 2. Baresip listener address (Internal Agent Proxy connects here)
 	lBaresip, err := net.Listen("tcp", "127.0.0.1:0")
@@ -159,20 +161,30 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		return err
 	}
 	baresipAddr := lBaresip.Addr().String()
-	lBaresip.Close()
+	if err := lBaresip.Close(); err != nil {
+		log.Printf("hub: failed to close baresip listener for agent %s: %v", alias, err)
+	}
 
 	// Write config and accounts
 	// We pass baresipAddr to CreateConfig so Baresip listens there
-	agentRecordsDir, _ := filepath.Abs(filepath.Join(agentDir, "recorded_temp"))
+	agentRecordsDir, err := filepath.Abs(filepath.Join(agentDir, "recorded_temp"))
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(agentRecordsDir, 0755); err != nil {
 		return err
 	}
-	globalSoundsDir, _ := filepath.Abs(filepath.Join(m.dataDir, "sounds"))
-	sipAddr := ""
-	if m.HasSipListen {
-		sipAddr = fmt.Sprintf("%s:%d", m.BaseSipIP, sipPort)
+	globalSoundsDir, err := filepath.Abs(filepath.Join(m.dataDir, "sounds"))
+	if err != nil {
+		return err
 	}
-	CreateConfig(agentDir, m.MaxCalls, m.RtpNet, rtpPorts, m.RtpTimeout, baresipAddr, sipAddr, m.UseAlsa, true, agentRecordsDir, globalSoundsDir)
+	sipAddr := ""
+	if m.hasSIPListen {
+		sipAddr = fmt.Sprintf("%s:%d", m.baseSIPIP, sipPort)
+	}
+	if err := CreateConfig(agentDir, m.maxCalls, m.rtpNet, rtpPorts, m.rtpTimeout, baresipAddr, sipAddr, m.useALSA, agentRecordsDir, globalSoundsDir); err != nil {
+		return err
+	}
 
 	// Write empty accounts file to prevent initial registration before bridge is ready.
 	// Baresip will load UAs via explicit uanew command later.
@@ -233,14 +245,14 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	}
 
 	agent := &Agent{
-		Alias:     alias,
-		ConfigDir: agentDir,
-		Baresip:   gb,
-		Cmd:       cmd,
-		CtrlAddr:  proxyAddr,
-		SipPort:       sipPort,
-		RtpPorts:      rtpPorts,
-		RtpOffset:     rtpOffset,
+		Alias:         alias,
+		ConfigDir:     agentDir,
+		Baresip:       gb,
+		Cmd:           cmd,
+		CtrlAddr:      proxyAddr,
+		SIPPort:       sipPort,
+		RTPPorts:      rtpPorts,
+		RTPOffset:     rtpOffset,
 		Done:          make(chan struct{}),
 		RecordingsDir: agentRecordsDir,
 	}
@@ -288,7 +300,9 @@ func (m *BaresipManager) forwardMessages(ctx context.Context, a *Agent) {
 func (m *BaresipManager) stopAgent(a *Agent) {
 	log.Printf("stopping agent %s", a.Alias)
 	// Try a graceful shutdown first to allow SIP deregistrations
-	a.Baresip.CmdWs([]byte("quit"))
+	if err := a.Baresip.CmdWs([]byte("quit")); err != nil {
+		log.Printf("hub: failed to send quit to agent %s: %v", a.Alias, err)
+	}
 
 	// Wait for process to exit
 	select {
@@ -297,13 +311,15 @@ func (m *BaresipManager) stopAgent(a *Agent) {
 	case <-time.After(2 * time.Second):
 		// Process did not exit in time, force kill
 		if a.Cmd.Process != nil {
-			a.Cmd.Process.Kill()
+			if err := a.Cmd.Process.Kill(); err != nil {
+				log.Printf("hub: failed to kill agent process %s: %v", a.Alias, err)
+			}
 		}
 		<-a.Done // Wait for monitor goroutine to finish Wait()
 	}
 
 	a.Baresip.Close()
-	m.releasePorts(a.SipPort, a.RtpOffset)
+	m.releasePorts(a.SIPPort, a.RTPOffset)
 	delete(m.agents, a.Alias)
 }
 
