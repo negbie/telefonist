@@ -139,12 +139,15 @@ static: telefonist_static
 
 telefonist_static: export CC := zig cc -target x86_64-linux-musl
 telefonist_static: export CXX := zig c++ -target x86_64-linux-musl
+telefonist_static: export CFLAGS := -Oz -fPIC -ffunction-sections -fdata-sections
+telefonist_static: export CXXFLAGS := -Oz -fPIC -ffunction-sections -fdata-sections
+telefonist_static: export LDFLAGS := -Wl,--gc-sections
 telefonist_static: $(BARESIP_LIB) stage_headers
 	$(call check_alsa,noalsa)
 	@echo "Building fully static telefonist binary with Zig..."
 	CGO_ENABLED=1 \
 	go build -trimpath -o telefonist \
-		-ldflags "-s -w -X github.com/negbie/telefonist/pkg/telefonist.Version=$(VERSION) -linkmode external -extldflags '-static'" \
+		-ldflags "-s -w -X github.com/negbie/telefonist/pkg/telefonist.Version=$(VERSION) -linkmode external -extldflags '-static -Wl,--gc-sections'" \
 		./cmd/telefonist
 
 compress: telefonist_static
@@ -269,9 +272,13 @@ $(OPENSSL_SRC): $(OPENSSL_TAR)
 $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO): $(OPENSSL_SRC) | $(GIT_DIR)
 	@set -eu; \
 	cd "$(OPENSSL_SRC)"; \
-	CC="$(CC)" ./Configure linux-x86_64 no-shared no-zlib no-comp no-tests no-unit-test no-external-tests no-engine no-legacy --prefix="$(OPENSSL_PREFIX)" --openssldir="$(OPENSSL_PREFIX)"; \
+	CC="$(CC)" ./Configure linux-x86_64 no-shared no-zlib no-comp no-tests no-unit-test no-external-tests no-engine no-legacy \
+		no-err no-des no-md2 no-mdc2 no-rc2 no-rc4 no-rc5 no-idea no-cast no-bf no-dsa no-ripemd no-whirlpool no-srp no-heartbeats no-hw no-autoload-config \
+		no-ct no-ocsp no-ts no-ui-console no-cms no-cmp no-sm2 no-sm3 no-sm4 no-aria no-camellia no-seed no-psk no-nextprotoneg no-async \
+		--prefix="$(OPENSSL_PREFIX)" --openssldir="$(OPENSSL_PREFIX)"; \
 	make -j"$(JOBS)"; \
 	make install_sw; \
+	find "$(OPENSSL_PREFIX)" -name "*.a" -exec strip --strip-debug {} +; \
 	openssl_libdir=""; \
 	if [ -d "$(OPENSSL_PREFIX)/lib" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib"; \
 	elif [ -d "$(OPENSSL_PREFIX)/lib64" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib64"; \
@@ -297,12 +304,13 @@ $(RE_LIB): $(RE_DIR) $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO) | $(GIT_DIR)
 	if [ -d "$(OPENSSL_PREFIX)/lib" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib"; \
 	elif [ -d "$(OPENSSL_PREFIX)/lib64" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib64"; fi; \
 	CC="$(CC)" CXX="$(CXX)" PKG_CONFIG_PATH="$(OPENSSL_PKG_CONFIG_PATH)" cmake -S . -B build \
-	  -DCMAKE_BUILD_TYPE=Release \
+	  -DCMAKE_BUILD_TYPE=MinSizeRel \
 	  -DOPENSSL_ROOT_DIR="$(OPENSSL_PREFIX)" \
 	  -DOPENSSL_INCLUDE_DIR="$(OPENSSL_PREFIX)/include" \
 	  -DOPENSSL_SSL_LIBRARY="$$openssl_libdir/libssl.a" \
 	  -DOPENSSL_CRYPTO_LIBRARY="$$openssl_libdir/libcrypto.a" \
 	  $(RE_ZLIB_CMAKE_FLAGS) \
+	  -DUSE_BFCP=OFF -DUSE_PCP=OFF -DUSE_RTMP=OFF \
 	  -DCMAKE_FIND_ROOT_PATH="$(ROOT_DIR)" \
 	  -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
 	  -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH; \
@@ -318,7 +326,7 @@ $(REM_LIB): $(REM_DIR) $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO) | $(GIT_DIR)
 	if [ -d "$(OPENSSL_PREFIX)/lib" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib"; \
 	elif [ -d "$(OPENSSL_PREFIX)/lib64" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib64"; fi; \
 	CC="$(CC)" CXX="$(CXX)" PKG_CONFIG_PATH="$(OPENSSL_PKG_CONFIG_PATH)" cmake -S . -B build \
-	  -DCMAKE_BUILD_TYPE=Release \
+	  -DCMAKE_BUILD_TYPE=MinSizeRel \
 	  -DOPENSSL_ROOT_DIR="$(OPENSSL_PREFIX)" \
 	  -DOPENSSL_INCLUDE_DIR="$(OPENSSL_PREFIX)/include" \
 	  -DOPENSSL_SSL_LIBRARY="$$openssl_libdir/libssl.a" \
@@ -387,7 +395,8 @@ $(SNDFILE_SRC): $(SNDFILE_TAR)
 $(SNDFILE_LIB): $(SNDFILE_SRC) | $(GIT_DIR)
 	@set -eu; \
 	cd "$(SNDFILE_SRC)"; \
-	CC="$(CC)" CFLAGS="-O2 -fPIC -std=gnu11" ./configure --with-pic --disable-shared --enable-static --disable-external-libs --disable-mpeg; \
+	CC="$(CC)" CFLAGS="-O2 -fPIC -std=gnu11" ./configure --with-pic --disable-shared --enable-static --disable-external-libs --disable-mpeg \
+		--disable-ogg --disable-flac --disable-vorbis --disable-speex --disable-sqlite; \
 	make -j"$(JOBS)"; \
 	mkdir -p "$(STAGE_SNDFILE)/include"; \
 	cp "src/.libs/libsndfile.a" "$(SNDFILE_LIB)"; \
@@ -411,7 +420,7 @@ $(BARESIP_LIB): stage_patches $(BARESIP_DIR) $(RE_LIB) $(REM_LIB) $(OPUS_LIB) $(
 	if [ -d "$(OPENSSL_PREFIX)/lib" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib"; \
 	elif [ -d "$(OPENSSL_PREFIX)/lib64" ]; then openssl_libdir="$(OPENSSL_PREFIX)/lib64"; fi; \
 	CC="$(CC)" CXX="$(CXX)" PKG_CONFIG_PATH="$(OPENSSL_PKG_CONFIG_PATH)" cmake .. \
-	  -DCMAKE_BUILD_TYPE=Release \
+	  -DCMAKE_BUILD_TYPE=MinSizeRel \
 	  -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
 	  -DSTATIC=ON \
 	  -DMODULES="$$(printf "%s" "$(MODULES)" | tr ' ' ';')" \
