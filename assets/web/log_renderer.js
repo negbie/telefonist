@@ -28,7 +28,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
     appendAndMaintain(container, el, opts);
   };
 
-  const runLabel = (isStart, type, token, name, result, project, hash, runId) => {
+  const runLabel = (isStart, type, token, name, result, project, hash, runId, message) => {
     const prefix = token === "testfile" ? "─── " : "─── Run ";
     const phase = isStart
       ? "Testfile "
@@ -41,6 +41,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
       if (project) label += ` Project: ${safeText(project)}`;
       if (hash) label += `, Hash: ${safeText(hash)}`;
       if (runId) label += `, Run: ${safeText(runId)}`;
+      if (message) label += ` - Reason: ${safeText(message)}`;
     }
     return label;
   };
@@ -69,6 +70,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
       j.project,
       j.actual_hash,
       runId,
+      j.message
     );
     sep.title = "Click to sync scroll";
     if (isStart) sep.dataset.runStartId = runId;

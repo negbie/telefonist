@@ -52,6 +52,7 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
+			req.Name = SanitizeName(req.Name)
 			if err := hub.testStore.SaveProject(ctx, req.Name); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -94,6 +95,9 @@ func HandleAPIProjectRename(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
+		req.OldName = SanitizeName(req.OldName)
+		req.NewName = SanitizeName(req.NewName)
+
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
@@ -122,6 +126,9 @@ func HandleAPIProjectClone(hub *WsHub) http.HandlerFunc {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
+
+		req.SrcName = SanitizeName(req.SrcName)
+		req.TargetName = SanitizeName(req.TargetName)
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
@@ -213,6 +220,9 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
+			req.Name = SanitizeName(req.Name)
+			req.Project = SanitizeName(req.Project)
+
 			decoded, err := base64.StdEncoding.DecodeString(req.Content)
 			if err != nil {
 				http.Error(w, "invalid base64", http.StatusBadRequest)
@@ -266,6 +276,11 @@ func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
+
+		req.OldProject = SanitizeName(req.OldProject)
+		req.OldName = SanitizeName(req.OldName)
+		req.NewProject = SanitizeName(req.NewProject)
+		req.NewName = SanitizeName(req.NewName)
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()

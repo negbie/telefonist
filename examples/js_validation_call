@@ -1,0 +1,15 @@
+# This testfile uses Advanced Javascript Validation instead of static hashes!
+# Copy the examples/scripts/ to data/scripts/ to execute these tests.
+
+_define ua1 sip:USER1@DOMAIN1;transport=tls
+_define ua2 sip:USER2@DOMAIN2;transport=tls
+
+# We tell the engine to evaluate the results completely using Javascript!
+_include basic_validation.js
+_run 1
+
+uanew <ua1>;auth_pass=USER1PASS;input_wav=alice.wav
+uanew <ua2>;auth_pass=USER2PASS;input_wav=bob.wav
+
+ua1:dial ua2|2s|ua2:accept|5s|ua1:hangup
+uadelall

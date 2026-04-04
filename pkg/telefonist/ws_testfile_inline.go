@@ -120,7 +120,7 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 }
 
 func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, content string) {
-	cases, expectedGlobalHash, repeatCount, ignoredEvents, acceptedEvents, webhookURL, err := parseTestfile(content)
+	cases, expectedGlobalHash, includeScript, repeatCount, ignoredEvents, acceptedEvents, webhookURL, err := parseTestfile(content)
 	if err != nil {
 		broadcastInfo(h, fmt.Sprintf(`{"status":"error","token":"testfile","file":%q,"project":%q,"message":%q}`, fileName, projectName, err.Error()))
 		return
@@ -131,7 +131,7 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		return
 	}
 
-	log.Printf("running testfile: %s (project %s) (%d cases, %d repeats)", fileName, projectName, len(cases), repeatCount)
+	log.Printf("running testfile: %s (project %s) (%d cases, %d repeats, include: %s)", fileName, projectName, len(cases), repeatCount, includeScript)
 
 	// Stop all active agents before starting a test run to ensure a clean state
 	h.bm.CloseAll()
@@ -199,8 +199,23 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		}
 
 		status := "PASS"
-		if expectedGlobalHash != "" && actualHash != expectedGlobalHash {
+		var failReason string
+		if includeScript != "" {
+			scriptPath := filepath.Join(h.DataDir, "scripts", filepath.Base(includeScript))
+			scriptBytes, err := os.ReadFile(scriptPath)
+			if err != nil {
+				status = "FAIL"
+				failReason = fmt.Sprintf("failed to read include script %s: %v", includeScript, err)
+			} else {
+				eval := NewEvaluator()
+				if err := eval.RunScript(ctx, string(scriptBytes), fullLog); err != nil {
+					status = "FAIL"
+					failReason = err.Error()
+				}
+			}
+		} else if expectedGlobalHash != "" && actualHash != expectedGlobalHash {
 			status = "FAIL"
+			failReason = "Hash mismatch"
 		}
 
 		var runID int64
@@ -216,10 +231,17 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		// Collect final recordings after all steps (including uadelall) are done and agents are stopped
 		processRecordings(ctx, h.testStore, runID, h.DataDir)
 
-		broadcastInfo(h, fmt.Sprintf(
-			`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":%d,"expected_hash":%q,"actual_hash":%q,"result":%q,"run_id":%d}`,
-			fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID,
-		))
+		if failReason != "" {
+			broadcastInfo(h, fmt.Sprintf(
+				`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":%d,"expected_hash":%q,"actual_hash":%q,"result":%q,"run_id":%d,"message":%q}`,
+				fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID, failReason,
+			))
+		} else {
+			broadcastInfo(h, fmt.Sprintf(
+				`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":%d,"expected_hash":%q,"actual_hash":%q,"result":%q,"run_id":%d}`,
+				fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID,
+			))
+		}
 
 		if webhookURL != "" {
 			go func() {
@@ -256,7 +278,7 @@ func checkTestFailure(h *WsHub, fileName, projectName string) {
 	}
 }
 
-func parseTestfile(content string) (cases []testCase, expectedHash string, repeatCount int, ignoredEvents []string, acceptedEvents []string, webhookURL string, err error) {
+func parseTestfile(content string) (cases []testCase, expectedHash string, includeScript string, repeatCount int, ignoredEvents []string, acceptedEvents []string, webhookURL string, err error) {
 	repeatCount = 1
 	defines := make(map[string]string)
 	sc := bufio.NewScanner(strings.NewReader(content))
@@ -278,6 +300,11 @@ func parseTestfile(content string) (cases []testCase, expectedHash string, repea
 			} else {
 				expectedHash = strings.TrimSpace(line[5:])
 			}
+			continue
+		}
+
+		if strings.HasPrefix(lowerLine, "_include ") {
+			includeScript = strings.TrimSpace(line[9:])
 			continue
 		}
 
@@ -322,7 +349,7 @@ func parseTestfile(content string) (cases []testCase, expectedHash string, repea
 				if r, err := strconv.Atoi(parts[1]); err == nil {
 					if r < 1 {
 						// Skip this test file entirely
-						return nil, "", 0, nil, nil, "", nil
+						return nil, "", "", 0, nil, nil, "", nil
 					}
 					repeatCount = r
 					continue
@@ -354,7 +381,7 @@ func parseTestfile(content string) (cases []testCase, expectedHash string, repea
 			rawLine:  raw,
 		})
 	}
-	return cases, expectedHash, repeatCount, ignoredEvents, acceptedEvents, webhookURL, sc.Err()
+	return cases, expectedHash, includeScript, repeatCount, ignoredEvents, acceptedEvents, webhookURL, sc.Err()
 }
 
 func processRecordings(ctx context.Context, store *TestStore, runID int64, dataDir string) {

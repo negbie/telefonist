@@ -2,9 +2,20 @@ package telefonist
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var sanitizeRegexp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+
+// SanitizeName cleans up project and testfile names securely.
+func SanitizeName(name string) string {
+	if name == "" {
+		return ""
+	}
+	return sanitizeRegexp.ReplaceAllString(name, "_")
+}
 
 // DefaultTimeFormat is the standard format used by the Telefonist UI.
 const DefaultTimeFormat = "2.1.2006 15:04:05.000"

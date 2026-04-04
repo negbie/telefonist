@@ -78,6 +78,12 @@ func OpenTestStore(ctx context.Context, dataDir string) (*TestStore, error) {
 		return nil, fmt.Errorf("create wav directory: %w", err)
 	}
 
+	scriptsDir := filepath.Join(dataDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create scripts directory: %w", err)
+	}
+
 	if err := migrateTestStore(ctx, db); err != nil {
 		db.Close()
 		return nil, err

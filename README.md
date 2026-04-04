@@ -134,6 +134,7 @@ Testfiles are line-based and support the following syntax:
   - `;input_wav=file.wav` - Automatically configures `audio_source` to use `file.wav`.
 - **Metadata**:
   - `_hash <expected_hash>` - Verify the final state against a specific hash.
+  - `_include <script.js>` - Execute a custom Javascript file located in `data/scripts/` to validate the test results programmatically.
   - `_ignore <event1>,<event2>` - List of events to ignore for the hash calculation.
   - `_accept <event1>,<event2>` - List of events to accept for the hash calculation.
   - `_define <VAR> <value>` - Define a macro that will be replaced in subsequent lines.
@@ -180,6 +181,34 @@ Testfiles are line-based and support the following syntax:
    - `_run`: Specifies how many times to repeat the entire sequence.
 
 4. **Execution**: Click **Run**. Once finished, the UI will display the PASS/FAIL status along with the generated hash.
+
+### Advanced Javascript Validation
+
+In addition to static hash-based validation, Telefonist supports sophisticated, programmable test evaluations using Javascript! 
+By adding `_include validation.js` to your testfile, the engine will automatically load `${data_dir}/scripts/validation.js` and evaluate it against the run's event flow.
+
+Inside your Javascript, you have access to:
+- `events`: An array of all chronological events, logs, and SIP messages tracked during the test run.
+- `telefonist`: A utility object containing `telefonist.assert(condition, failureMessage)` and `telefonist.fail(failureMessage)` to programmatically halt and fail tests.
+
+**Example `validation.js`:**
+```javascript
+// Ensure we received an INVITE
+var invite = events.find(e => e.type === "SIP" && e.direction === "IN" && e.method === "INVITE");
+telefonist.assert(invite !== undefined, "Never received an INVITE");
+
+// Verify call ringing fired and measure the post-dial-delay (PDD)
+var ringing = events.find(e => e.type === "CALL_RINGING");
+telefonist.assert(ringing !== undefined, "Call was never rung");
+
+// Fail the test if there was too much delay
+var pdd = ringing.time - invite.time;
+telefonist.assert(pdd < 200, "Too much post dial delay! PDD=" + pdd);
+
+// You can even evaluate MOS scores or jitter thresholds via CALL_RTCP events!
+var rtcpEvents = events.filter(e => e.type === "CALL_RTCP");
+telefonist.assert(rtcpEvents.length > 0, "No RTCP stats reported");
+```
 
 ## License
 
