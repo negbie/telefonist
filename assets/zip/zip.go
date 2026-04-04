@@ -2,7 +2,7 @@ package zip
 
 import (
 	"archive/tar"
-	"compress/gzip"
+	"compress/bzip2"
 	"fmt"
 	"io"
 	"os"
@@ -19,13 +19,10 @@ func validRelPath(p string) bool {
 }
 
 func Decompress(src io.Reader, dst string) error {
-	// ungzip
-	zr, err := gzip.NewReader(src)
-	if err != nil {
-		return err
-	}
+	// unbzip2
+	bzr := bzip2.NewReader(src)
 	// untar
-	tr := tar.NewReader(zr)
+	tr := tar.NewReader(bzr)
 
 	// uncompress each element
 	for {
