@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/compare.css" />
     <link rel="stylesheet" href="/controls.css" />
     <link rel="stylesheet" href="/highlight.css" />
+    <link rel="stylesheet" href="/cron.css" />
     <script type="module" src="/app.js"></script>
 
 
@@ -82,6 +83,7 @@
                     <div class="sidebar-group">
                         <button type="button" id="btn-mode-tests" class="active" title="Tests Mode">🧪</button>
                         <button type="button" id="btn-mode-compare" title="Compare Mode">⚖️</button>
+                        <button type="button" id="btn-mode-cron" title="Cron Mode">⏱</button>
                     </div>
                     <div class="sidebar-separator"></div>
                     <div class="sidebar-group">
@@ -153,6 +155,54 @@
                     <div class="compare-pane" id="compare-pane-b">
                         <div class="compare-pane-header" id="compare-header-b">Run B</div>
                         <div id="compare-content-b" class="compare-content"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="cron-panel">
+                <div class="cron-header">
+                    <h2>Automated Test Scheduler</h2>
+                    <div>
+                        <button type="button" id="cron-refresh" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="cron-new" title="New Job">+ Add Job</button>
+                    </div>
+                </div>
+                
+                <table class="cron-table">
+                    <thead>
+                        <tr>
+                            <th>Id</th>
+                            <th>Project</th>
+                            <th>Testfile</th>
+                            <th>Schedule (Cron)</th>
+                            <th>Enabled</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cron-list">
+                    </tbody>
+                </table>
+
+                <div id="cron-modal" class="modal">
+                    <div class="modal-content">
+                        <h3>Schedule Job</h3>
+                        <div class="modal-row">
+                            <label>Project *</label>
+                            <select id="cron-project-select"></select>
+                        </div>
+                        <div class="modal-row">
+                            <label>Testfile (Optional, runs all if empty)</label>
+                            <select id="cron-testfile-select"></select>
+                        </div>
+                        <div class="modal-row">
+                            <label>Cron Expression (Minute Hour Day Month Dow)</label>
+                            <input type="text" id="cron-expr" placeholder="* * * * *" value="* * * * *">
+                            <small>e.g. "0 * * * *" (every hour), "*/5 * * * *" (every 5 mins)</small>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" id="cron-save">Save</button>
+                            <button type="button" id="cron-cancel">Cancel</button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -231,7 +231,15 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		if err == nil {
 			break
 		}
-		time.Sleep(retryInterval)
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		case <-time.After(retryInterval):
+		}
+		if err != nil && err == ctx.Err() {
+			break
+		}
+		
 		if retryInterval < 100*time.Millisecond {
 			retryInterval += 20 * time.Millisecond
 		}

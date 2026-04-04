@@ -74,6 +74,8 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/testrun/download", AuthMiddleware(HandleAPITestrunDownload(hub)))
 	mux.HandleFunc("/api/maintenance", AuthMiddleware(HandleAPIDatabaseMaintenance(hub.testStore)))
 	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UIAPIKey))
+	mux.HandleFunc("/api/cron", AuthMiddleware(HandleAPICronJobs(hub)))
+	mux.HandleFunc("/api/cron/modify", AuthMiddleware(HandleAPICronJobModify(hub)))
 	mux.HandleFunc("/", AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		StaticHandler().ServeHTTP(w, r)
 	}))
@@ -140,6 +142,11 @@ func Run() error {
 			}
 		}()
 		log.Printf("teststore: enabled: %s", store.Path())
+
+		cm := NewCronManager(hub, store)
+		cm.Start()
+		hub.SetCronManager(cm)
+		defer cm.Stop()
 	}
 
 	go hub.Run()

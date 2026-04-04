@@ -106,6 +106,18 @@ curl -X POST "http://localhost:8080/api/project/run?name=my_project" \
 - `404 Not Found`: Project not found or has no testfiles.
 - `409 Conflict`: Another test run is already active.
 
+## Automated Test Scheduling (Cron)
+
+Telefonist features a built-in **Job Scheduler** that allows you to automatically run tests at periodic intervals without relying on external triggers like Jenkins or GitHub Actions. 
+This is incredibly useful for executing daily regression suites overnight or actively monitoring your SIP infrastructure for dropped packets every 5 minutes.
+
+You can manage Cron Jobs directly in the web UI using the **⏱️ Cron Tool** on the sidebar:
+1. Select the `Project` you want to schedule (this will run all testfiles in the project sequentially).
+2. (Optional) Select a specific `Testfile` if you only want a granular test to trigger.
+3. Provide a valid 5-field Cron Expression (e.g., `0 * * * *` for hourly, `*/15 * * * *` for every 15 minutes, or `0 3 * * *` for 3:00 AM daily).
+
+**Concurrency Protection**: If a cron job triggers while another manual or automated test run is currently active, the scheduler will cleanly queue the new execution and wait for the active run to finish before starting, automatically preventing SIP port overlap or race conditions!
+
 ## Architecture
 
 Telefonist follows a multi-process **Agents Architecture**:

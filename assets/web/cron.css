@@ -1,0 +1,115 @@
+/* Cron Scheduler Styles */
+#cron-panel {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    padding: 20px;
+    background-color: var(--bg);
+    overflow-y: auto;
+    color: var(--text);
+    font-size: 0.8rem;
+}
+
+[data-bottom-mode="cron"] #cron-panel {
+    display: flex;
+}
+
+[data-bottom-mode="cron"] #testfile-panel,
+[data-bottom-mode="cron"] #compare-panel,
+[data-bottom-mode="cron"] .controls-main {
+    display: none;
+}
+
+#btn-mode-cron.active {
+    background-color: #e5e7eb !important;
+    border-color: #9ca3af !important;
+    color: #000 !important;
+}
+
+.cron-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.cron-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.cron-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.cron-table th, .cron-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.cron-table th {
+    background: #fdfdfd;
+    font-weight: 600;
+}
+
+.cron-table tbody tr:hover {
+    background: #f1f5f9;
+}
+
+/* Modal */
+#cron-modal.modal {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 20px;
+    border-radius: var(--radius);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    width: 400px;
+}
+
+#cron-modal.active {
+    display: block;
+}
+
+.modal-row {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 15px;
+}
+
+.modal-row label {
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.modal-row input, .modal-row select {
+    padding: 6px 8px;
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--input-radius);
+}
+
+.modal-row small {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}

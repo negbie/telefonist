@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 type apiResponse struct {
@@ -813,23 +815,121 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 		}
 
 		if len(batch) == 0 {
-			http.Error(w, "no testfiles found for project", http.StatusNotFound)
+			http.Error(w, "no testfiles found", http.StatusNotFound)
 			return
 		}
-
-		sort.Slice(batch, func(i, j int) bool {
-			return batch[i].Name < batch[j].Name
-		})
 
 		if !runTestfilesBatch(hub, batch) {
-			http.Error(w, "cannot start test: another run is already active", http.StatusConflict)
+			http.Error(w, "another test run is already active", http.StatusConflict)
 			return
 		}
 
-		jsonResponse(w, http.StatusOK, map[string]interface{}{
-			"status":  "finished",
-			"message": fmt.Sprintf("started batch run for %d files in project %q", len(batch), projectName),
-		})
+		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "started"})
+	}
+}
+
+func HandleAPICronJobs(hub *WsHub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if hub.testStore == nil || hub.cronManager == nil {
+			http.Error(w, "cron not enabled", http.StatusServiceUnavailable)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		switch r.Method {
+		case http.MethodGet:
+			jobs, err := hub.testStore.ListCronJobs(ctx)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]interface{}{
+				"status": "finished",
+				"items":  jobs,
+			})
+		case http.MethodPost:
+			var req struct {
+				Project  string `json:"project"`
+				Testfile string `json:"testfile"`
+				CronExpr string `json:"cron_expr"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON", http.StatusBadRequest)
+				return
+			}
+			req.Project = SanitizeName(req.Project)
+			req.Testfile = SanitizeName(req.Testfile)
+			if req.Project == "" {
+				http.Error(w, "project required", http.StatusBadRequest)
+				return
+			}
+
+			parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+			if _, err := parser.Parse(req.CronExpr); err != nil {
+				http.Error(w, "invalid cron expression: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			id, err := hub.testStore.SaveCronJob(ctx, req.Project, req.Testfile, req.CronExpr)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			hub.cronManager.ReloadAll()
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: fmt.Sprintf("job %d saved", id)})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func HandleAPICronJobModify(hub *WsHub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if hub.testStore == nil || hub.cronManager == nil {
+			http.Error(w, "cron not enabled", http.StatusServiceUnavailable)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		switch r.Method {
+		case http.MethodDelete:
+			idStr := r.URL.Query().Get("id")
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				http.Error(w, "invalid id", http.StatusBadRequest)
+				return
+			}
+			if err := hub.testStore.DeleteCronJob(ctx, id); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			hub.cronManager.ReloadAll()
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "job deleted"})
+
+		case http.MethodPost:
+			var req struct {
+				ID     int  `json:"id"`
+				Active bool `json:"active"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON", http.StatusBadRequest)
+				return
+			}
+			if err := hub.testStore.ToggleCronJob(ctx, req.ID, req.Active); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			hub.cronManager.ReloadAll()
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "job toggled"})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	}
 }
 

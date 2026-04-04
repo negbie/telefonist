@@ -7,6 +7,7 @@ require (
 	github.com/goccy/go-json v0.10.5
 	github.com/gorilla/websocket v1.5.0
 	github.com/grafana/sobek v0.0.0-20260401095808-49bce30ab84b
+	github.com/robfig/cron/v3 v3.0.1
 	modernc.org/sqlite v1.46.1
 )
 

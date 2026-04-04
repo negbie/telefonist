@@ -77,6 +77,9 @@ type WsHub struct {
 
 	// Message history for persistence across refreshes
 	history *RingBuffer
+
+	// CronManager reference for REST API
+	cronManager *CronManager
 }
 
 type AgentMsg struct {
@@ -161,6 +164,11 @@ func (h *WsHub) SetEventHandler(handler func(gobaresip.EventMsg)) {
 // SetTestStore attaches a persistent store (SQLite) used by UI-driven testfile management.
 func (h *WsHub) SetTestStore(store *TestStore) {
 	h.testStore = store
+}
+
+// SetCronManager sets the cron job scaler engine
+func (h *WsHub) SetCronManager(cm *CronManager) {
+	h.cronManager = cm
 }
 
 // SetResponseHandler sets the callback for response messages.

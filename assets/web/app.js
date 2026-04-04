@@ -17,6 +17,7 @@ import { renderSipEvent, initSipCompare } from "./sip_renderer.js";
 import { renderLogEvent } from "./log_renderer.js";
 import { initTestfileManager } from "./testfile_manager.js";
 import { initCompareWindow } from "./compare_window.js";
+import { initCronManager } from "./cron_manager.js";
 
 const flowEl = document.getElementById("flow");
 const clearEl = document.getElementById("clear");
@@ -152,6 +153,7 @@ if (initCompareWindow) {
 
 const btnModeTests = document.getElementById("btn-mode-tests");
 const btnModeCompare = document.getElementById("btn-mode-compare");
+const btnModeCron = document.getElementById("btn-mode-cron");
 
 const syncCompareWithActiveTestfile = () => {
   const key = tfManager?.getActiveKey?.() || "";
@@ -164,20 +166,25 @@ const setBottomMode = (mode) => {
 
   bottomRow.setAttribute("data-bottom-mode", mode);
 
-  if (btnModeTests) {
-    btnModeTests.classList.toggle("active", mode === "tests");
-  }
-  if (btnModeCompare) {
-    btnModeCompare.classList.toggle("active", mode === "compare");
-  }
+  if (btnModeTests) btnModeTests.classList.toggle("active", mode === "tests");
+  if (btnModeCompare) btnModeCompare.classList.toggle("active", mode === "compare");
+  if (btnModeCron) btnModeCron.classList.toggle("active", mode === "cron");
 
   if (mode === "compare") {
     syncCompareWithActiveTestfile();
+  } else if (mode === "cron") {
+    EventBus.emit("cron:opened");
   }
 };
 
 if (btnModeTests) btnModeTests.onclick = () => setBottomMode("tests");
 if (btnModeCompare) btnModeCompare.onclick = () => setBottomMode("compare");
+if (btnModeCron) btnModeCron.onclick = () => setBottomMode("cron");
+
+// Initialize Cron Manager
+if (initCronManager) {
+  initCronManager();
+}
 
 // Sidebar Toggle Logic
 const testControls = document.getElementById("test-controls");
