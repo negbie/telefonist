@@ -35,21 +35,3 @@ with:
 	BEVENT_CUSTOM,
 	BEVENT_AUDIO_REPORT,
 	BEVENT_SIPSESS_CONN,
-
-
-file: libbaresip/git/baresip/src/audio.c
-replace:
-	err = aurecv_decoder_set(a->aur, ac, pt, params);
-	if (err)
-		return err;
-
-	stream_set_srate(a->strm, 0, ac->crate);
-with:
-	err = aurecv_decoder_set(a->aur, ac, pt, params);
-	if (err)
-		return err;
-
-	if (reset)
-		(void)aufilt_setup(a, baresip_aufiltl());
-
-	stream_set_srate(a->strm, 0, ac->crate);
