@@ -29,7 +29,7 @@ type testCase struct {
 func handleTestfileInlineCommand(h *WsHub, input string) {
 	args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(input, "testfile_inline")))
 	if len(args) == 0 {
-		broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "message", "usage: testfile_inline <project|''> <name> <base64(testfile_content)>"))
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "message": "usage: testfile_inline <project|''> <name> <base64(testfile_content)>"}))
 		return
 	}
 
@@ -45,12 +45,12 @@ func handleTestfileInlineCommand(h *WsHub, input string) {
 
 	decoded, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
-		broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "file", fileName, "message", "invalid base64 input: "+err.Error()))
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "file": fileName, "message": "invalid base64 input: " + err.Error()}))
 		return
 	}
 
 	if len(decoded) > 256*1024 {
-		broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "file", fileName, "message", fmt.Sprintf("input too large (%d bytes), max is %d bytes", len(decoded), 256*1024)))
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "file": fileName, "message": fmt.Sprintf("input too large (%d bytes), max is %d bytes", len(decoded), 256*1024)}))
 		return
 	}
 
@@ -63,7 +63,7 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 	}
 
 	if !h.inlineRunActive.CompareAndSwap(false, true) {
-		broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "message", "cannot start test: another run is already active"))
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "message": "cannot start test: another run is already active"}))
 		return false
 	}
 
@@ -101,7 +101,7 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 			}
 
 			if activeSession {
-				broadcastInfo(h, statusJSON("status", "error", "token", "testfile", "file", tf.Name, "message", "cannot start test: a session is already active"))
+				broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "file": tf.Name, "message": "cannot start test: a session is already active"}))
 				return
 			}
 

@@ -53,20 +53,31 @@ func OrderIndependentHash(s string) (string, []string) {
 // through the WsHub's internalCmd channel (actor/monitor pattern).
 // Do NOT add a mutex here — the hub's single goroutine owns this value.
 type TrainSession struct {
-	active         bool
-	outputBuf      bytes.Buffer // For hashing (filtered/clean)
-	fullBuf        bytes.Buffer // For downloads/storage (raw)
-	ignoredEvents  []string
-	acceptedEvents []string
-	failMsg        string
+	active    bool
+	outputBuf bytes.Buffer // For hashing (filtered/clean)
+	fullBuf   bytes.Buffer // For downloads/storage (raw)
+	ignored   map[string]bool
+	accepted  map[string]bool // nil = accept all
+	failMsg   string
 }
 
 // newTrainSession creates a new testing session.
 func newTrainSession(ignoredEvents []string, acceptedEvents []string) *TrainSession {
+	ignored := make(map[string]bool, len(ignoredEvents))
+	for _, e := range ignoredEvents {
+		ignored[strings.ToUpper(e)] = true
+	}
+	accepted := make(map[string]bool, len(acceptedEvents))
+	for _, e := range acceptedEvents {
+		accepted[strings.ToUpper(e)] = true
+	}
+	if len(accepted) == 0 {
+		accepted = nil
+	}
 	return &TrainSession{
-		active:         true,
-		ignoredEvents:  ignoredEvents,
-		acceptedEvents: acceptedEvents,
+		active:   true,
+		ignored:  ignored,
+		accepted: accepted,
 	}
 }
 
@@ -89,23 +100,12 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 		return
 	}
 
-	for _, ignored := range t.ignoredEvents {
-		if strings.EqualFold(e.Type, ignored) {
-			return
-		}
+	if t.ignored[strings.ToUpper(e.Type)] {
+		return
 	}
 
-	if len(t.acceptedEvents) > 0 {
-		found := false
-		for _, accepted := range t.acceptedEvents {
-			if strings.EqualFold(e.Type, accepted) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return
-		}
+	if t.accepted != nil && !t.accepted[strings.ToUpper(e.Type)] {
+		return
 	}
 
 	// Strip the dynamic "id" field to maintain a deterministic hash

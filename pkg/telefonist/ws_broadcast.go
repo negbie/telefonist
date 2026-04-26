@@ -9,17 +9,13 @@ func broadcastInfo(h *WsHub, msg string) {
 	}
 }
 
-// statusJSON builds a JSON object string from key-value pairs.
-func statusJSON(kvPairs ...string) string {
-	if len(kvPairs)%2 != 0 {
-		kvPairs = append(kvPairs, "")
+// statusJSON builds a JSON object string from a key-value map, adding a "time" field.
+func statusJSON(kv map[string]string) string {
+	if kv == nil {
+		kv = make(map[string]string)
 	}
-	m := make(map[string]string, len(kvPairs)/2+1)
-	for i := 0; i < len(kvPairs); i += 2 {
-		m[kvPairs[i]] = kvPairs[i+1]
-	}
-	m["time"] = FormatNow()
-	b, err := json.Marshal(m)
+	kv["time"] = FormatNow()
+	b, err := json.Marshal(kv)
 	if err != nil {
 		return "{}"
 	}

@@ -1,17 +1,13 @@
 package telefonist
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
-	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -23,24 +19,48 @@ type apiResponse struct {
 	Token   string `json:"token,omitempty"`
 }
 
-func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
+// storeHandler is the signature for handlers that need a TestStore with a context.
+type storeHandler func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context)
+
+// withStore wraps a handler to check testStore availability and create a 5s timeout context.
+func withStore(hub *WsHub, fn storeHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if hub.testStore == nil {
 			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
 			return
 		}
-
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
+		fn(w, r, hub.testStore, ctx)
+	}
+}
 
+// cronHandler is the signature for handlers that need both TestStore and CronManager.
+type cronHandler func(w http.ResponseWriter, r *http.Request, store *TestStore, cm *CronManager, ctx context.Context)
+
+// withCron wraps a handler to check testStore + cronManager availability and create a 5s timeout context.
+func withCron(hub *WsHub, fn cronHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if hub.testStore == nil || hub.cronManager == nil {
+			http.Error(w, "cron not enabled", http.StatusServiceUnavailable)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		fn(w, r, hub.testStore, hub.cronManager, ctx)
+	}
+}
+
+func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		switch r.Method {
 		case http.MethodGet:
-			projects, err := hub.testStore.ListProjects(ctx)
+			projects, err := store.ListProjects(ctx)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			jsonResponse(w, http.StatusOK, map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]any{
 				"status": "finished",
 				"token":  "projects",
 				"items":  projects,
@@ -55,11 +75,11 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				return
 			}
 			req.Name = SanitizeName(req.Name)
-			if err := hub.testStore.SaveProject(ctx, req.Name); err != nil {
+			if err := store.SaveProject(ctx, req.Name); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "save", "message", "saved", "name", req.Name))
+			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "save", "message": "saved", "name": req.Name}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "saved"})
 
 		case http.MethodDelete:
@@ -68,21 +88,21 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				http.Error(w, "name required", http.StatusBadRequest)
 				return
 			}
-			if err := hub.testStore.DeleteProject(ctx, name); err != nil {
+			if err := store.DeleteProject(ctx, name); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "delete", "message", "deleted", "name", name))
+			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "delete", "message": "deleted", "name": name}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "deleted"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
+	})
 }
 
 func HandleAPIProjectRename(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -100,21 +120,18 @@ func HandleAPIProjectRename(hub *WsHub) http.HandlerFunc {
 		req.OldName = SanitizeName(req.OldName)
 		req.NewName = SanitizeName(req.NewName)
 
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
-		if err := hub.testStore.RenameProject(ctx, req.OldName, req.NewName); err != nil {
+		if err := store.RenameProject(ctx, req.OldName, req.NewName); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "rename", "message", "renamed", "old_name", req.OldName, "new_name", req.NewName))
+		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "rename", "message": "renamed", "old_name": req.OldName, "new_name": req.NewName}))
 		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "renamed"})
-	}
+	})
 }
 
 func HandleAPIProjectClone(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -132,37 +149,26 @@ func HandleAPIProjectClone(hub *WsHub) http.HandlerFunc {
 		req.SrcName = SanitizeName(req.SrcName)
 		req.TargetName = SanitizeName(req.TargetName)
 
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
-		if err := hub.testStore.CloneProject(ctx, req.SrcName, req.TargetName); err != nil {
+		if err := store.CloneProject(ctx, req.SrcName, req.TargetName); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "projects", "action", "clone", "message", "cloned", "src_name", req.SrcName, "target_name", req.TargetName))
+		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "clone", "message": "cloned", "src_name": req.SrcName, "target_name": req.TargetName}))
 		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "cloned"})
-	}
+	})
 }
 
 func HandleAPITestfiles(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil {
-			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		switch r.Method {
 		case http.MethodGet:
-			rows, err := hub.testStore.List(ctx, false)
+			rows, err := store.List(ctx, false)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			jsonResponse(w, http.StatusOK, map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]any{
 				"status": "finished",
 				"token":  "testfiles",
 				"items":  rows,
@@ -171,19 +177,11 @@ func HandleAPITestfiles(hub *WsHub) http.HandlerFunc {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
+	})
 }
 
 func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil {
-			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		switch r.Method {
 		case http.MethodGet:
 			name := r.URL.Query().Get("name")
@@ -193,20 +191,18 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			row, err := hub.testStore.Load(ctx, name, project)
+			row, err := store.Load(ctx, name, project)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
 
-			contentB64 := base64.StdEncoding.EncodeToString([]byte(row.Content))
-
-			jsonResponse(w, http.StatusOK, map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]any{
 				"status":      "finished",
 				"token":       "testfiles",
 				"name":        row.Name,
 				"project":     row.ProjectName,
-				"content_b64": contentB64,
+				"content_b64": base64.StdEncoding.EncodeToString([]byte(row.Content)),
 				"created_at":  row.CreatedAt.UTC().Format(time.RFC3339Nano),
 				"updated_at":  row.UpdatedAt.UTC().Format(time.RFC3339Nano),
 			})
@@ -231,12 +227,12 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			if err := hub.testStore.Save(ctx, req.Name, req.Project, string(decoded)); err != nil {
+			if err := store.Save(ctx, req.Name, req.Project, string(decoded)); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "save", "message", "saved", "name", req.Name, "project", req.Project))
+			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "save", "message": "saved", "name": req.Name, "project": req.Project}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "saved"})
 
 		case http.MethodDelete:
@@ -247,22 +243,22 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			if err := hub.testStore.Delete(ctx, name, project); err != nil {
+			if err := store.Delete(ctx, name, project); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "delete", "message", "deleted", "name", name, "project", project))
+			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "delete", "message": "deleted", "name": name, "project": project}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "deleted"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
+	})
 }
 
 func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -284,29 +280,18 @@ func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
 		req.NewProject = SanitizeName(req.NewProject)
 		req.NewName = SanitizeName(req.NewName)
 
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
-		if err := hub.testStore.Rename(ctx, req.OldName, req.OldProject, req.NewName, req.NewProject); err != nil {
+		if err := store.Rename(ctx, req.OldName, req.OldProject, req.NewName, req.NewProject); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testfiles", "action", "rename", "message", "renamed", "old_name", req.OldName, "old_project", req.OldProject, "new_name", req.NewName, "new_project", req.NewProject))
+		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "rename", "message": "renamed", "old_name": req.OldName, "old_project": req.OldProject, "new_name": req.NewName, "new_project": req.NewProject}))
 		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "renamed"})
-	}
+	})
 }
 
 func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil {
-			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		switch r.Method {
 		case http.MethodGet:
 			name := r.URL.Query().Get("name")
@@ -316,9 +301,9 @@ func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 			var err error
 
 			if name == "" || name == "all" {
-				rows, err = hub.testStore.ListAllRuns(ctx)
+				rows, err = store.ListAllRuns(ctx)
 			} else {
-				rows, err = hub.testStore.ListRuns(ctx, name, project)
+				rows, err = store.ListRuns(ctx, name, project)
 			}
 
 			if err != nil {
@@ -326,7 +311,7 @@ func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			jsonResponse(w, http.StatusOK, map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]any{
 				"status": "finished",
 				"token":  "testruns",
 				"action": "list",
@@ -341,30 +326,22 @@ func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			if err := hub.testStore.DeleteRunsByTestfile(ctx, name, project); err != nil {
+			if err := store.DeleteRunsByTestfile(ctx, name, project); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testruns", "action", "delete", "testfile", name, "project", project, "message", "all runs deleted"))
+			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testruns", "action": "delete", "testfile": name, "project": project, "message": "all runs deleted"}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "all runs deleted"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
+	})
 }
 
 func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil {
-			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		switch r.Method {
 		case http.MethodGet:
 			idStr := r.URL.Query().Get("id")
@@ -374,15 +351,13 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			row, err := hub.testStore.GetRun(ctx, id)
+			row, err := store.GetRun(ctx, id)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
 
-			contentB64 := base64.StdEncoding.EncodeToString([]byte(row.FlowEvents))
-
-			jsonResponse(w, http.StatusOK, map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]any{
 				"status":          "finished",
 				"token":           "testruns",
 				"action":          "get",
@@ -391,7 +366,7 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 				"run_number":      row.RunNumber,
 				"hash":            row.Hash,
 				"result":          row.Status,
-				"flow_events_b64": contentB64,
+				"flow_events_b64": base64.StdEncoding.EncodeToString([]byte(row.FlowEvents)),
 				"created_at":      row.CreatedAt.UTC().Format(time.RFC3339Nano),
 			})
 
@@ -403,30 +378,22 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			if err := hub.testStore.DeleteRun(ctx, id); err != nil {
+			if err := store.DeleteRun(ctx, id); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			hub.broadcast <- []byte(statusJSON("status", "finished", "token", "testruns", "action", "delete", "id", strconv.Itoa(id), "message", "run deleted"))
+			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testruns", "action": "delete", "id": strconv.Itoa(id), "message": "run deleted"}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "run deleted"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
+	})
 }
 
 func HandleAPITestrunWavs(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil {
-			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil {
@@ -434,30 +401,22 @@ func HandleAPITestrunWavs(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		wavs, err := hub.testStore.ListWavs(ctx, int64(id))
+		wavs, err := store.ListWavs(ctx, int64(id))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		jsonResponse(w, http.StatusOK, map[string]interface{}{
+		jsonResponse(w, http.StatusOK, map[string]any{
 			"status": "finished",
 			"token":  "testrun_wavs",
 			"items":  wavs,
 		})
-	}
+	})
 }
 
 func HandleAPITestrunWav(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil {
-			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil {
@@ -465,7 +424,7 @@ func HandleAPITestrunWav(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		filename, content, err := hub.testStore.GetWav(ctx, id)
+		filename, content, err := store.GetWav(ctx, id)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -477,16 +436,11 @@ func HandleAPITestrunWav(hub *WsHub) http.HandlerFunc {
 		if _, err := w.Write(content); err != nil {
 			log.Printf("failed to write wav response: %v", err)
 		}
-	}
+	})
 }
 
 func HandleAPITestrunDownload(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil {
-			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		idStr := r.URL.Query().Get("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil {
@@ -496,31 +450,13 @@ func HandleAPITestrunDownload(hub *WsHub) http.HandlerFunc {
 
 		downloadType := r.URL.Query().Get("type")
 
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-		defer cancel()
-
-		row, err := hub.testStore.GetRun(ctx, id)
+		row, err := store.GetRun(ctx, id)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
 
-		var events []map[string]interface{}
-		parts := strings.Split(row.FlowEvents, "\n\n")
-		for _, p := range parts {
-			if strings.TrimSpace(p) == "" {
-				continue
-			}
-			var e map[string]interface{}
-			if err := json.Unmarshal([]byte(p), &e); err == nil {
-				events = append(events, e)
-			} else {
-				events = append(events, map[string]interface{}{
-					"type":  "RAW",
-					"param": p,
-				})
-			}
-		}
+		events := parseEvents(row.FlowEvents)
 
 		switch downloadType {
 		case "flow":
@@ -538,219 +474,7 @@ func HandleAPITestrunDownload(hub *WsHub) http.HandlerFunc {
 		default:
 			http.Error(w, "invalid download type", http.StatusBadRequest)
 		}
-	}
-}
-
-const flowSeparator = "\n----------------------------------------\n\n"
-
-var flowSkipKeys = map[string]bool{
-	"event": true, "time": true, "type": true,
-	"RawJSON": true, "run_id": true, "token": true,
-}
-
-func filterFlowEvents(events []map[string]interface{}) string {
-	var sb strings.Builder
-	first := true
-	for _, e := range events {
-		etype, _ := e["type"].(string)
-		token, _ := e["token"].(string)
-
-		if etype == "RAW" {
-			if !first {
-				sb.WriteString(flowSeparator)
-			}
-			first = false
-			param, _ := e["param"].(string)
-			sb.WriteString(param + "\n")
-			continue
-		}
-
-		if etype == "SIP" || etype == "LOG" {
-			continue
-		}
-		if etype == "" && (token == "SIP" || token == "LOG") {
-			continue
-		}
-
-		if !first {
-			sb.WriteString(flowSeparator)
-		}
-		first = false
-
-		timeStr, _ := e["time"].(string)
-		if etype == "" {
-			etype = token
-		}
-
-		sb.WriteString(fmt.Sprintf("[%s] %s\n", timeStr, strings.ToUpper(etype)))
-
-		keys := make([]string, 0, len(e))
-		for k := range e {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-
-		for _, k := range keys {
-			if flowSkipKeys[k] {
-				continue
-			}
-			sval := fmt.Sprintf("%v", e[k])
-			if sval == "" {
-				continue
-			}
-			sb.WriteString(strings.ToUpper(k[:1]) + k[1:] + ": " + sval + "\n")
-		}
-	}
-	return sb.String()
-}
-
-func filterTypedEvents(events []map[string]interface{}, eventType string) string {
-	var sb strings.Builder
-	for _, e := range events {
-		t, _ := e["type"].(string)
-		if t == eventType {
-			param, _ := e["param"].(string)
-			sb.WriteString(param)
-			sb.WriteString("\n")
-		}
-	}
-	return sb.String()
-}
-
-func serveTextDownload(w http.ResponseWriter, filename, content string) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-	if _, err := w.Write([]byte(content)); err != nil {
-		log.Printf("failed to write text download response: %v", err)
-	}
-}
-
-func generatePcap(events []map[string]interface{}) []byte {
-	var buf bytes.Buffer
-	buf.Write([]byte{
-		0xd4, 0xc3, 0xb2, 0xa1, // magic
-		0x02, 0x00, 0x04, 0x00, // version 2.4
-		0x00, 0x00, 0x00, 0x00, // thiszone
-		0x00, 0x00, 0x00, 0x00, // sigfigs
-		0xff, 0xff, 0x00, 0x00, // snaplen
-		0x01, 0x00, 0x00, 0x00, // Ethernet
 	})
-
-	lastSec := uint32(time.Now().Unix())
-	lastUsec := uint32(0)
-
-	for _, e := range events {
-		t, _ := e["type"].(string)
-		param, _ := e["param"].(string)
-
-		if t != "SIP" && !(t == "LOG" && (strings.Contains(param, "|TX ") || strings.Contains(param, "|RX "))) {
-			continue
-		}
-
-		lines := strings.Split(param, "\n")
-		if len(lines) < 2 {
-			continue
-		}
-
-		sec, usec := lastSec, lastUsec
-		if idx := strings.IndexByte(lines[0], '|'); idx > 0 {
-			if pt, err := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(lines[0][:idx]), time.Local); err == nil {
-				sec = uint32(pt.Unix())
-				usec = 0
-			}
-		}
-		if sec == lastSec && usec <= lastUsec {
-			usec = lastUsec + 1
-		}
-		lastSec, lastUsec = sec, usec
-
-		addrLine := lines[0]
-		payloadIdx := 1
-		if len(lines) > 1 && strings.Contains(lines[1], " -> ") {
-			addrLine = lines[1]
-			payloadIdx = 2
-		}
-		srcIP, srcPort, dstIP, dstPort := parseSipTraceLine(addrLine)
-
-		payloadStr := strings.ReplaceAll(strings.Join(lines[payloadIdx:], "\n"), "\r\n", "\n")
-		payload := []byte(strings.ReplaceAll(strings.TrimSpace(payloadStr), "\n", "\r\n") + "\r\n\r\n")
-
-		totalLen := uint32(len(payload) + 42)
-
-		buf.Write([]byte{
-			byte(sec), byte(sec >> 8), byte(sec >> 16), byte(sec >> 24),
-			byte(usec), byte(usec >> 8), byte(usec >> 16), byte(usec >> 24),
-			byte(totalLen), byte(totalLen >> 8), byte(totalLen >> 16), byte(totalLen >> 24),
-			byte(totalLen), byte(totalLen >> 8), byte(totalLen >> 16), byte(totalLen >> 24),
-		})
-
-		buf.Write([]byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x08, 0x00})
-
-		ipTotalLen := uint16(28 + len(payload))
-		ipHeader := []byte{
-			0x45, 0x00, // Version/IHL, TOS
-			byte(ipTotalLen >> 8), byte(ipTotalLen), // Total Length
-			0x00, 0x01, // ID
-			0x40, 0x00, // Flags (DF), Fragment
-			0x40, 17, // TTL, Protocol (UDP)
-			0x00, 0x00, // Checksum (filled below)
-			srcIP.To4()[0], srcIP.To4()[1], srcIP.To4()[2], srcIP.To4()[3],
-			dstIP.To4()[0], dstIP.To4()[1], dstIP.To4()[2], dstIP.To4()[3],
-		}
-		cs := ipChecksum(ipHeader)
-		ipHeader[10], ipHeader[11] = byte(cs>>8), byte(cs)
-		buf.Write(ipHeader)
-
-		udpLen := uint16(8 + len(payload))
-		buf.Write([]byte{
-			byte(srcPort >> 8), byte(srcPort),
-			byte(dstPort >> 8), byte(dstPort),
-			byte(udpLen >> 8), byte(udpLen),
-			0x00, 0x00,
-		})
-
-		buf.Write(payload)
-	}
-
-	return buf.Bytes()
-}
-
-func ipChecksum(header []byte) uint16 {
-	var sum uint32
-	for i := 0; i < len(header); i += 2 {
-		sum += uint32(header[i])<<8 | uint32(header[i+1])
-	}
-	for sum > 0xffff {
-		sum = (sum & 0xffff) + (sum >> 16)
-	}
-	return ^uint16(sum)
-}
-
-func parseSipTraceLine(line string) (net.IP, uint16, net.IP, uint16) {
-	if idx := strings.IndexByte(line, '|'); idx >= 0 {
-		line = line[idx+1:]
-	}
-
-	parts := strings.Fields(line)
-	for i, p := range parts {
-		if p != "->" || i == 0 || i >= len(parts)-1 {
-			continue
-		}
-		sHost, sPortStr, errS := net.SplitHostPort(parts[i-1])
-		dHost, dPortStr, errD := net.SplitHostPort(parts[i+1])
-		if errS != nil || errD != nil {
-			break
-		}
-		sIP := net.ParseIP(sHost)
-		dIP := net.ParseIP(dHost)
-		if sIP == nil || dIP == nil {
-			break
-		}
-		sPort, _ := strconv.Atoi(sPortStr)
-		dPort, _ := strconv.Atoi(dPortStr)
-		return sIP, uint16(sPort), dIP, uint16(dPort)
-	}
-	return net.ParseIP("10.0.0.1"), 5060, net.ParseIP("10.0.0.2"), 5060
 }
 
 func HandleAPIDatabaseMaintenance(ts *TestStore) http.HandlerFunc {
@@ -762,14 +486,14 @@ func HandleAPIDatabaseMaintenance(ts *TestStore) http.HandlerFunc {
 
 		if err := ts.Vacuum(r.Context()); err != nil {
 			log.Printf("maintenance error: %v", err)
-			jsonResponse(w, http.StatusInternalServerError, map[string]interface{}{
+			jsonResponse(w, http.StatusInternalServerError, map[string]any{
 				"status":  "error",
 				"message": err.Error(),
 			})
 			return
 		}
 
-		jsonResponse(w, http.StatusOK, map[string]interface{}{
+		jsonResponse(w, http.StatusOK, map[string]any{
 			"status": "finished",
 		})
 	}
@@ -829,23 +553,15 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 }
 
 func HandleAPICronJobs(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil || hub.cronManager == nil {
-			http.Error(w, "cron not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
+	return withCron(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, cm *CronManager, ctx context.Context) {
 		switch r.Method {
 		case http.MethodGet:
-			jobs, err := hub.testStore.ListCronJobs(ctx)
+			jobs, err := store.ListCronJobs(ctx)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			jsonResponse(w, http.StatusOK, map[string]interface{}{
+			jsonResponse(w, http.StatusOK, map[string]any{
 				"status": "finished",
 				"items":  jobs,
 			})
@@ -872,30 +588,22 @@ func HandleAPICronJobs(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			id, err := hub.testStore.SaveCronJob(ctx, req.Project, req.Testfile, req.CronExpr)
+			id, err := store.SaveCronJob(ctx, req.Project, req.Testfile, req.CronExpr)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.cronManager.ReloadAll()
+			cm.ReloadAll()
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: fmt.Sprintf("job %d saved", id)})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
+	})
 }
 
 func HandleAPICronJobModify(hub *WsHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if hub.testStore == nil || hub.cronManager == nil {
-			http.Error(w, "cron not enabled", http.StatusServiceUnavailable)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
+	return withCron(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, cm *CronManager, ctx context.Context) {
 		switch r.Method {
 		case http.MethodDelete:
 			idStr := r.URL.Query().Get("id")
@@ -904,11 +612,11 @@ func HandleAPICronJobModify(hub *WsHub) http.HandlerFunc {
 				http.Error(w, "invalid id", http.StatusBadRequest)
 				return
 			}
-			if err := hub.testStore.DeleteCronJob(ctx, id); err != nil {
+			if err := store.DeleteCronJob(ctx, id); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.cronManager.ReloadAll()
+			cm.ReloadAll()
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "job deleted"})
 
 		case http.MethodPost:
@@ -920,20 +628,20 @@ func HandleAPICronJobModify(hub *WsHub) http.HandlerFunc {
 				http.Error(w, "invalid JSON", http.StatusBadRequest)
 				return
 			}
-			if err := hub.testStore.ToggleCronJob(ctx, req.ID, req.Active); err != nil {
+			if err := store.ToggleCronJob(ctx, req.ID, req.Active); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.cronManager.ReloadAll()
+			cm.ReloadAll()
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "job toggled"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
+	})
 }
 
-func jsonResponse(w http.ResponseWriter, code int, data interface{}) {
+func jsonResponse(w http.ResponseWriter, code int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if err := json.NewEncoder(w).Encode(data); err != nil {

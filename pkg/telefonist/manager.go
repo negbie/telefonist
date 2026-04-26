@@ -360,29 +360,16 @@ func (m *BaresipManager) ResolveTarget(cmd string, fallbackTarget string) (targe
 		return fallbackTarget, cmd
 	}
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var bestAlias string
-	var bestColonIdx int
-	for a := range m.agents {
-		for i := len(parts[0]) - 1; i >= 0; i-- {
-			if parts[0][i] == ':' {
-				prefix := parts[0][:i]
-				if strings.EqualFold(a, ExtractAlias(prefix)) {
-					if len(a) > len(bestAlias) {
-						bestAlias = a
-						bestColonIdx = i
-					}
-				}
-			}
+	// Check for "alias:command" prefix (e.g., "ua1:dial sip:123@pbx")
+	if idx := strings.LastIndex(parts[0], ":"); idx > 0 {
+		prefix := ExtractAlias(parts[0][:idx])
+		m.mu.RLock()
+		_, ok := m.agents[prefix]
+		m.mu.RUnlock()
+		if ok {
+			rest := parts[0][idx+1:] + " " + strings.Join(parts[1:], " ")
+			return prefix, strings.TrimSpace(rest)
 		}
-	}
-
-	if bestAlias != "" {
-		target = bestAlias
-		finalCmd = parts[0][bestColonIdx+1:] + " " + strings.Join(parts[1:], " ")
-		return target, strings.TrimSpace(finalCmd)
 	}
 
 	return fallbackTarget, cmd

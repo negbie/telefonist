@@ -113,17 +113,8 @@ func (cm *CronManager) workerLoop() {
 }
 
 func (cm *CronManager) executeJob(req CronJobRequest) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	// Block until the active test file run lock is released, respecting shutdown context
-	for cm.hub.inlineRunActive.Load() {
-		select {
-		case <-cm.ctx.Done():
-			return
-		case <-ticker.C:
-			// check again
-		}
+	if !cm.waitForRunClear() {
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -156,37 +147,34 @@ func (cm *CronManager) executeJob(req CronJobRequest) {
 	}
 
 	// Try triggering the run until we successfully grab the atomic lock (in case of a race)
-	retryTicker := time.NewTicker(2 * time.Second)
-	defer retryTicker.Stop()
-
 	for {
 		if runTestfilesBatch(cm.hub, batch) {
 			log.Printf("cron: started run for Project: %q, Testfile: %q", req.Project, req.Testfile)
-			
-			// Wait for the run to genuinely start so we don't accidentally pull the next queue item
-			select {
-			case <-time.After(1 * time.Second):
-			case <-cm.ctx.Done():
-				return
-			}
-			
-			// Now we block the cron worker until this test actively finishes 
-			// so we don't spam the queue
-			for cm.hub.inlineRunActive.Load() {
-				select {
-				case <-cm.ctx.Done():
-					return
-				case <-ticker.C:
-				}
-			}
-			break
-		}
-		
-		select {
-		case <-cm.ctx.Done():
+			// Wait for the run to finish before pulling the next queue item
+			cm.waitForRunClear()
 			return
-		case <-retryTicker.C:
-			// wait for UI active run to finish and try again
+		}
+
+		if !cm.waitForRunClear() {
+			return
 		}
 	}
+}
+
+// waitForRunClear blocks until no test run is active, polling every 2 seconds.
+// Returns false if the context was cancelled.
+func (cm *CronManager) waitForRunClear() bool {
+	if !cm.hub.inlineRunActive.Load() {
+		return true
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for cm.hub.inlineRunActive.Load() {
+		select {
+		case <-cm.ctx.Done():
+			return false
+		case <-ticker.C:
+		}
+	}
+	return true
 }

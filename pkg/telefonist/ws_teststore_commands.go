@@ -10,11 +10,11 @@ import (
 func handleTestfilesCommand(h *WsHub, input string) {
 	args := strings.TrimSpace(strings.TrimPrefix(input, "testfiles"))
 	if args == "" {
-		broadcastInfo(h, statusJSON("status", "error", "token", "testfiles", "message", "usage: testfiles run ..."))
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "usage: testfiles run ..."}))
 		return
 	}
 	if h == nil || h.testStore == nil {
-		broadcastInfo(h, statusJSON("status", "error", "token", "testfiles", "message", "persistent test store is not enabled"))
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "persistent test store is not enabled"}))
 		return
 	}
 
@@ -23,13 +23,13 @@ func handleTestfilesCommand(h *WsHub, input string) {
 		handleTestfilesRun(h, rest)
 		return
 	}
-	broadcastInfo(h, statusJSON("status", "error", "token", "testfiles", "message", "subcommand "+cmd+" moved to REST API"))
+	broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "subcommand " + cmd + " moved to REST API"}))
 }
 
 func handleTestfilesRun(h *WsHub, rest string) {
 	arg := strings.TrimSpace(rest)
 	if arg == "" {
-		broadcastInfo(h, statusJSON("status", "error", "token", "testfiles", "message", "usage: testfiles run <all | name1 name2 ...>"))
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "usage: testfiles run <all | name1 name2 ...>"}))
 		return
 	}
 
@@ -40,7 +40,7 @@ func handleTestfilesRun(h *WsHub, rest string) {
 	if arg == "all" {
 		rows, err := h.testStore.List(ctx, true)
 		if err != nil {
-			broadcastInfo(h, statusJSON("status", "error", "token", "testfiles", "message", "failed to list testfiles: "+err.Error()))
+			broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "failed to list testfiles: " + err.Error()}))
 			return
 		}
 		for _, r := range rows {
@@ -49,7 +49,7 @@ func handleTestfilesRun(h *WsHub, rest string) {
 	} else {
 		args := strings.Fields(arg)
 		if len(args) < 2 || len(args)%2 != 0 {
-			broadcastInfo(h, statusJSON("status", "error", "token", "testfiles", "message", "usage: testfiles run <project1|''> <name1> ..."))
+			broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "usage: testfiles run <project1|''> <name1> ..."}))
 			return
 		}
 		for i := 0; i < len(args); i += 2 {
@@ -57,7 +57,7 @@ func handleTestfilesRun(h *WsHub, rest string) {
 			name := args[i+1]
 			r, err := h.testStore.Load(ctx, name, projectName)
 			if err != nil {
-				broadcastInfo(h, statusJSON("status", "error", "token", "testfiles", "message", fmt.Sprintf("failed to load %q (project %q): %v", name, projectName, err)))
+				broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": fmt.Sprintf("failed to load %q (project %q): %v", name, projectName, err)}))
 				return
 			}
 			batch = append(batch, TestfileData{Name: r.Name, ProjectName: r.ProjectName, Content: r.Content})
@@ -65,7 +65,7 @@ func handleTestfilesRun(h *WsHub, rest string) {
 	}
 
 	if len(batch) == 0 {
-		broadcastInfo(h, statusJSON("status", "error", "token", "testfiles", "message", "no testfiles found to run"))
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "no testfiles found to run"}))
 		return
 	}
 	runTestfilesBatch(h, batch)
