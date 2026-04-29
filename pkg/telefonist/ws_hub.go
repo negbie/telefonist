@@ -59,8 +59,9 @@ type WsHub struct {
 	// Inline testfile run guard (prevents queueing)
 	inlineRunActive atomic.Bool
 
-	// Cancellation for the current test run
-	testCancel context.CancelFunc
+	// Cancellation for the current test run and batch
+	testCancel  context.CancelFunc
+	batchCancel context.CancelFunc
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -213,11 +214,14 @@ func (h *WsHub) Run() {
 				handleTestfileInlineCommand(h, input)
 
 			case input == "test_stop":
+				if h.batchCancel != nil {
+					h.batchCancel()
+					h.batchCancel = nil
+					log.Println("test batch stopped by user, cleaning up...")
+				}
 				if h.testCancel != nil {
-					cancelFn := h.testCancel
+					h.testCancel()
 					h.testCancel = nil
-					cancelFn()
-					log.Println("test run stopped by user, cleaning up...")
 					go func() {
 						h.chainMu.Lock()
 						defer h.chainMu.Unlock()

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type TestfileData struct {
@@ -74,13 +76,14 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 		defer cancel()
 
 		h.internalCmd <- func() {
-			h.testCancel = cancel
+			h.batchCancel = cancel
 		}
 		defer func() {
 			h.internalCmd <- func() {
+				h.batchCancel = nil
 				h.testCancel = nil
 				if h.trainSession != nil {
-					h.trainSession.finish() // ensure session is closed
+					h.trainSession.finish()
 					h.trainSession = nil
 				}
 			}
@@ -88,6 +91,13 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 		}()
 
 		for _, tf := range batch {
+			// Check if the entire batch was canceled (e.g. via test_stop)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			done := make(chan struct{})
 			var activeSession bool
 			h.internalCmd <- func() {
@@ -102,16 +112,27 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 
 			if activeSession {
 				broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "file": tf.Name, "message": "cannot start test: a session is already active"}))
-				return
+				continue // Try next test in batch instead of aborting everything
 			}
 
-			runTestfileInternal(ctx, h, tf.Name, tf.ProjectName, tf.Content)
+			// Create a per-test context that is also canceled if the batch is canceled
+			testCtx, testCancel := context.WithCancel(ctx)
+			h.internalCmd <- func() {
+				h.testCancel = testCancel
+			}
 
+			runTestfileInternal(testCtx, h, tf.Name, tf.ProjectName, tf.Content)
+			testCancel() // Cleanup per-test context
+
+			h.internalCmd <- func() {
+				h.testCancel = nil
+			}
+
+			// Small pause between tests for cleanup
 			select {
+			case <-time.After(500 * time.Millisecond):
 			case <-ctx.Done():
-				broadcastInfo(h, fmt.Sprintf(`{"status":"stopped","token":"testfile","file":%q,"project":%q}`, tf.Name, tf.ProjectName))
 				return
-			default:
 			}
 		}
 	}()
@@ -137,15 +158,12 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 	h.bm.CloseAll()
 
 	for rep := 1; rep <= repeatCount; rep++ {
-		select {
-		case <-ctx.Done():
-			checkTestFailure(h, fileName, projectName)
-			return
-		default:
-		}
+		var actualHash, fullLog, status, failReason string
+		var runID int64
 
 		broadcastInfo(h, fmt.Sprintf(`{"status":"running","token":"testfile","file":%q,"project":%q,"total":%d}`, fileName, projectName, len(cases)))
 
+		// Start session
 		sessionReady := make(chan struct{})
 		h.internalCmd <- func() {
 			h.trainSession = newTrainSession(ignoredEvents, acceptedEvents)
@@ -154,15 +172,16 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		select {
 		case <-sessionReady:
 		case <-ctx.Done():
-			checkTestFailure(h, fileName, projectName)
-			return
+			failReason = checkTestFailure(h, fileName, projectName)
+			goto finish_run
 		}
 
+		// Run cases
 		for _, tc := range cases {
 			select {
 			case <-ctx.Done():
-				checkTestFailure(h, fileName, projectName)
-				return
+				failReason = checkTestFailure(h, fileName, projectName)
+				goto finish_run
 			default:
 			}
 
@@ -179,28 +198,30 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		// Ensure all events from this run are processed by WsHub.run
 		h.Drain()
 
-		var actualHash string
-		var fullLog string
-		done := make(chan struct{})
-		h.internalCmd <- func() {
-			if h.trainSession != nil {
-				actualHash = h.trainSession.finish()
-				fullLog = h.trainSession.GetFullOutput()
-				h.trainSession = nil
+		// Finish session and get results
+		{
+			done := make(chan struct{})
+			h.internalCmd <- func() {
+				if h.trainSession != nil {
+					actualHash = h.trainSession.finish()
+					fullLog = h.trainSession.GetFullOutput()
+					failReason = h.trainSession.failMsg
+					h.trainSession = nil
+				}
+				close(done)
 			}
-			close(done)
+			select {
+			case <-done:
+			case <-ctx.Done():
+				failReason = checkTestFailure(h, fileName, projectName)
+				goto finish_run
+			}
 		}
 
-		select {
-		case <-done:
-		case <-ctx.Done():
-			checkTestFailure(h, fileName, projectName)
-			return
-		}
-
-		status := "PASS"
-		var failReason string
-		if includeScript != "" {
+		status = "PASS"
+		if failReason != "" {
+			status = "FAIL"
+		} else if includeScript != "" {
 			scriptPath := filepath.Join(h.DataDir, "scripts", filepath.Base(includeScript))
 			scriptBytes, err := os.ReadFile(scriptPath)
 			if err != nil {
@@ -218,7 +239,11 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 			failReason = "Hash mismatch"
 		}
 
-		var runID int64
+	finish_run:
+		if failReason != "" && status == "" {
+			status = "FAIL"
+		}
+
 		if store := h.testStore; store != nil {
 			if id, err := store.SaveRun(context.Background(), fileName, projectName, rep, actualHash, status, fullLog); err != nil {
 				log.Printf("failed to save run: %v", err)
@@ -228,20 +253,26 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 			}
 		}
 
-		// Collect final recordings after all steps (including uadelall) are done and agents are stopped
+		// Collect final recordings
 		processRecordings(ctx, h.testStore, runID, h.DataDir)
 
-		if failReason != "" {
-			broadcastInfo(h, fmt.Sprintf(
-				`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":%d,"expected_hash":%q,"actual_hash":%q,"result":%q,"run_id":%d,"message":%q}`,
-				fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID, failReason,
-			))
-		} else {
-			broadcastInfo(h, fmt.Sprintf(
-				`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":%d,"expected_hash":%q,"actual_hash":%q,"result":%q,"run_id":%d}`,
-				fileName, projectName, len(cases), expectedGlobalHash, actualHash, status, runID,
-			))
+		// Broadcast final result to UI
+		resultMsg := map[string]interface{}{
+			"status":        "finished",
+			"token":         "testfile",
+			"file":          fileName,
+			"project":       projectName,
+			"total":         len(cases),
+			"expected_hash": expectedGlobalHash,
+			"actual_hash":   actualHash,
+			"result":        status,
+			"run_id":        runID,
 		}
+		if failReason != "" {
+			resultMsg["message"] = failReason
+		}
+		b, _ := json.Marshal(resultMsg)
+		broadcastInfo(h, string(b))
 
 		if webhookURL != "" {
 			go func() {
@@ -252,10 +283,17 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		}
 
 		log.Printf("--- Finished: %s [%s] --- Project: %s, Hash: %s, Run: %d", fileName, status, projectName, actualHash, runID)
+
+		// If the context was canceled, don't do more repeats
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 	}
 }
 
-func checkTestFailure(h *WsHub, fileName, projectName string) {
+func checkTestFailure(h *WsHub, fileName, projectName string) string {
 	var failMsg string
 	done := make(chan struct{})
 	h.internalCmd <- func() {
@@ -268,14 +306,10 @@ func checkTestFailure(h *WsHub, fileName, projectName string) {
 	}
 	<-done
 
-	if failMsg != "" {
-		broadcastInfo(h, fmt.Sprintf(
-			`{"status":"finished","token":"testfile","file":%q,"project":%q,"result":"FAIL","message":%q}`,
-			fileName, projectName, failMsg,
-		))
-	} else {
+	if failMsg == "" {
 		broadcastInfo(h, fmt.Sprintf(`{"status":"stopped","token":"testfile","file":%q,"project":%q}`, fileName, projectName))
 	}
+	return failMsg
 }
 
 func parseTestfile(content string) (cases []testCase, expectedHash string, includeScript string, repeatCount int, ignoredEvents []string, acceptedEvents []string, webhookURL string, err error) {
