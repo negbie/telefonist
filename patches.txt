@@ -20,11 +20,11 @@ with:
 file: libbaresip/git/baresip/src/bevent.c
 replace:
 	case BEVENT_CUSTOM:               return "CUSTOM";
-	default: return "?";
+	case BEVENT_SIPSESS_FAILED:       return "SIPSESS_FAILED";
 with:
 	case BEVENT_CUSTOM:               return "CUSTOM";
 	case BEVENT_AUDIO_REPORT:         return "AUDIO_REPORT";
-	default: return "?";
+	case BEVENT_SIPSESS_FAILED:       return "SIPSESS_FAILED";
 
 
 file: libbaresip/git/baresip/include/baresip.h

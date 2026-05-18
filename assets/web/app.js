@@ -121,6 +121,7 @@ const testfileSelectEl = document.getElementById("testfile-select");
 const testfilesSaveEl = document.getElementById("testfiles-save");
 const testfilesNewEl = document.getElementById("testfiles-new");
 const testfilesRenameEl = document.getElementById("testfiles-rename");
+const testfilesCloneEl = document.getElementById("testfiles-clone");
 const testfilesDeleteEl = document.getElementById("testfiles-delete");
 const testfileHighlightsEl = document.getElementById("testfile-highlights");
 
@@ -135,6 +136,7 @@ if (initTestfileManager) {
     testfilesSaveEl,
     testfilesNewEl,
     testfilesRenameEl,
+    testfilesCloneEl,
     testfilesDeleteEl,
     testfileHighlightsEl,
     renderError: (j) => {

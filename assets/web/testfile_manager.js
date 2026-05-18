@@ -19,6 +19,7 @@ export function initTestfileManager(deps) {
     testfilesNewEl,
     testfilesSaveEl,
     testfilesRenameEl,
+    testfilesCloneEl,
     testfilesDeleteEl,
     testfileHighlightsEl,
     onActiveFileChange,
@@ -64,6 +65,9 @@ export function initTestfileManager(deps) {
     const keys = getSelectedKeys();
     if (testfilesRenameEl)
       testfilesRenameEl.disabled =
+        !wsIsOpen() || keys.length !== 1 || isTestRunning;
+    if (testfilesCloneEl)
+      testfilesCloneEl.disabled =
         !wsIsOpen() || keys.length !== 1 || isTestRunning;
     if (testfilesDeleteEl)
       testfilesDeleteEl.disabled =
@@ -143,6 +147,21 @@ export function initTestfileManager(deps) {
     );
   }
 
+  function handleClone() {
+    const key = getSelectedKeys()[0], entry = key && state.getEntry(key);
+    if (!entry) return;
+    runAction({ msg: `Clone "${entry.name}" as:`, initial: entry.name + "_copy", sanitize: true }, (newName) =>
+      api.cloneTestfile(entry.project, entry.name, newName).then(j => {
+        if (j.status === "finished") {
+          const newKey = `${entry.project}:${newName}`;
+          state.updateCache(newKey, { name: newName, project: entry.project, original: entry.original, current: entry.current });
+          setActiveKey(newKey);
+        }
+        return j;
+      })
+    );
+  }
+
   function handleDelete() {
     const keys = getSelectedKeys();
     if (!keys.length || !confirm(`Delete ${keys.length} selected testfile(s)?`)) return;
@@ -173,6 +192,7 @@ export function initTestfileManager(deps) {
   if (testfilesNewEl) testfilesNewEl.onclick = handleNew;
   if (testfilesSaveEl) testfilesSaveEl.onclick = handleSave;
   if (testfilesRenameEl) testfilesRenameEl.onclick = handleRename;
+  if (testfilesCloneEl) testfilesCloneEl.onclick = handleClone;
   if (testfilesDeleteEl) testfilesDeleteEl.onclick = handleDelete;
   if (testfilesRunEl) testfilesRunEl.onclick = handleRun;
   if (testfilesStopEl) testfilesStopEl.onclick = handleStop;

@@ -240,6 +240,11 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		}
 
 	finish_run:
+		if ctx.Err() != nil {
+			// Test was stopped, don't generate a report
+			return
+		}
+
 		if failReason != "" && status == "" {
 			status = "FAIL"
 		}

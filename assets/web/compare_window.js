@@ -1,6 +1,7 @@
 import { EventBus } from "./event_bus.js";
 import { safeText, escapeHTML, base64DecodeUTF8 } from "./utils.js";
 import { computeLCSDiff } from "./diff.js";
+import { generateSipLadderHTML } from "./sip_renderer.js";
 
 export function initCompareWindow(deps) {
   const { getActiveKey } = deps;
@@ -108,7 +109,8 @@ export function initCompareWindow(deps) {
     }).map((j, idx) => {
       const { time, id, RawJSON, run_id, idx: _, ...rest } = j;
       const compare = ["sip", "log"].includes(activeMode) ? structuralSkeleton(j.param || "") : JSON.stringify({ ...rest, param: rest.param ? structuralSkeleton(rest.param) : undefined }, Object.keys(rest).sort());
-      return { display: renderEventHTML({ ...j, idx }), compare, idx };
+      const display = activeMode === "sip" ? generateSipLadderHTML(j, idx + 1) : renderEventHTML({ ...j, idx });
+      return { display, compare, idx };
     });
   };
 

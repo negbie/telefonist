@@ -1,9 +1,94 @@
-import { safeText } from "./utils.js";
+import { safeText, escapeHTML } from "./utils.js";
 import { trimChildrenToMax, appendAndMaintain } from "./dom.js";
 
-function truncateText(text, maxLen) {
+export function truncateText(text, maxLen) {
   var s = safeText(text);
   return s.length > maxLen ? s.substring(0, maxLen) + "..." : s;
+}
+
+export function generateSipLadderHTML(j, msgCount) {
+  var type = (j.type || j.token || "").toUpperCase();
+  if (type !== "SIP") return "";
+  var param = j.param || "";
+  var lines = param.split("\n");
+  var rest = "";
+  var topText = "";
+
+  if (lines.length >= 2) {
+    var fullTimeStr = safeText(lines[0].replace("#", ""));
+    var parts = fullTimeStr.split("|");
+    var timeStr = parts[0];
+    var dir = parts.length > 1 ? parts[1] : "TX";
+
+    var arrowMatch = safeText(lines[1]).match(
+      /(\w+) ([0-9\.\:a-fA-F\[\]]+) -> ([0-9\.\:a-fA-F\[\]]+)/,
+    );
+    rest = safeText(lines.slice(2).join("\n"));
+    var methodLine = safeText(lines[2] || "");
+
+    topText = methodLine;
+    var bottomText = "";
+
+    var cseqMatch = rest.match(/CSeq:\s*\d+\s+([A-Z]+)/);
+    if (cseqMatch) {
+      topText = cseqMatch[1];
+      if (rest.startsWith("SIP/2.0")) {
+        var statusCode = rest.match(/SIP\/2\.0\s+(\d+)\s+(.*)/);
+        if (statusCode) {
+          bottomText = statusCode[1] + " " + statusCode[2];
+        }
+      }
+    } else if (!arrowMatch) {
+      topText = safeText(lines[1]);
+    }
+
+    var src = "Unknown",
+      dst = "Unknown";
+    if (arrowMatch) {
+      src = arrowMatch[2];
+      dst = arrowMatch[3];
+    }
+
+    var isResponse = rest.startsWith("SIP/2.0");
+    var methodColor = isResponse
+      ? rest.includes(" 200")
+        ? "#16a34a"
+        : rest.includes(" 100") ||
+            rest.includes(" 180") ||
+            rest.includes(" 183")
+          ? "#0284c7"
+          : "#dc2626"
+      : "#000";
+
+    var headClass = dir === "TX" ? "sip-arrow-head-tx" : "sip-arrow-head-rx";
+    var localNodeHtml = dir === "TX" ? src : dst;
+    var remoteNodeHtml = dir === "TX" ? dst : src;
+
+    var html = `
+    <div class="sip-ladder-row">
+      <div class="sip-ladder-header" onclick="this.parentElement.classList.toggle('open')">
+        <div class="sip-arrow-container">
+          <div class="sip-node sip-node-center" title="${escapeHTML(localNodeHtml)}">
+            ${escapeHTML(localNodeHtml)}<br><span style="font-size: 9px; color: #444; font-weight: normal;">${escapeHTML(timeStr)}</span>
+          </div>
+          <div class="sip-arrow-line">
+            <div class="sip-method-top" style="color: ${escapeHTML(methodColor)}">
+              <span>(${msgCount}) ${escapeHTML(truncateText(topText, 60))}</span>
+            </div>
+            ${bottomText ? `<div class="sip-method-bottom" style="color: ${escapeHTML(methodColor)}">${escapeHTML(truncateText(bottomText, 60))}</div>` : ""}
+            <div class="sip-arrow-head ${escapeHTML(headClass)}"></div>
+          </div>
+          <div class="sip-node sip-node-center" title="${escapeHTML(remoteNodeHtml)}">
+            ${escapeHTML(remoteNodeHtml)}<br><span style="font-size: 9px; color: #444; font-weight: normal;">${escapeHTML(timeStr)}</span>
+          </div>
+        </div>
+      </div>
+      <pre class="sip-details">${escapeHTML(rest)}</pre>
+    </div>`;
+    return html;
+  } else {
+    return `<div class="sip-ladder-row" style="padding: 10px;">${escapeHTML(param)}</div>`;
+  }
 }
 
 export function renderSipEvent(j, elements, getOptions) {

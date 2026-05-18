@@ -67,6 +67,7 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/testfiles", AuthMiddleware(HandleAPITestfiles(hub)))
 	mux.HandleFunc("/api/testfile", AuthMiddleware(HandleAPITestfile(hub)))
 	mux.HandleFunc("/api/testfile/rename", AuthMiddleware(HandleAPITestfileRename(hub)))
+	mux.HandleFunc("/api/testfiles/clone", AuthMiddleware(HandleAPITestfileClone(hub)))
 	mux.HandleFunc("/api/testruns", AuthMiddleware(HandleAPITestruns(hub)))
 	mux.HandleFunc("/api/testrun", AuthMiddleware(HandleAPITestrun(hub)))
 	mux.HandleFunc("/api/testrun/wavs", AuthMiddleware(HandleAPITestrunWavs(hub)))

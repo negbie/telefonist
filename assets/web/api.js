@@ -88,6 +88,13 @@ export const API = {
       new_project: newProject,
     });
   },
+  cloneTestfile(project, srcName, targetName) {
+    return requestJSON("/api/testfiles/clone", "POST", {
+      project: project,
+      src_name: srcName,
+      target_name: targetName,
+    });
+  },
 
   logout() {
     return fetch("/api/logout", { method: "POST" }).then(function () {

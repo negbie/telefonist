@@ -1056,6 +1056,35 @@ func (s *TestStore) CloneProject(ctx context.Context, srcName, targetName string
 	return tx.Commit()
 }
 
+// CloneTestfile creates a new testfile by copying the content of the source testfile within the same project.
+func (s *TestStore) CloneTestfile(ctx context.Context, projectName, srcName, targetName string) error {
+	if s == nil || s.db == nil {
+		return errors.New("test store is not initialized")
+	}
+	if err := validateProjectName(projectName); err != nil {
+		return err
+	}
+	if err := validateTestfileName(srcName); err != nil {
+		return err
+	}
+	if err := validateTestfileName(targetName); err != nil {
+		return err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Copy the testfile row only, no history.
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO testfiles(name, project_name, content, created_at, updated_at)
+		SELECT ?, project_name, content, ?, ? FROM testfiles WHERE name = ? AND project_name = ?;
+	`, targetName, now, now, srcName, projectName)
+	if err != nil {
+		return fmt.Errorf("clone testfile %q -> %q (project %q): %w", srcName, targetName, projectName, err)
+	}
+
+	return nil
+}
+
 // ListProjects returns all stored projects.
 func (s *TestStore) ListProjects(ctx context.Context) ([]ProjectRow, error) {
 	if s == nil || s.db == nil {

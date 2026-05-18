@@ -290,6 +290,37 @@ func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
 	})
 }
 
+func HandleAPITestfileClone(hub *WsHub) http.HandlerFunc {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Project    string `json:"project"`
+			SrcName    string `json:"src_name"`
+			TargetName string `json:"target_name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+
+		req.Project = SanitizeName(req.Project)
+		req.SrcName = SanitizeName(req.SrcName)
+		req.TargetName = SanitizeName(req.TargetName)
+
+		if err := store.CloneTestfile(ctx, req.Project, req.SrcName, req.TargetName); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "clone", "message": "cloned", "src_name": req.SrcName, "target_name": req.TargetName, "project": req.Project}))
+		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "cloned"})
+	})
+}
+
 func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		switch r.Method {
