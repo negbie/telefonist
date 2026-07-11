@@ -779,7 +779,20 @@ func (b *Baresip) CmdDirect(command, params, token string) error {
 	if fullCmd == "" {
 		return nil
 	}
+	// Validate command contains only safe characters to prevent injection
+	for _, r := range fullCmd {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+			return fmt.Errorf("gobaresip: invalid command %q", fullCmd)
+		}
+	}
 	if params != "" {
+		// Strip control characters from params to prevent command injection
+		params = strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f {
+				return -1
+			}
+			return r
+		}, params)
 		fullCmd += " " + params
 	}
 	cCmd := C.CString(fullCmd)
