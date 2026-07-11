@@ -141,7 +141,15 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 }
 
 func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, content string) {
-	cases, expectedGlobalHash, includeScript, repeatCount, ignoredEvents, acceptedEvents, webhookURL, err := parseTestfile(content)
+	var accounts []SIPAccount
+	if h.testStore != nil {
+		var err error
+		accounts, err = h.testStore.ListSIPAccounts(ctx)
+		if err != nil {
+			log.Printf("error loading centralized SIP accounts: %v", err)
+		}
+	}
+	cases, expectedGlobalHash, includeScript, repeatCount, ignoredEvents, acceptedEvents, webhookURL, err := parseTestfile(content, accounts)
 	if err != nil {
 		broadcastInfo(h, fmt.Sprintf(`{"status":"error","token":"testfile","file":%q,"project":%q,"message":%q}`, fileName, projectName, err.Error()))
 		return
@@ -241,7 +249,26 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 
 	finish_run:
 		if ctx.Err() != nil {
-			// Test was stopped, don't generate a report
+			st := "finished"
+			msg := failReason
+			if msg == "" {
+				st = "stopped"
+			}
+			resultMsg := map[string]interface{}{
+				"status":        st,
+				"token":         "testfile",
+				"file":          fileName,
+				"project":       projectName,
+				"total":         len(cases),
+				"expected_hash": expectedGlobalHash,
+				"actual_hash":   actualHash,
+				"result":        "FAIL",
+			}
+			if msg != "" {
+				resultMsg["message"] = msg
+			}
+			b, _ := json.Marshal(resultMsg)
+			broadcastInfo(h, string(b))
 			return
 		}
 
@@ -317,7 +344,7 @@ func checkTestFailure(h *WsHub, fileName, projectName string) string {
 	return failMsg
 }
 
-func parseTestfile(content string) (cases []testCase, expectedHash string, includeScript string, repeatCount int, ignoredEvents []string, acceptedEvents []string, webhookURL string, err error) {
+func parseTestfile(content string, accounts []SIPAccount) (cases []testCase, expectedHash string, includeScript string, repeatCount int, ignoredEvents []string, acceptedEvents []string, webhookURL string, err error) {
 	repeatCount = 1
 	defines := make(map[string]string)
 	sc := bufio.NewScanner(strings.NewReader(content))
@@ -413,6 +440,8 @@ func parseTestfile(content string) (cases []testCase, expectedHash string, inclu
 			sequence = strings.ReplaceAll(sequence, k, defines[k])
 		}
 
+		sequence = resolveAccountsInSequence(sequence, accounts)
+
 		cases = append(cases, testCase{
 			lineNo:   lineNo,
 			name:     name,
@@ -494,3 +523,137 @@ func processRecordings(ctx context.Context, store *TestStore, runID int64, dataD
 		}
 	}
 }
+
+func resolveAccountsInSequence(sequence string, accounts []SIPAccount) string {
+	if len(accounts) == 0 {
+		return sequence
+	}
+
+	// 1. Process uanew commands (handling bracketless and bracketed names, appending default params & auth_pass)
+	parts := splitByPipe(sequence)
+	for i, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if strings.HasPrefix(strings.ToLower(trimmed), "uanew ") {
+			rest := strings.TrimSpace(trimmed[6:])
+			aorPart := rest
+			paramPart := ""
+			if strings.HasPrefix(rest, "<") {
+				idx := strings.Index(rest, ">")
+				if idx != -1 {
+					aorPart = rest[:idx+1]
+					if idx+1 < len(rest) {
+						paramPart = rest[idx+1:]
+						if strings.HasPrefix(paramPart, ";") {
+							paramPart = paramPart[1:]
+						}
+					}
+				}
+			} else {
+				aorAndParams := strings.SplitN(rest, ";", 2)
+				aorPart = strings.TrimSpace(aorAndParams[0])
+				if len(aorAndParams) > 1 {
+					paramPart = strings.TrimSpace(aorAndParams[1])
+				}
+			}
+
+			nameOrURI := aorPart
+			if strings.HasPrefix(aorPart, "<") && strings.HasSuffix(aorPart, ">") {
+				nameOrURI = aorPart[1 : len(aorPart)-1]
+			}
+
+			// Try to find the account by friendly name first
+			var foundAcc *SIPAccount
+			for _, acc := range accounts {
+				if acc.Name == nameOrURI {
+					foundAcc = &acc
+					break
+				}
+			}
+
+			// If not found by name, try to find by SIP URI/AOR matching
+			if foundAcc == nil {
+				extractedAOR := ExtractAlias("<" + nameOrURI + ">")
+				if extractedAOR != "" {
+					for _, acc := range accounts {
+						accAOR := ExtractAlias("<" + acc.SIPURI + ">")
+						if accAOR != "" && accAOR == extractedAOR {
+							foundAcc = &acc
+							break
+						}
+					}
+				}
+			}
+
+			if foundAcc != nil {
+				resolvedAOR := "<" + foundAcc.SIPURI + normalizeParam(foundAcc.URIParams) + ">"
+				addrParams := ""
+				if foundAcc.Password != "" {
+					addrParams += ";auth_pass=" + foundAcc.Password
+				}
+				if foundAcc.AddrParams != "" {
+					addrParams += normalizeParam(foundAcc.AddrParams)
+				}
+				if paramPart != "" {
+					addrParams += ";" + paramPart
+				}
+				resolvedAOR += normalizeParam(addrParams)
+				parts[i] = "uanew " + resolvedAOR
+			}
+		}
+	}
+	sequence = strings.Join(parts, "|")
+
+	// 2. Replace <account_name> inside angle brackets (for other parts of script)
+	for _, acc := range accounts {
+		placeholder := "<" + acc.Name + ">"
+		if strings.Contains(sequence, placeholder) {
+			replacement := "<" + acc.SIPURI + normalizeParam(acc.URIParams) + ">"
+			if acc.Password != "" {
+				replacement += ";auth_pass=" + acc.Password
+			}
+			if acc.AddrParams != "" {
+				replacement += normalizeParam(acc.AddrParams)
+			}
+			sequence = strings.ReplaceAll(sequence, placeholder, replacement)
+		}
+	}
+
+	// 3. Replace prefix account_name: (at start of command, or after a pipe)
+	for _, acc := range accounts {
+		fullSIPURI := acc.SIPURI + normalizeParam(acc.URIParams)
+		prefix := acc.Name + ":"
+		replacement := fullSIPURI + ":"
+		// Case 1: Start of sequence
+		if strings.HasPrefix(sequence, prefix) {
+			sequence = replacement + sequence[len(prefix):]
+		}
+		// Case 2: After a pipe
+		sequence = strings.ReplaceAll(sequence, "|"+prefix, "|"+replacement)
+		// Case 3: After a pipe with space
+		sequence = strings.ReplaceAll(sequence, "| "+prefix, "| "+replacement)
+	}
+
+	// 4. Replace whole-word arguments in commands (like dial destination).
+	for _, acc := range accounts {
+		fullSIPURI := acc.SIPURI + normalizeParam(acc.URIParams)
+		sequence = strings.ReplaceAll(sequence, " "+acc.Name, " "+fullSIPURI)
+	}
+
+	return sequence
+}
+
+func normalizeParam(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	for strings.Contains(p, ";;") {
+		p = strings.ReplaceAll(p, ";;", ";")
+	}
+	if !strings.HasPrefix(p, ";") {
+		p = ";" + p
+	}
+	p = strings.TrimRight(p, "; ")
+	return p
+}
+

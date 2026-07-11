@@ -220,7 +220,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 
 	// Connect to agent's PROXY
 	var gb *gobaresip.Baresip
-	maxRetries := 30
+	maxRetries := 60
 	retryInterval := 20 * time.Millisecond
 	for i := 0; i < maxRetries; i++ {
 		gb, err = gobaresip.New(
@@ -239,7 +239,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		if err != nil && err == ctx.Err() {
 			break
 		}
-		
+
 		if retryInterval < 100*time.Millisecond {
 			retryInterval += 20 * time.Millisecond
 		}
@@ -360,7 +360,7 @@ func (m *BaresipManager) ResolveTarget(cmd string, fallbackTarget string) (targe
 		return fallbackTarget, cmd
 	}
 
-	// Check for "alias:command" prefix (e.g., "ua1:dial sip:123@pbx")
+	// Check for "alias:command" prefix (e.g., "ua1:dial alice")
 	if idx := strings.LastIndex(parts[0], ":"); idx > 0 {
 		prefix := ExtractAlias(parts[0][:idx])
 		m.mu.RLock()

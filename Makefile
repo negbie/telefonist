@@ -37,6 +37,13 @@ OPENSSL_VER ?= 3.0.13
 G722_VER ?= master
 SNDFILE_VER ?= 1.2.2
 
+BARESIP_VER ?= 4.9.0
+ifeq ($(BARESIP_VER),master)
+BARESIP_REF := master
+else
+BARESIP_REF := v$(BARESIP_VER)
+endif
+
 # Paths (all relative to this Makefile dir)
 ROOT_DIR := $(CURDIR)
 LIBBARESIP_DIR := $(ROOT_DIR)/libbaresip
@@ -167,7 +174,7 @@ help:
 	  "  make distclean  Remove EVERYTHING under libbaresip/" \
 	  "" \
 	  "Variables:" \
-	  "  JOBS=$(JOBS) OPUS_VER=$(OPUS_VER) OPENSSL_VER=$(OPENSSL_VER)"
+	  "  JOBS=$(JOBS) OPUS_VER=$(OPUS_VER) OPENSSL_VER=$(OPENSSL_VER) BARESIP_VER=$(BARESIP_VER)"
 
 # Ensure base directory layout exists
 $(LIBBARESIP_DIR):
@@ -175,6 +182,16 @@ $(LIBBARESIP_DIR):
 
 $(GIT_DIR): | $(LIBBARESIP_DIR)
 	@mkdir -p "$(GIT_DIR)" "$(STAGE_RE)" "$(STAGE_REM)" "$(STAGE_BARESIP)" "$(STAGE_OPUS)" "$(STAGE_OPENSSL)" "$(STAGE_G722)" "$(STAGE_SNDFILE)"
+
+# Version marker to track if BARESIP_VER changes and clean build outputs when it does
+$(GIT_DIR)/.baresip_ver_$(BARESIP_VER): | $(GIT_DIR)
+	@echo "Baresip version changed/set to $(BARESIP_VER). Cleaning previous build cache..."
+	@rm -rf $(STAGE_RE) $(STAGE_REM) $(STAGE_BARESIP)
+	@rm -f $(RE_LIB) $(REM_LIB) $(BARESIP_LIB) $(BARESIP_EXE)
+	@if [ -d "$(RE_DIR)/build" ]; then rm -rf "$(RE_DIR)/build"; fi
+	@if [ -d "$(BARESIP_DIR)/build" ]; then rm -rf "$(BARESIP_DIR)/build"; fi
+	@rm -f $(GIT_DIR)/.baresip_ver_*
+	@touch $@
 
 ###############################################################################
 # Custom g722 module staging (copy into vendored baresip tree like baresip-apps)
@@ -290,8 +307,14 @@ $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO): $(OPENSSL_SRC) | $(GIT_DIR)
 ###############################################################################
 # re (libre.a) and rem (librem.a) - CMake builds against OpenSSL prefix
 ###############################################################################
-$(RE_DIR): | $(GIT_DIR)
-	@if [ ! -d "$(RE_DIR)" ]; then cd "$(GIT_DIR)" && git clone https://github.com/baresip/re.git; fi
+$(RE_DIR): $(GIT_DIR)/.baresip_ver_$(BARESIP_VER) | $(GIT_DIR)
+	@if [ ! -d "$(RE_DIR)" ]; then \
+		cd "$(GIT_DIR)" && git clone https://github.com/baresip/re.git; \
+	fi
+	@cd "$(RE_DIR)" && git fetch --tags origin && git checkout $(BARESIP_REF)
+	@if [ "$(BARESIP_REF)" = "master" ]; then \
+		cd "$(RE_DIR)" && git pull origin master; \
+	fi
 
 $(REM_DIR): | $(GIT_DIR)
 	@if [ ! -d "$(REM_DIR)" ]; then cd "$(GIT_DIR)" && git clone https://github.com/baresip/rem.git; fi
@@ -405,8 +428,14 @@ $(SNDFILE_LIB): $(SNDFILE_SRC) | $(GIT_DIR)
 ###############################################################################
 # baresip (static libbaresip.a) - CMake out-of-source build
 ###############################################################################
-$(BARESIP_DIR): | $(GIT_DIR)
-	@if [ ! -d "$(BARESIP_DIR)" ]; then cd "$(GIT_DIR)" && git clone https://github.com/baresip/baresip.git; fi
+$(BARESIP_DIR): $(GIT_DIR)/.baresip_ver_$(BARESIP_VER) | $(GIT_DIR)
+	@if [ ! -d "$(BARESIP_DIR)" ]; then \
+		cd "$(GIT_DIR)" && git clone https://github.com/baresip/baresip.git; \
+	fi
+	@cd "$(BARESIP_DIR)" && git fetch --tags origin && git checkout $(BARESIP_REF)
+	@if [ "$(BARESIP_REF)" = "master" ]; then \
+		cd "$(BARESIP_DIR)" && git pull origin master; \
+	fi
 
 # Default (no ALSA) build uses MODULES_NOALSA
 MODULES := $(MODULES_NOALSA)
@@ -502,7 +531,7 @@ test_alsa:
 clean:
 	@rm -rf $(STAGE_RE) $(STAGE_REM) $(STAGE_BARESIP) $(STAGE_G722)
 	@rm -rf $(RE_DIR) $(REM_DIR) $(BARESIP_DIR)
-	@rm -f telefonist $(ALSA_MARKER)
+	@rm -f telefonist $(ALSA_MARKER) $(GIT_DIR)/.baresip_ver_*
 	@echo "Cleaned project sources and build artifacts. (Third-party libs like OpenSSL preserved)"
 
 distclean:

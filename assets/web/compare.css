@@ -44,6 +44,16 @@
     background: #e5e7eb;
 }
 
+#compare-controls button.active {
+    background: #3b82f6;
+    color: #fff;
+    border-color: #2563eb;
+}
+
+#compare-controls button.active:hover {
+    background: #2563eb;
+}
+
 #compare-panes {
     flex: 1 1 auto;
     display: flex;

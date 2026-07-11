@@ -19,6 +19,51 @@ export function initCompareWindow(deps) {
   const logBtn = document.getElementById("compare-log");
   const wavBtn = document.getElementById("compare-wav");
   const deleteAllBtn = document.getElementById("compare-delete-all");
+  const linkBtn = document.getElementById("compare-link");
+
+  let isScrollLinked = true;
+  let isSyncing = false;
+
+  const handleScrollA = () => {
+    if (!isScrollLinked || isSyncing || !contentA || !contentB) return;
+    isSyncing = true;
+    const maxA = contentA.scrollHeight - contentA.clientHeight;
+    if (maxA > 0) {
+      const pct = contentA.scrollTop / maxA;
+      const maxB = contentB.scrollHeight - contentB.clientHeight;
+      contentB.scrollTop = Math.round(pct * maxB);
+    }
+    setTimeout(() => { isSyncing = false; }, 10);
+  };
+
+  const handleScrollB = () => {
+    if (!isScrollLinked || isSyncing || !contentA || !contentB) return;
+    isSyncing = true;
+    const maxB = contentB.scrollHeight - contentB.clientHeight;
+    if (maxB > 0) {
+      const pct = contentB.scrollTop / maxB;
+      const maxA = contentA.scrollHeight - contentA.clientHeight;
+      contentA.scrollTop = Math.round(pct * maxA);
+    }
+    setTimeout(() => { isSyncing = false; }, 10);
+  };
+
+  if (contentA) contentA.addEventListener("scroll", handleScrollA);
+  if (contentB) contentB.addEventListener("scroll", handleScrollB);
+
+  if (linkBtn) {
+    linkBtn.onclick = () => {
+      isScrollLinked = !isScrollLinked;
+      if (isScrollLinked) {
+        linkBtn.classList.add("active");
+        linkBtn.textContent = "Scroll: Link";
+        handleScrollA();
+      } else {
+        linkBtn.classList.remove("active");
+        linkBtn.textContent = "Scroll: Unlink";
+      }
+    };
+  }
 
   const comparePanel = document.getElementById("compare-panel");
   if (comparePanel) {
@@ -131,6 +176,8 @@ export function initCompareWindow(deps) {
 
   const applyCurrentMode = () => {
     if (!contentA || !contentB) return;
+    contentA.scrollTop = 0;
+    contentB.scrollTop = 0;
     if (activeMode === "wav") {
       renderWavs(contentA, wavsA);
       renderWavs(contentB, wavsB);

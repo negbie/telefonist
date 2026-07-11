@@ -35,6 +35,15 @@ export function syntaxHighlight(inputEl, highlightsEl) {
         }
       }
     }
+    var uanewRegex = /\buanew\s+([a-zA-Z0-9_.-]+)/gi;
+    var match;
+    while ((match = uanewRegex.exec(trimmed)) !== null) {
+      var name = match[1];
+      if (!vars[name]) {
+        vars[name] = palette[colorIdx % palette.length];
+        colorIdx++;
+      }
+    }
   }
 
   function wrapVarToken(token) {

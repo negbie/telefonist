@@ -18,6 +18,8 @@ import { renderLogEvent } from "./log_renderer.js";
 import { initTestfileManager } from "./testfile_manager.js";
 import { initCompareWindow } from "./compare_window.js";
 import { initCronManager } from "./cron_manager.js";
+import { initAccountsManager } from "./accounts_manager.js";
+import { initHistoryManager } from "./history_manager.js";
 
 const flowEl = document.getElementById("flow");
 const clearEl = document.getElementById("clear");
@@ -153,9 +155,17 @@ if (initCompareWindow) {
   initCompareWindow({ getActiveKey: () => tfManager?.getActiveKey() });
 }
 
+if (initHistoryManager) {
+  initHistoryManager({
+    getActiveKey: () => tfManager?.getActiveKey(),
+    testfileInputEl,
+  });
+}
+
 const btnModeTests = document.getElementById("btn-mode-tests");
 const btnModeCompare = document.getElementById("btn-mode-compare");
 const btnModeCron = document.getElementById("btn-mode-cron");
+const btnModeAccounts = document.getElementById("btn-mode-accounts");
 
 const syncCompareWithActiveTestfile = () => {
   const key = tfManager?.getActiveKey?.() || "";
@@ -171,21 +181,30 @@ const setBottomMode = (mode) => {
   if (btnModeTests) btnModeTests.classList.toggle("active", mode === "tests");
   if (btnModeCompare) btnModeCompare.classList.toggle("active", mode === "compare");
   if (btnModeCron) btnModeCron.classList.toggle("active", mode === "cron");
+  if (btnModeAccounts) btnModeAccounts.classList.toggle("active", mode === "accounts");
 
   if (mode === "compare") {
     syncCompareWithActiveTestfile();
   } else if (mode === "cron") {
     EventBus.emit("cron:opened");
+  } else if (mode === "accounts") {
+    EventBus.emit("accounts:opened");
   }
 };
 
 if (btnModeTests) btnModeTests.onclick = () => setBottomMode("tests");
 if (btnModeCompare) btnModeCompare.onclick = () => setBottomMode("compare");
 if (btnModeCron) btnModeCron.onclick = () => setBottomMode("cron");
+if (btnModeAccounts) btnModeAccounts.onclick = () => setBottomMode("accounts");
 
 // Initialize Cron Manager
 if (initCronManager) {
   initCronManager();
+}
+
+// Initialize Accounts Manager
+if (initAccountsManager) {
+  initAccountsManager();
 }
 
 // Sidebar Toggle Logic

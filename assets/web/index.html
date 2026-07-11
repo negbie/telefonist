@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="/controls.css" />
     <link rel="stylesheet" href="/highlight.css" />
     <link rel="stylesheet" href="/cron.css" />
+    <link rel="stylesheet" href="/accounts.css" />
+    <link rel="stylesheet" href="/history.css" />
     <script type="module" src="/app.js"></script>
 
 
@@ -84,12 +86,14 @@
                         <button type="button" id="btn-mode-tests" class="active" title="Tests Mode">🧪</button>
                         <button type="button" id="btn-mode-compare" title="Compare Mode">⚖️</button>
                         <button type="button" id="btn-mode-cron" title="Cron Mode">⏱</button>
+                        <button type="button" id="btn-mode-accounts" title="Accounts Mode">👤</button>
                     </div>
                     <div class="sidebar-separator"></div>
                     <div class="sidebar-group">
                         <button type="button" id="testfiles-run" title="Run Testfile (Alt+R)">▶</button>
                         <button type="button" id="testfiles-stop" title="Stop Run">■</button>
                         <button type="button" id="testfiles-save" title="Save Testfile (Alt+S)">💾</button>
+                        <button type="button" id="testfiles-history" title="Testfile Version History">⏳</button>
                     </div>
                     <div class="sidebar-separator"></div>
                     <div class="sidebar-group">
@@ -145,8 +149,12 @@
                     <button type="button" id="compare-log" title="Show only logger messages">LOG</button>
                     <button type="button" id="compare-wav" title="Toggle WAV comparison mode">WAV</button>
                     <button type="button" id="compare-diff" title="Toggle diff view for the selected mode">Diff</button>
-                    <button type="button" id="compare-delete-selected" title="Delete the runs selected in the dropdowns">Delete</button>
-                    <button type="button" id="compare-delete-all" title="Delete all stored runs for the current testfile">Delete All</button>
+                    <button type="button" id="compare-link" title="Toggle synchronized scrolling" class="active">Scroll:
+                        Link</button>
+                    <button type="button" id="compare-delete-selected"
+                        title="Delete the runs selected in the dropdowns">Delete</button>
+                    <button type="button" id="compare-delete-all"
+                        title="Delete all stored runs for the current testfile">Delete All</button>
                 </div>
                 <div id="compare-panes">
                     <div class="compare-pane" id="compare-pane-a">
@@ -168,7 +176,7 @@
                         <button type="button" id="cron-new" title="New Job">+ Add Job</button>
                     </div>
                 </div>
-                
+
                 <table class="cron-table">
                     <thead>
                         <tr>
@@ -205,6 +213,88 @@
                             <button type="button" id="cron-cancel">Cancel</button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div id="accounts-panel">
+                <div class="accounts-header">
+                    <h2>Centralized SIP Accounts</h2>
+                    <div>
+                        <button type="button" id="accounts-refresh" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="accounts-new" title="New Account">+ Add Account</button>
+                    </div>
+                </div>
+
+                <table class="accounts-table">
+                    <thead>
+                        <tr>
+                            <th>Name / Alias</th>
+                            <th>SIP URI</th>
+                            <th>Password</th>
+                            <th>URI Parameters</th>
+                            <th>Address Parameters</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accounts-list">
+                    </tbody>
+                </table>
+
+                <div id="accounts-modal" class="modal">
+                    <div class="modal-content">
+                        <h3 id="accounts-modal-title">Add SIP Account</h3>
+                        <div class="modal-row">
+                            <label>Name / Alias *</label>
+                            <input type="text" id="accounts-name" placeholder="e.g. ua1 or testtrunk">
+                            <small>Alphanumeric, underscores, and dashes only.</small>
+                        </div>
+                        <div class="modal-row">
+                            <label>SIP URI *</label>
+                            <input type="text" id="accounts-sip-uri" placeholder="sip:username@domain">
+                        </div>
+                        <div class="modal-row">
+                            <label>Password</label>
+                            <input type="password" id="accounts-password"
+                                placeholder="Set new password (leave empty to keep unchanged)">
+                        </div>
+                        <div class="modal-row">
+                            <label>URI Parameters (uri-params)</label>
+                            <input type="text" id="accounts-uri-params" placeholder="e.g. ;transport=tls">
+                            <small>Placed inside angle brackets (&lt;sip_uri;uri-params&gt;)</small>
+                        </div>
+                        <div class="modal-row">
+                            <label>Address Parameters (addr-params)</label>
+                            <input type="text" id="accounts-addr-params"
+                                placeholder="e.g. ;mediaenc=srtp-mand;input_wav=alice.wav">
+                            <small>Placed outside angle brackets after password</small>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" id="accounts-save">Save</button>
+                            <button type="button" id="accounts-cancel">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="history-modal" class="modal">
+            <div class="modal-content"
+                style="width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
+                <h3 style="margin-top: 0; margin-bottom: 10px;">Testfile Version History</h3>
+                <div class="history-layout"
+                    style="display: flex; flex: 1 1 auto; overflow: hidden; gap: 15px; border: 1px solid var(--border); border-radius: var(--radius); height: 0;">
+                    <div class="history-sidebar" id="history-versions-list"
+                        style="flex: 0 0 250px; overflow-y: auto; border-right: 1px solid var(--border); background: var(--panel); padding: 5px;">
+                        <!-- version items will go here -->
+                    </div>
+                    <div class="history-diff-container" id="history-diff-view"
+                        style="flex: 1 1 auto; overflow: auto; background: #fff; padding: 10px; font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-all;">
+                        <!-- diff lines will go here -->
+                    </div>
+                </div>
+                <div class="modal-actions" style="margin-top: 15px;">
+                    <button type="button" id="history-restore" style="display: none;">Restore Selected Version</button>
+                    <button type="button" id="history-close">Close</button>
                 </div>
             </div>
         </div>

@@ -271,3 +271,164 @@ func TestStore_Security(t *testing.T) {
 		t.Error("FAIL: Empty project name accepted in SaveProject!")
 	}
 }
+
+func TestStore_SIPAccounts(t *testing.T) {
+	ctx := context.Background()
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	// 1. List empty
+	accounts, err := s.ListSIPAccounts(ctx)
+	if err != nil {
+		t.Fatalf("ListSIPAccounts failed: %v", err)
+	}
+	if len(accounts) != 0 {
+		t.Errorf("Expected 0 accounts, got %d", len(accounts))
+	}
+
+	// 2. Save new account
+	err = s.SaveSIPAccount(ctx, "", "alice", "sip:alice@sip.domain.com", "alicepassword", ";transport=tls", ";mediaenc=srtp-mand")
+	if err != nil {
+		t.Fatalf("SaveSIPAccount failed: %v", err)
+	}
+
+	// 3. Save another account (numeric username)
+	err = s.SaveSIPAccount(ctx, "", "ua1", "sip:+123456@sip.domain.com", "trunkpassword", ";transport=tls", "")
+	if err != nil {
+		t.Fatalf("SaveSIPAccount failed: %v", err)
+	}
+
+	// 3b. Verify duplicate name check on creation
+	err = s.SaveSIPAccount(ctx, "", "alice", "sip:alice-duplicate@sip.domain.com", "otherpass", "", "")
+	if err == nil {
+		t.Errorf("Expected error when saving duplicate account name, got nil")
+	}
+
+	// 4. List and check values
+	accounts, err = s.ListSIPAccounts(ctx)
+	if err != nil {
+		t.Fatalf("ListSIPAccounts failed: %v", err)
+	}
+	if len(accounts) != 2 {
+		t.Errorf("Expected 2 accounts, got %d", len(accounts))
+	}
+
+	foundAlice := false
+	foundUA1 := false
+	for _, a := range accounts {
+		if a.Name == "alice" {
+			foundAlice = true
+			if a.SIPURI != "sip:alice@sip.domain.com" || a.Password != "alicepassword" || a.URIParams != ";transport=tls" || a.AddrParams != ";mediaenc=srtp-mand" {
+				t.Errorf("Alice data mismatch: %+v", a)
+			}
+		}
+		if a.Name == "ua1" {
+			foundUA1 = true
+			if a.SIPURI != "sip:+123456@sip.domain.com" || a.Password != "trunkpassword" || a.URIParams != ";transport=tls" || a.AddrParams != "" {
+				t.Errorf("UA1 data mismatch: %+v", a)
+			}
+		}
+	}
+	if !foundAlice || !foundUA1 {
+		t.Errorf("Did not find both expected accounts")
+	}
+
+	// 5. Update existing account (and test renaming alias)
+	err = s.SaveSIPAccount(ctx, "alice", "alice-newname", "sip:alice-new@sip.domain.com", "newpassword", ";transport=tcp", ";mediaenc=none")
+	if err != nil {
+		t.Fatalf("Update SIPAccount failed: %v", err)
+	}
+
+	// Verify update
+	accounts, err = s.ListSIPAccounts(ctx)
+	if err != nil {
+		t.Fatalf("ListSIPAccounts failed: %v", err)
+	}
+	for _, a := range accounts {
+		if a.Name == "alice-newname" {
+			if a.SIPURI != "sip:alice-new@sip.domain.com" || a.Password != "newpassword" || a.URIParams != ";transport=tcp" || a.AddrParams != ";mediaenc=none" {
+				t.Errorf("Alice data not updated correctly: %+v", a)
+			}
+		}
+	}
+
+	// 5b. Verify clearing parameters
+	err = s.SaveSIPAccount(ctx, "alice-newname", "alice-newname", "sip:alice-new@sip.domain.com", "newpassword", "", "")
+	if err != nil {
+		t.Fatalf("Clearing parameters failed: %v", err)
+	}
+	accounts, err = s.ListSIPAccounts(ctx)
+	if err != nil {
+		t.Fatalf("ListSIPAccounts failed: %v", err)
+	}
+	for _, a := range accounts {
+		if a.Name == "alice-newname" {
+			if a.URIParams != "" || a.AddrParams != "" {
+				t.Errorf("Expected cleared parameters, got uri_params=%q addr_params=%q", a.URIParams, a.AddrParams)
+			}
+		}
+	}
+
+	// 6. Delete account
+	err = s.DeleteSIPAccount(ctx, "ua1")
+	if err != nil {
+		t.Fatalf("DeleteSIPAccount failed: %v", err)
+	}
+
+	// Verify delete
+	accounts, err = s.ListSIPAccounts(ctx)
+	if err != nil {
+		t.Fatalf("ListSIPAccounts failed: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Errorf("Expected 1 account, got %d", len(accounts))
+	}
+	if accounts[0].Name != "alice-newname" {
+		t.Errorf("Expected only alice-newname left, got %q", accounts[0].Name)
+	}
+}
+
+func TestStore_VersionControl(t *testing.T) {
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	ctx := context.Background()
+	testName := "versioned_test"
+	projectName := "projectV"
+
+	// 1. Save first version
+	err := s.Save(ctx, testName, projectName, "first version content")
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// 2. Save same content (should NOT create a duplicate version)
+	err = s.Save(ctx, testName, projectName, "first version content")
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// 3. Save second version with different content
+	err = s.Save(ctx, testName, projectName, "second version content")
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// 4. List versions and verify
+	versions, err := s.ListVersions(ctx, testName, projectName)
+	if err != nil {
+		t.Fatalf("ListVersions failed: %v", err)
+	}
+
+	if len(versions) != 2 {
+		t.Fatalf("Expected exactly 2 versions in history, got %d", len(versions))
+	}
+
+	// The newest version (second version) should be first (descending order)
+	if versions[0].Content != "second version content" {
+		t.Errorf("Expected first element in list to be 'second version content', got %q", versions[0].Content)
+	}
+	if versions[1].Content != "first version content" {
+		t.Errorf("Expected second element in list to be 'first version content', got %q", versions[1].Content)
+	}
+}

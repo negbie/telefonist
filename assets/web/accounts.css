@@ -1,0 +1,132 @@
+/* Accounts Manager Styles */
+#accounts-panel {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    padding: 20px;
+    background-color: var(--bg);
+    overflow-y: auto;
+    color: var(--text);
+    font-size: 0.8rem;
+}
+
+[data-bottom-mode="accounts"] #accounts-panel {
+    display: flex;
+}
+
+[data-bottom-mode="accounts"] #testfile-panel,
+[data-bottom-mode="accounts"] #compare-panel,
+[data-bottom-mode="accounts"] #cron-panel,
+[data-bottom-mode="accounts"] .controls-main {
+    display: none;
+}
+
+#btn-mode-accounts.active {
+    background-color: #e5e7eb !important;
+    border-color: #9ca3af !important;
+    color: #000 !important;
+}
+
+.accounts-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.accounts-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.accounts-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.accounts-table th, .accounts-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.accounts-table th {
+    background: #fdfdfd;
+    font-weight: 600;
+}
+
+.accounts-table tbody tr:hover {
+    background: #f1f5f9;
+}
+
+.accounts-table button {
+    margin-right: 5px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+}
+
+.accounts-table .accounts-del {
+    background-color: #ef4444;
+    color: #fff;
+    border-color: #dc2626;
+}
+
+.accounts-table .accounts-del:hover {
+    background-color: #dc2626;
+}
+
+/* Modal */
+#accounts-modal.modal {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 20px;
+    border-radius: var(--radius);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    width: 400px;
+}
+
+#accounts-modal.active {
+    display: block;
+}
+
+.modal-row {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 15px;
+}
+
+.modal-row label {
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.modal-row input, .modal-row select {
+    padding: 6px 8px;
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--input-radius);
+}
+
+.modal-row small {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}

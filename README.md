@@ -118,6 +118,28 @@ You can manage Cron Jobs directly in the web UI using the **⏱️ Cron Tool** o
 
 **Concurrency Protection**: If a cron job triggers while another manual or automated test run is currently active, the scheduler will cleanly queue the new execution and wait for the active run to finish before starting, automatically preventing SIP port overlap or race conditions!
 
+## Centralized SIP Accounts
+
+To prevent storing sensitive SIP credentials (like passwords) inside plaintext test scripts, Telefonist provides a secure **Centralized Accounts Manager**.
+
+You can manage accounts directly in the web UI using the **👤 Accounts** button on the sidebar:
+- **Name / Alias**: A unique identifier for the account (e.g. `alice` or `ua1`).
+- **SIP URI**: The base SIP address of the user (e.g. `sip:alice@sip.domain.com` or `sip:+1234567890@sip.domain.com`).
+- **Password**: The SIP authentication password. This is securely stored in SQLite and completely masked/shielded from GET API calls to prevent credential extraction.
+- **URI Parameters (uri-params)**: Semicolon-separated transport parameters that reside inside baresip's AOR brackets (e.g., `;transport=tls`).
+- **Address Parameters (addr-params)**: Semicolon-separated configuration parameters that reside outside baresip's AOR brackets (e.g., `;mediaenc=srtp-mand;input_wav=alice.wav`).
+
+### Macro Expansion & Syntax
+In your test files, instead of defining full credentials, you only need to type:
+```bash
+uanew alice
+```
+At runtime, the parser will resolve this into a fully formatted baresip AOR string:
+```bash
+uanew <sip:alice@sip.domain.com;transport=tls>;auth_pass=yourpassword;mediaenc=srtp-mand;input_wav=alice.wav
+```
+This keeps your test scripts clean, version-control safe, and highly maintainable!
+
 ## Architecture
 
 Telefonist follows a multi-process **Agents Architecture**:
@@ -190,6 +212,8 @@ Testfiles are line-based and support the following syntax:
      > For your first run, leave `_hash` empty. The final test result will reveal the actual hash, which you can then copy into your testfile for future validation.
    - `_accept`: A comma-separated list of events to accept for the hash calculation (e.g., `CALL_RINGING`, `CALL_ESTABLISHED`).
    - `_define`: Creates reusable macros for SIP URIs or other configuration strings.
+     > [!TIP]
+     > You can replace all `_define` directives and long inline parameters by storing your accounts in the **Centralized Accounts Manager** (👤 tab) and referencing them simply as `uanew ua1`, `uanew ua2`, etc.
    - `_run`: Specifies how many times to repeat the entire sequence.
 
 4. **Execution**: Click **Run**. Once finished, the UI will display the PASS/FAIL status along with the generated hash.

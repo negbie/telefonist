@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -287,6 +288,66 @@ func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
 
 		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "rename", "message": "renamed", "old_name": req.OldName, "old_project": req.OldProject, "new_name": req.NewName, "new_project": req.NewProject}))
 		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "renamed"})
+	})
+}
+
+func HandleAPITestfileVersions(hub *WsHub) http.HandlerFunc {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
+		switch r.Method {
+		case http.MethodGet:
+			name := r.URL.Query().Get("name")
+			project := r.URL.Query().Get("project")
+			if name == "" {
+				http.Error(w, "name required", http.StatusBadRequest)
+				return
+			}
+
+			list, err := store.ListVersions(ctx, name, project)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			type versionItem struct {
+				ID         int64  `json:"id"`
+				CreatedAt  string `json:"created_at"`
+				ContentB64 string `json:"content_b64"`
+			}
+
+			versions := make([]versionItem, len(list))
+			for i, v := range list {
+				versions[i] = versionItem{
+					ID:         v.ID,
+					CreatedAt:  v.CreatedAt.UTC().Format(time.RFC3339Nano),
+					ContentB64: base64.StdEncoding.EncodeToString([]byte(v.Content)),
+				}
+			}
+
+			jsonResponse(w, http.StatusOK, map[string]any{
+				"status":   "finished",
+				"versions": versions,
+			})
+
+		case http.MethodDelete:
+			idStr := r.URL.Query().Get("id")
+			if idStr == "" {
+				http.Error(w, "id required", http.StatusBadRequest)
+				return
+			}
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid id", http.StatusBadRequest)
+				return
+			}
+			if err := store.DeleteVersion(ctx, id); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "version deleted"})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 }
 
@@ -669,6 +730,101 @@ func HandleAPICronJobModify(hub *WsHub) http.HandlerFunc {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+	})
+}
+
+func HandleAPISIPAccounts(hub *WsHub) http.HandlerFunc {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
+		switch r.Method {
+		case http.MethodGet:
+			accounts, err := store.ListSIPAccounts(ctx)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			// Shield passwords from API response
+			responseAccounts := make([]map[string]any, len(accounts))
+			for i, acc := range accounts {
+				hasPassword := acc.Password != ""
+				responseAccounts[i] = map[string]any{
+					"name":         acc.Name,
+					"sip_uri":      acc.SIPURI,
+					"uri_params":   acc.URIParams,
+					"addr_params":  acc.AddrParams,
+					"has_password": hasPassword,
+					"created_at":   acc.CreatedAt,
+					"updated_at":   acc.UpdatedAt,
+				}
+			}
+			jsonResponse(w, http.StatusOK, map[string]any{
+				"status": "finished",
+				"items":  responseAccounts,
+			})
+		case http.MethodPost:
+			var req struct {
+				OldName    string `json:"old_name"`
+				Name       string `json:"name"`
+				SIPURI     string `json:"sip_uri"`
+				Password   string `json:"password"`
+				URIParams  string `json:"uri_params"`
+				AddrParams string `json:"addr_params"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON", http.StatusBadRequest)
+				return
+			}
+			name := strings.TrimSpace(req.Name)
+			if name == "" {
+				http.Error(w, "name required", http.StatusBadRequest)
+				return
+			}
+			if !isSafeAlias(name) {
+				http.Error(w, "invalid account name (only alphanumeric, underscores, and dashes allowed)", http.StatusBadRequest)
+				return
+			}
+			sipURI := strings.TrimSpace(req.SIPURI)
+			if sipURI == "" {
+				http.Error(w, "sip_uri required", http.StatusBadRequest)
+				return
+			}
+
+			password := req.Password
+			oldName := strings.TrimSpace(req.OldName)
+			if password == "" && oldName != "" {
+				if existing, err := store.GetSIPAccount(ctx, oldName); err == nil {
+					password = existing.Password
+				}
+			}
+
+			err := store.SaveSIPAccount(ctx, req.OldName, name, sipURI, password, req.URIParams, req.AddrParams)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: fmt.Sprintf("account %s saved", name)})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func HandleAPISIPAccountDelete(hub *WsHub) http.HandlerFunc {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "name parameter required", http.StatusBadRequest)
+			return
+		}
+		if err := store.DeleteSIPAccount(ctx, name); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "account deleted"})
 	})
 }
 

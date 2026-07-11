@@ -67,6 +67,7 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/testfiles", AuthMiddleware(HandleAPITestfiles(hub)))
 	mux.HandleFunc("/api/testfile", AuthMiddleware(HandleAPITestfile(hub)))
 	mux.HandleFunc("/api/testfile/rename", AuthMiddleware(HandleAPITestfileRename(hub)))
+	mux.HandleFunc("/api/testfile/versions", AuthMiddleware(HandleAPITestfileVersions(hub)))
 	mux.HandleFunc("/api/testfiles/clone", AuthMiddleware(HandleAPITestfileClone(hub)))
 	mux.HandleFunc("/api/testruns", AuthMiddleware(HandleAPITestruns(hub)))
 	mux.HandleFunc("/api/testrun", AuthMiddleware(HandleAPITestrun(hub)))
@@ -77,6 +78,8 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UIAPIKey))
 	mux.HandleFunc("/api/cron", AuthMiddleware(HandleAPICronJobs(hub)))
 	mux.HandleFunc("/api/cron/modify", AuthMiddleware(HandleAPICronJobModify(hub)))
+	mux.HandleFunc("/api/accounts", AuthMiddleware(HandleAPISIPAccounts(hub)))
+	mux.HandleFunc("/api/accounts/delete", AuthMiddleware(HandleAPISIPAccountDelete(hub)))
 	mux.HandleFunc("/", AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		StaticHandler().ServeHTTP(w, r)
 	}))

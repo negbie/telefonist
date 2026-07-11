@@ -13,7 +13,7 @@ _define GREETING MSG, USER_EMAIL
 
 case1: USER says GREETING
 `
-	cases, _, _, _, _, _, _, err := parseTestfile(content)
+	cases, _, _, _, _, _, _, err := parseTestfile(content, nil)
 	if err != nil {
 		t.Fatalf("parseTestfile failed: %v", err)
 	}
@@ -56,8 +56,8 @@ func TestParseTestfileIsolation(t *testing.T) {
 X`
 	content2 := `X`
 
-	cases1, _, _, _, _, _, _, _ := parseTestfile(content1)
-	cases2, _, _, _, _, _, _, _ := parseTestfile(content2)
+	cases1, _, _, _, _, _, _, _ := parseTestfile(content1, nil)
+	cases2, _, _, _, _, _, _, _ := parseTestfile(content2, nil)
 
 	if len(cases1) == 0 || cases1[0].sequence != "1" {
 		t.Errorf("content1 expected 1, got %v", cases1)
@@ -68,7 +68,7 @@ X`
 
 	content3 := `_define ua1 sip:test1@host
 ua1:dial 123`
-	cases3, _, _, _, _, _, _, _ := parseTestfile(content3)
+	cases3, _, _, _, _, _, _, _ := parseTestfile(content3, nil)
 	if len(cases3) == 0 || cases3[0].sequence != "sip:test1@host:dial 123" {
 		t.Errorf("content3 expected sequence='sip:test1@host:dial 123', got sequence=%q", cases3[0].sequence)
 	}
@@ -80,7 +80,7 @@ _define FOO 1
 _define FOOBAR 2
 FOOBAR
 `
-	cases, _, _, _, _, _, _, _ := parseTestfile(content)
+	cases, _, _, _, _, _, _, _ := parseTestfile(content, nil)
 	if len(cases) == 0 || cases[0].sequence != "2" {
 		t.Errorf("Expected 2, got %v (sorting failure)", cases)
 	}
@@ -91,7 +91,7 @@ func TestParseTestfileAccept(t *testing.T) {
 _accept CALL_MENC, CALL_LOCAL_SDP
 case1: dial 123
 `
-	_, _, _, _, _, acceptedEvents, _, err := parseTestfile(content)
+	_, _, _, _, _, acceptedEvents, _, err := parseTestfile(content, nil)
 	if err != nil {
 		t.Fatalf("parseTestfile failed: %v", err)
 	}
@@ -102,5 +102,82 @@ case1: dial 123
 
 	if acceptedEvents[0] != "CALL_MENC" || acceptedEvents[1] != "CALL_LOCAL_SDP" {
 		t.Errorf("expected [CALL_MENC, CALL_LOCAL_SDP], got %v", acceptedEvents)
+	}
+}
+
+func TestParseTestfileCentralizedAccounts(t *testing.T) {
+	accounts := []SIPAccount{
+		{
+			Name:       "alice",
+			SIPURI:     "sip:alice@sip.domain.com",
+			Password:   "alicepassword",
+			URIParams:  ";transport=tls",
+			AddrParams: ";mediaenc=srtp-mand;input_wav=alice.wav",
+		},
+		{
+			Name:       "ua1",
+			SIPURI:     "sip:+123456@sip.domain.com",
+			Password:   "trunkpassword",
+			URIParams:  ";transport=tls",
+			AddrParams: "",
+		},
+	}
+
+	// Test 1: Friendly name replacement (one bracketless, one bracketed)
+	content1 := `
+uanew alice
+uanew <ua1>;input_wav=bob.wav
+alice:dial ua1
+`
+	cases1, _, _, _, _, _, _, err := parseTestfile(content1, accounts)
+	if err != nil {
+		t.Fatalf("parseTestfile content1 failed: %v", err)
+	}
+
+	if len(cases1) != 3 {
+		t.Fatalf("expected 3 cases, got %d", len(cases1))
+	}
+
+	expectedSeq1 := "uanew <sip:alice@sip.domain.com;transport=tls>;auth_pass=alicepassword;mediaenc=srtp-mand;input_wav=alice.wav"
+	if cases1[0].sequence != expectedSeq1 {
+		t.Errorf("expected sequence 1 %q, got %q", expectedSeq1, cases1[0].sequence)
+	}
+
+	expectedSeq2 := "uanew <sip:+123456@sip.domain.com;transport=tls>;auth_pass=trunkpassword;input_wav=bob.wav"
+	if cases1[1].sequence != expectedSeq2 {
+		t.Errorf("expected sequence 2 %q, got %q", expectedSeq2, cases1[1].sequence)
+	}
+
+	expectedSeq3 := "sip:alice@sip.domain.com;transport=tls:dial sip:+123456@sip.domain.com;transport=tls"
+	if cases1[2].sequence != expectedSeq3 {
+		t.Errorf("expected sequence 3 %q, got %q", expectedSeq3, cases1[2].sequence)
+	}
+
+	// Test 2: SIP URI replacement with missing password
+	content2 := `
+uanew <sip:alice@sip.domain.com;transport=tls>
+`
+	cases2, _, _, _, _, _, _, _ := parseTestfile(content2, accounts)
+	if len(cases2) != 1 {
+		t.Fatalf("expected 1 case, got %d", len(cases2))
+	}
+
+	expectedSeq4 := "uanew <sip:alice@sip.domain.com;transport=tls>;auth_pass=alicepassword;mediaenc=srtp-mand;input_wav=alice.wav"
+	if cases2[0].sequence != expectedSeq4 {
+		t.Errorf("expected sequence 4 %q, got %q", expectedSeq4, cases2[0].sequence)
+	}
+
+	// Test 3: Bracketless alias name with trailing custom parameter
+	content3 := `
+uanew alice;audio_codecs=opus
+`
+	cases3, _, _, _, _, _, _, _ := parseTestfile(content3, accounts)
+	if len(cases3) != 1 {
+		t.Fatalf("expected 1 case, got %d", len(cases3))
+	}
+
+	expectedSeq5 := "uanew <sip:alice@sip.domain.com;transport=tls>;auth_pass=alicepassword;mediaenc=srtp-mand;input_wav=alice.wav;audio_codecs=opus"
+	if cases3[0].sequence != expectedSeq5 {
+		t.Errorf("expected sequence 5 %q, got %q", expectedSeq5, cases3[0].sequence)
 	}
 }

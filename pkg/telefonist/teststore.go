@@ -60,6 +60,18 @@ type CronJobRow struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// SIPAccount is a centralized SIP account containing credentials.
+type SIPAccount struct {
+	Name       string    `json:"name"`
+	SIPURI     string    `json:"sip_uri"`
+	Password   string    `json:"password"`
+	URIParams  string    `json:"uri_params"`
+	AddrParams string    `json:"addr_params"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+
 // OpenTestStore opens (and initializes) the SQLite database at <dataDir>/telefonist_tests.db.
 func OpenTestStore(ctx context.Context, dataDir string) (*TestStore, error) {
 	if dataDir == "" {
@@ -220,13 +232,56 @@ CREATE INDEX IF NOT EXISTS idx_testrun_wavs_testrun_id ON testrun_wavs(testrun_i
 CREATE TABLE IF NOT EXISTS cronjobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project TEXT NOT NULL,
-  testfile TEXT NOT NULL DEFAULT '',
-  cron_expr TEXT NOT NULL,
-  active BOOLEAN NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL
+	testfile TEXT NOT NULL DEFAULT '',
+	cron_expr TEXT NOT NULL,
+	active BOOLEAN NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL
 );
-`); err != nil {
+	`); err != nil {
 		return fmt.Errorf("create cronjobs table: %w", err)
+	}
+
+	// 7. Create sip_accounts table
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS sip_accounts (
+  name TEXT PRIMARY KEY,
+  sip_uri TEXT NOT NULL,
+  password TEXT NOT NULL,
+  uri_params TEXT NOT NULL DEFAULT '',
+  addr_params TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);`); err != nil {
+		return fmt.Errorf("create sip_accounts table: %w", err)
+	}
+
+	// 8. Migration: Alter sip_accounts to add uri_params and addr_params columns if missing
+	var saSchema string
+	err = db.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type='table' AND name='sip_accounts'").Scan(&saSchema)
+	if err == nil {
+		saSchemaLower := strings.ToLower(saSchema)
+		if !strings.Contains(saSchemaLower, "uri_params") {
+			if _, err := db.ExecContext(ctx, "ALTER TABLE sip_accounts ADD COLUMN uri_params TEXT NOT NULL DEFAULT '';"); err != nil {
+				return fmt.Errorf("alter sip_accounts table add uri_params: %w", err)
+			}
+		}
+		if !strings.Contains(saSchemaLower, "addr_params") {
+			if _, err := db.ExecContext(ctx, "ALTER TABLE sip_accounts ADD COLUMN addr_params TEXT NOT NULL DEFAULT '';"); err != nil {
+				return fmt.Errorf("alter sip_accounts table add addr_params: %w", err)
+			}
+		}
+	}
+
+	// 9. Create testfile_versions table
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS testfile_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  project_name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);`); err != nil {
+		return fmt.Errorf("create testfile_versions table: %w", err)
 	}
 
 	return nil
@@ -256,7 +311,7 @@ func validateProjectName(name string) error {
 	return nil
 }
 
-// Save upserts a testfile by name. Content is stored verbatim as provided.
+// Save upserts a testfile by name and stores a new version if changed.
 func (s *TestStore) Save(ctx context.Context, name, projectName, content string) error {
 	if s == nil || s.db == nil {
 		return errors.New("test store is not initialized")
@@ -272,8 +327,29 @@ func (s *TestStore) Save(ctx context.Context, name, projectName, content string)
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
+	// Check if content has changed from the latest version to prevent redundant entries
+	var lastContent string
+	err := s.db.QueryRowContext(ctx, `
+SELECT content FROM testfile_versions 
+WHERE name = ? AND project_name = ? 
+ORDER BY id DESC LIMIT 1;
+`, name, projectName).Scan(&lastContent)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("failed to query last testfile version: %v", err)
+	}
+
+	if err != nil || lastContent != content {
+		_, err = s.db.ExecContext(ctx, `
+INSERT INTO testfile_versions(name, project_name, content, created_at)
+VALUES(?, ?, ?, ?);
+`, name, projectName, content, now)
+		if err != nil {
+			log.Printf("failed to save testfile version history: %v", err)
+		}
+	}
+
 	// SQLite UPSERT.
-	_, err := s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 INSERT INTO testfiles(name, project_name, content, created_at, updated_at)
 VALUES(?, ?, ?, ?, ?)
 ON CONFLICT(name, project_name) DO UPDATE SET
@@ -322,6 +398,61 @@ WHERE name = ? AND project_name = ?;
 	}
 
 	return r, nil
+}
+
+type TestfileVersionRow struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	ProjectName string    `json:"project_name"`
+	Content     string    `json:"content"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ListVersions returns all stored versions for a testfile by name and project.
+func (s *TestStore) ListVersions(ctx context.Context, name, projectName string) ([]TestfileVersionRow, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("test store is not initialized")
+	}
+	if err := validateTestfileName(name); err != nil {
+		return nil, err
+	}
+	if err := validateProjectName(projectName); err != nil {
+		return nil, err
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, name, project_name, content, created_at
+FROM testfile_versions
+WHERE name = ? AND project_name = ?
+ORDER BY id DESC;
+`, name, projectName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []TestfileVersionRow
+	for rows.Next() {
+		var r TestfileVersionRow
+		var created string
+		if err := rows.Scan(&r.ID, &r.Name, &r.ProjectName, &r.Content, &created); err != nil {
+			return nil, err
+		}
+		if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			log.Printf("failed to parse testfile version created_at: %v", err)
+		}
+		list = append(list, r)
+	}
+	return list, nil
+}
+
+// DeleteVersion deletes a specific testfile version by ID.
+func (s *TestStore) DeleteVersion(ctx context.Context, id int64) error {
+	if s == nil || s.db == nil {
+		return errors.New("test store is not initialized")
+	}
+	_, err := s.db.ExecContext(ctx, "DELETE FROM testfile_versions WHERE id = ?;", id)
+	return err
 }
 
 // Delete removes a stored testfile by name and project and its associated WAV files.
@@ -555,6 +686,167 @@ func (s *TestStore) ToggleCronJob(ctx context.Context, id int, active bool) erro
 		return fmt.Errorf("cronjob %d not found", id)
 	}
 	return nil
+}
+
+// SaveSIPAccount inserts or updates a SIP account, supporting renaming.
+func (s *TestStore) SaveSIPAccount(ctx context.Context, oldName, name, sipURI, password, uriParams, addrParams string) error {
+	if s == nil || s.db == nil {
+		return errors.New("test store is not initialized")
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("account name is required")
+	}
+	sipURI = strings.TrimSpace(sipURI)
+	if sipURI == "" {
+		return errors.New("SIP URI is required")
+	}
+
+	uriParams = normalizeParamString(uriParams)
+	addrParams = normalizeParamString(addrParams)
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Handle renaming or creation checks
+	oldName = strings.TrimSpace(oldName)
+	if oldName == "" {
+		var exists bool
+		err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sip_accounts WHERE name = ?);", name).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("check duplicate name: %w", err)
+		}
+		if exists {
+			return fmt.Errorf("an account named %q already exists", name)
+		}
+	} else if oldName != name {
+		var exists bool
+		err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sip_accounts WHERE name = ?);", name).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("check rename conflict: %w", err)
+		}
+		if exists {
+			return fmt.Errorf("an account named %q already exists", name)
+		}
+
+		_, err = s.db.ExecContext(ctx, `
+UPDATE sip_accounts 
+SET name = ?, sip_uri = ?, password = ?, uri_params = ?, addr_params = ?, updated_at = ? 
+WHERE name = ?;`, name, sipURI, password, uriParams, addrParams, now, oldName)
+		if err != nil {
+			return fmt.Errorf("rename SIP account: %w", err)
+		}
+		return nil
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO sip_accounts(name, sip_uri, password, uri_params, addr_params, created_at, updated_at)
+VALUES(?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(name) DO UPDATE SET
+  sip_uri = excluded.sip_uri,
+  password = excluded.password,
+  uri_params = excluded.uri_params,
+  addr_params = excluded.addr_params,
+  updated_at = excluded.updated_at;
+`, name, sipURI, password, uriParams, addrParams, now, now)
+	if err != nil {
+		return fmt.Errorf("save SIP account: %w", err)
+	}
+	return nil
+}
+
+func normalizeParamString(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	for strings.Contains(p, ";;") {
+		p = strings.ReplaceAll(p, ";;", ";")
+	}
+	if !strings.HasPrefix(p, ";") {
+		p = ";" + p
+	}
+	p = strings.TrimRight(p, "; ")
+	return p
+}
+
+// DeleteSIPAccount removes a SIP account by name.
+func (s *TestStore) DeleteSIPAccount(ctx context.Context, name string) error {
+	if s == nil || s.db == nil {
+		return errors.New("test store is not initialized")
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM sip_accounts WHERE name = ?;`, name)
+	if err != nil {
+		return fmt.Errorf("delete SIP account: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("SIP account %q not found", name)
+	}
+	return nil
+}
+
+// ListSIPAccounts returns all stored SIP accounts.
+func (s *TestStore) ListSIPAccounts(ctx context.Context) ([]SIPAccount, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("test store is not initialized")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT name, sip_uri, password, uri_params, addr_params, created_at, updated_at
+FROM sip_accounts
+ORDER BY name ASC;
+`)
+	if err != nil {
+		return nil, fmt.Errorf("list SIP accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var out []SIPAccount
+	for rows.Next() {
+		var a SIPAccount
+		var created, updated string
+		if err := rows.Scan(&a.Name, &a.SIPURI, &a.Password, &a.URIParams, &a.AddrParams, &created, &updated); err != nil {
+			return nil, fmt.Errorf("scan SIP account row: %w", err)
+		}
+		if a.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			log.Printf("failed to parse SIP account created_at %q: %v", created, err)
+		}
+		if a.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated); err != nil {
+			log.Printf("failed to parse SIP account updated_at %q: %v", updated, err)
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list SIP accounts rows: %w", err)
+	}
+	return out, nil
+}
+
+// GetSIPAccount retrieves a single SIP account by name.
+func (s *TestStore) GetSIPAccount(ctx context.Context, name string) (*SIPAccount, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("test store is not initialized")
+	}
+
+	var a SIPAccount
+	var created, updated string
+	err := s.db.QueryRowContext(ctx, `
+SELECT name, sip_uri, password, uri_params, addr_params, created_at, updated_at
+FROM sip_accounts
+WHERE name = ?;
+`, name).Scan(&a.Name, &a.SIPURI, &a.Password, &a.URIParams, &a.AddrParams, &created, &updated)
+	if err != nil {
+		return nil, err
+	}
+
+	if a.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+		log.Printf("failed to parse SIP account created_at %q: %v", created, err)
+	}
+	if a.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated); err != nil {
+		log.Printf("failed to parse SIP account updated_at %q: %v", updated, err)
+	}
+	return &a, nil
 }
 
 // SaveRun stores an executed test run into the database and returns the new run ID.
