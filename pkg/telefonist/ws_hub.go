@@ -279,6 +279,7 @@ func (h *WsHub) Run() {
 
 			case m.Response != nil:
 				r := *m.Response
+				r.Data = SanitizeString(r.Data)
 
 				if h.onResponse != nil {
 					h.onResponse(r)
@@ -295,6 +296,9 @@ func (h *WsHub) Run() {
 				h.recordAndBroadcast(enriched)
 
 			case m.Log != "":
+				if strings.Contains(strings.ToLower(m.Log), "auth_pass") {
+					continue
+				}
 				mLog := map[string]interface{}{
 					"event":  true,
 					"type":   "LOG",
@@ -435,6 +439,7 @@ func (h *WsHub) BroadcastCommandHint(cmd string, agent string) {
 		return
 	}
 
+	cmd = SanitizeString(cmd)
 	display := cmd
 	if len(cmd) > 30 {
 		display = cmd[:30] + "..."

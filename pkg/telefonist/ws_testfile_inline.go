@@ -542,10 +542,7 @@ func resolveAccountsInSequence(sequence string, accounts []SIPAccount) string {
 				if idx != -1 {
 					aorPart = rest[:idx+1]
 					if idx+1 < len(rest) {
-						paramPart = rest[idx+1:]
-						if strings.HasPrefix(paramPart, ";") {
-							paramPart = paramPart[1:]
-						}
+						paramPart = strings.TrimPrefix(rest[idx+1:], ";")
 					}
 				}
 			} else {
@@ -608,12 +605,6 @@ func resolveAccountsInSequence(sequence string, accounts []SIPAccount) string {
 		placeholder := "<" + acc.Name + ">"
 		if strings.Contains(sequence, placeholder) {
 			replacement := "<" + acc.SIPURI + normalizeParam(acc.URIParams) + ">"
-			if acc.Password != "" {
-				replacement += ";auth_pass=" + acc.Password
-			}
-			if acc.AddrParams != "" {
-				replacement += normalizeParam(acc.AddrParams)
-			}
 			sequence = strings.ReplaceAll(sequence, placeholder, replacement)
 		}
 	}
@@ -656,4 +647,3 @@ func normalizeParam(p string) string {
 	p = strings.TrimRight(p, "; ")
 	return p
 }
-

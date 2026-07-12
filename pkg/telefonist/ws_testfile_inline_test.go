@@ -128,14 +128,15 @@ func TestParseTestfileCentralizedAccounts(t *testing.T) {
 uanew alice
 uanew <ua1>;input_wav=bob.wav
 alice:dial ua1
+alice:addcontact "drei" <ua1>;presence=p2p
 `
 	cases1, _, _, _, _, _, _, err := parseTestfile(content1, accounts)
 	if err != nil {
 		t.Fatalf("parseTestfile content1 failed: %v", err)
 	}
 
-	if len(cases1) != 3 {
-		t.Fatalf("expected 3 cases, got %d", len(cases1))
+	if len(cases1) != 4 {
+		t.Fatalf("expected 4 cases, got %d", len(cases1))
 	}
 
 	expectedSeq1 := "uanew <sip:alice@sip.domain.com;transport=tls>;auth_pass=alicepassword;mediaenc=srtp-mand;input_wav=alice.wav"
@@ -151,6 +152,11 @@ alice:dial ua1
 	expectedSeq3 := "sip:alice@sip.domain.com;transport=tls:dial sip:+123456@sip.domain.com;transport=tls"
 	if cases1[2].sequence != expectedSeq3 {
 		t.Errorf("expected sequence 3 %q, got %q", expectedSeq3, cases1[2].sequence)
+	}
+
+	expectedSeq3b := "sip:alice@sip.domain.com;transport=tls:addcontact \"drei\" <sip:+123456@sip.domain.com;transport=tls>;presence=p2p"
+	if cases1[3].sequence != expectedSeq3b {
+		t.Errorf("expected sequence 4 %q, got %q", expectedSeq3b, cases1[3].sequence)
 	}
 
 	// Test 2: SIP URI replacement with missing password
@@ -179,5 +185,45 @@ uanew alice;audio_codecs=opus
 	expectedSeq5 := "uanew <sip:alice@sip.domain.com;transport=tls>;auth_pass=alicepassword;mediaenc=srtp-mand;input_wav=alice.wav;audio_codecs=opus"
 	if cases3[0].sequence != expectedSeq5 {
 		t.Errorf("expected sequence 5 %q, got %q", expectedSeq5, cases3[0].sequence)
+	}
+}
+
+func TestSanitization(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			input:    "uanew <sip:alice@sip.domain.com;transport=tls>;auth_pass=alicepassword;mediaenc=srtp-mand",
+			expected: "uanew <sip:alice@sip.domain.com;transport=tls>;auth_pass=******;mediaenc=srtp-mand",
+		},
+		{
+			input:    "auth_pass=secret",
+			expected: "auth_pass=******",
+		},
+		{
+			input:    "auth_pass=secret;transport=tls",
+			expected: "auth_pass=******;transport=tls",
+		},
+		{
+			input:    `{"param":"CMD: uanew <sip:a@b>;auth_pass=secret"}`,
+			expected: `{"param":"CMD: uanew <sip:a@b>;auth_pass=******"}`,
+		},
+		{
+			input:    "no auth_pass here",
+			expected: "no auth_pass here",
+		},
+	}
+
+	for _, tt := range tests {
+		got := SanitizeString(tt.input)
+		if got != tt.expected {
+			t.Errorf("SanitizeString(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+
+		gotBytes := string(SanitizeBytes([]byte(tt.input)))
+		if gotBytes != tt.expected {
+			t.Errorf("SanitizeBytes(%q) = %q, want %q", tt.input, gotBytes, tt.expected)
+		}
 	}
 }

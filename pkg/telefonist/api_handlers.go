@@ -749,8 +749,8 @@ func HandleAPISIPAccounts(hub *WsHub) http.HandlerFunc {
 				responseAccounts[i] = map[string]any{
 					"name":         acc.Name,
 					"sip_uri":      acc.SIPURI,
-					"uri_params":   acc.URIParams,
-					"addr_params":  acc.AddrParams,
+					"uri_params":   SanitizeString(acc.URIParams),
+					"addr_params":  SanitizeString(acc.AddrParams),
 					"has_password": hasPassword,
 					"created_at":   acc.CreatedAt,
 					"updated_at":   acc.UpdatedAt,

@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const Version = "0.8.4"
+const Version = "0.8.5"
 
 // AppFlags mirrors the CLI flags for the telefonist process.
 type AppFlags struct {

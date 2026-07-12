@@ -58,3 +58,21 @@ func ExtractAlias(s string) string {
 
 	return s
 }
+
+var authPassRegexp = regexp.MustCompile(`(?i)(auth_pass=)([^; \r\n\t"\\]*)`)
+
+// SanitizeString masks sensitive values like auth_pass in a string.
+func SanitizeString(s string) string {
+	if s == "" {
+		return ""
+	}
+	return authPassRegexp.ReplaceAllString(s, "${1}******")
+}
+
+// SanitizeBytes masks sensitive values like auth_pass in a byte slice.
+func SanitizeBytes(b []byte) []byte {
+	if len(b) == 0 {
+		return b
+	}
+	return authPassRegexp.ReplaceAll(b, []byte("${1}******"))
+}
