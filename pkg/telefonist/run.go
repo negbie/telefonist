@@ -80,6 +80,8 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/cron/modify", AuthMiddleware(HandleAPICronJobModify(hub)))
 	mux.HandleFunc("/api/accounts", AuthMiddleware(HandleAPISIPAccounts(hub)))
 	mux.HandleFunc("/api/accounts/delete", AuthMiddleware(HandleAPISIPAccountDelete(hub)))
+	mux.HandleFunc("/api/webhooks", AuthMiddleware(HandleAPIWebhooks(hub)))
+	mux.HandleFunc("/api/webhooks/delete", AuthMiddleware(HandleAPIWebhookDelete(hub)))
 	mux.HandleFunc("/", AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		StaticHandler().ServeHTTP(w, r)
 	}))

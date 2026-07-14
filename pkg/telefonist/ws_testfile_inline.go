@@ -307,11 +307,22 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 		broadcastInfo(h, string(b))
 
 		if webhookURL != "" {
-			go func() {
-				if err := sendResultWebhook(webhookURL, fileName, projectName, actualHash, status, runID); err != nil {
-					log.Printf("failed to send result webhook: %v", err)
+			actualURL := webhookURL
+			enabled := true
+			if h.testStore != nil {
+				wh, err := h.testStore.GetWebhook(ctx, webhookURL)
+				if err == nil {
+					actualURL = wh.URL
+					enabled = wh.Enabled
 				}
-			}()
+			}
+			if enabled && actualURL != "" {
+				go func(url string) {
+					if err := sendResultWebhook(url, fileName, projectName, actualHash, status, runID); err != nil {
+						log.Printf("failed to send result webhook: %v", err)
+					}
+				}(actualURL)
+			}
 		}
 
 		log.Printf("--- Finished: %s [%s] --- Project: %s, Hash: %s, Run: %d", fileName, status, projectName, actualHash, runID)

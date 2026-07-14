@@ -10,18 +10,17 @@
     font-size: 0.8rem;
 }
 
-[data-bottom-mode="accounts"] #accounts-panel {
-    display: flex;
+[data-bottom-mode="settings"] #accounts-panel {
+    /* display is handled by JS inline style */
 }
 
-[data-bottom-mode="accounts"] #testfile-panel,
-[data-bottom-mode="accounts"] #compare-panel,
-[data-bottom-mode="accounts"] #cron-panel,
-[data-bottom-mode="accounts"] .controls-main {
+[data-bottom-mode="settings"] #testfile-panel,
+[data-bottom-mode="settings"] #compare-panel,
+[data-bottom-mode="settings"] #cron-panel {
     display: none;
 }
 
-#btn-mode-accounts.active {
+#btn-mode-settings.active {
     background-color: #e5e7eb !important;
     border-color: #9ca3af !important;
     color: #000 !important;

@@ -432,3 +432,68 @@ func TestStore_VersionControl(t *testing.T) {
 		t.Errorf("Expected second element in list to be 'first version content', got %q", versions[1].Content)
 	}
 }
+
+func TestStore_Webhooks(t *testing.T) {
+	ctx := context.Background()
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	// 1. Save new webhook
+	err := s.SaveWebhook(ctx, "", "slack", "https://hooks.slack.com/1", true)
+	if err != nil {
+		t.Fatalf("SaveWebhook new failed: %v", err)
+	}
+
+	// 2. Fetch it
+	wh, err := s.GetWebhook(ctx, "slack")
+	if err != nil {
+		t.Fatalf("GetWebhook failed: %v", err)
+	}
+	if wh.Alias != "slack" || wh.URL != "https://hooks.slack.com/1" || !wh.Enabled {
+		t.Errorf("Unexpected webhook properties: %+v", wh)
+	}
+
+	// 3. Rename webhook
+	err = s.SaveWebhook(ctx, "slack", "slack-renamed", "https://hooks.slack.com/2", false)
+	if err != nil {
+		t.Fatalf("SaveWebhook rename failed: %v", err)
+	}
+
+	// 4. Verify old is gone and new is here
+	_, err = s.GetWebhook(ctx, "slack")
+	if err == nil {
+		t.Fatal("Expected error fetching deleted old alias 'slack', but got nil")
+	}
+
+	whRenamed, err := s.GetWebhook(ctx, "slack-renamed")
+	if err != nil {
+		t.Fatalf("GetWebhook renamed failed: %v", err)
+	}
+	if whRenamed.Alias != "slack-renamed" || whRenamed.URL != "https://hooks.slack.com/2" || whRenamed.Enabled {
+		t.Errorf("Unexpected renamed properties: %+v", whRenamed)
+	}
+
+	// 5. List webhooks
+	list, err := s.ListWebhooks(ctx)
+	if err != nil {
+		t.Fatalf("ListWebhooks failed: %v", err)
+	}
+	if len(list) != 1 {
+		t.Errorf("Expected exactly 1 webhook, got %d", len(list))
+	}
+
+	// 6. Delete webhook
+	err = s.DeleteWebhook(ctx, "slack-renamed")
+	if err != nil {
+		t.Fatalf("DeleteWebhook failed: %v", err)
+	}
+
+	// 7. Verify deletion
+	list2, err := s.ListWebhooks(ctx)
+	if err != nil {
+		t.Fatalf("ListWebhooks after delete failed: %v", err)
+	}
+	if len(list2) != 0 {
+		t.Errorf("Expected 0 webhooks after deletion, got %d", len(list2))
+	}
+}

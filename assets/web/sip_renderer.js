@@ -50,15 +50,24 @@ export function generateSipLadderHTML(j, msgCount) {
     }
 
     var isResponse = rest.startsWith("SIP/2.0");
-    var methodColor = isResponse
-      ? rest.includes(" 200")
-        ? "#16a34a"
-        : rest.includes(" 100") ||
-            rest.includes(" 180") ||
-            rest.includes(" 183")
-          ? "#0284c7"
-          : "#dc2626"
-      : "#000";
+    var statusCode = 0;
+    if (isResponse) {
+      var firstLine = rest.split("\n")[0];
+      var match = firstLine.match(/^SIP\/2\.0\s+(\d+)/);
+      if (match) {
+        statusCode = parseInt(match[1], 10);
+      }
+    }
+    var methodColor = "#000";
+    if (isResponse) {
+      if (statusCode >= 200 && statusCode < 300) {
+        methodColor = "#16a34a"; // Green
+      } else if (statusCode >= 100 && statusCode < 200) {
+        methodColor = "#0284c7"; // Blue
+      } else if (statusCode >= 300) {
+        methodColor = "#dc2626"; // Red
+      }
+    }
 
     var headClass = dir === "TX" ? "sip-arrow-head-tx" : "sip-arrow-head-rx";
     var localNodeHtml = dir === "TX" ? src : dst;
@@ -144,15 +153,24 @@ export function renderSipEvent(j, elements, getOptions) {
     }
 
     var isResponse = rest.startsWith("SIP/2.0");
-    var methodColor = isResponse
-      ? rest.includes(" 200")
-        ? "#16a34a"
-        : rest.includes(" 100") ||
-            rest.includes(" 180") ||
-            rest.includes(" 183")
-          ? "#0284c7"
-          : "#dc2626"
-      : "#000";
+    var statusCode = 0;
+    if (isResponse) {
+      var firstLine = rest.split("\n")[0];
+      var match = firstLine.match(/^SIP\/2\.0\s+(\d+)/);
+      if (match) {
+        statusCode = parseInt(match[1], 10);
+      }
+    }
+    var methodColor = "#000";
+    if (isResponse) {
+      if (statusCode >= 200 && statusCode < 300) {
+        methodColor = "#16a34a"; // Green
+      } else if (statusCode >= 100 && statusCode < 200) {
+        methodColor = "#0284c7"; // Blue
+      } else if (statusCode >= 300) {
+        methodColor = "#dc2626"; // Red
+      }
+    }
 
     var header = document.createElement("div");
     header.className = "sip-ladder-header";

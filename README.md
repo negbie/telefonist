@@ -123,7 +123,7 @@ You can manage Cron Jobs directly in the web UI using the **⏱️ Cron Tool** o
 To prevent storing sensitive SIP credentials (like passwords) inside plaintext test scripts, Telefonist provides a secure **Centralized Accounts Manager**.
 
 You can manage accounts directly in the web UI using the **👤 Accounts** button on the sidebar:
-- **Name / Alias**: A unique identifier for the account (e.g. `alice` or `ua1`).
+- **Alias**: A unique identifier for the account (e.g. `alice` or `ua1`).
 - **SIP URI**: The base SIP address of the user (e.g. `sip:alice@sip.domain.com` or `sip:+1234567890@sip.domain.com`).
 - **Password**: The SIP authentication password. This is securely stored in SQLite and completely masked/shielded from GET API calls to prevent credential extraction.
 - **URI Parameters (uri-params)**: Semicolon-separated transport parameters that reside inside baresip's AOR brackets (e.g., `;transport=tls`).
@@ -158,7 +158,7 @@ Testfiles are line-based and support the following syntax:
 
 - **Comments**: Lines starting with `#` are ignored.
 - **Commands**: Each line defines a test case: `command1 | duration | command2`
-  - Example: `dial sip:user@host | 5s | hangup`
+  - Example: `dial ua1 | 5s | hangup`
 - **Chaining**: Use `|` to separate multiple commands or to insert delays.
 - **Durations**: Use `10s`, `500ms`, `2m`, etc., to wait between steps.
 - **Agent Targeting**: Prefix a command with an agent alias followed by a colon to target a specific agent.
@@ -189,15 +189,11 @@ Testfiles are line-based and support the following syntax:
 
    ```bash
    _hash Actual_hash
-   _define ua1 sip:alice@192.168.1.100
-   _define ua2 sip:bob@192.168.1.100
-   _define ua3 sip:charlie@192.168.1.100
-   _accept CALL_RINGING, CALL_ESTABLISHED, CALL_RTPESTAB, CALL_CLOSED, AUDIO_REPORT
    _run 1
 
-   uanew <ua1;transport=udp>;auth_pass=secret1;input_wav=alice.wav
-   uanew <ua2;transport=udp>;auth_pass=secret2;input_wav=bob.wav
-   uanew <ua3;transport=udp>;auth_pass=secret3;input_wav=charlie.wav
+   uanew ua1
+   uanew ua2
+   uanew ua3
 
    # Attended Transfer 
    ua1:dial ua2|2s|ua2:accept|6s
@@ -210,10 +206,8 @@ Testfiles are line-based and support the following syntax:
    - `_hash`: A unique identifier (checksum) representing the expected sequence of events. If the run matches this hash, the test passes.
      > [!TIP]
      > For your first run, leave `_hash` empty. The final test result will reveal the actual hash, which you can then copy into your testfile for future validation.
-   - `_accept`: A comma-separated list of events to accept for the hash calculation (e.g., `CALL_RINGING`, `CALL_ESTABLISHED`).
-   - `_define`: Creates reusable macros for SIP URIs or other configuration strings.
      > [!TIP]
-     > You can replace all `_define` directives and long inline parameters by storing your accounts in the **Centralized Accounts Manager** (👤 tab) and referencing them simply as `uanew ua1`, `uanew ua2`, etc.
+     > You can create your accounts in the **Centralized Accounts Manager** (👤 tab) and referencing them simply as `uanew ua1`, `uanew ua2`, etc.
    - `_run`: Specifies how many times to repeat the entire sequence.
 
 4. **Execution**: Click **Run**. Once finished, the UI will display the PASS/FAIL status along with the generated hash.

@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="/highlight.css" />
     <link rel="stylesheet" href="/cron.css" />
     <link rel="stylesheet" href="/accounts.css" />
+    <link rel="stylesheet" href="/settings.css" />
+    <link rel="stylesheet" href="/webhooks.css" />
     <link rel="stylesheet" href="/history.css" />
     <script type="module" src="/app.js"></script>
 
@@ -86,7 +88,7 @@
                         <button type="button" id="btn-mode-tests" class="active" title="Tests Mode">🧪</button>
                         <button type="button" id="btn-mode-compare" title="Compare Mode">⚖️</button>
                         <button type="button" id="btn-mode-cron" title="Cron Mode">⏱</button>
-                        <button type="button" id="btn-mode-accounts" title="Accounts Mode">👤</button>
+                        <button type="button" id="btn-mode-settings" title="Settings Mode">⚙️</button>
                     </div>
                     <div class="sidebar-separator"></div>
                     <div class="sidebar-group">
@@ -113,7 +115,7 @@
                     <button type="button" id="sidebar-toggle" title="Toggle Sidebar">»</button>
                 </div>
                 <div class="controls-main">
-                    <div class="testfile-actions">
+                    <div class="testfile-actions" id="testfile-actions-pane">
                         <div class="project-selector">
                             <select id="project-select">
                                 <option value="">(all projects)</option>
@@ -123,6 +125,15 @@
                         <select id="testfile-select" multiple size="5">
                             <option value="">(none)</option>
                         </select>
+                    </div>
+
+                    <div class="settings-nav" id="settings-nav-pane" style="display: none;">
+                        <ul class="settings-tree">
+                            <li class="settings-tree-item active" id="settings-nav-accounts" data-target="accounts">SIP
+                                Accounts</li>
+                            <li class="settings-tree-item" id="settings-nav-webhooks" data-target="webhooks">Webhooks
+                            </li>
+                        </ul>
                     </div>
                 </div>
             </div>
@@ -228,7 +239,7 @@
                 <table class="accounts-table">
                     <thead>
                         <tr>
-                            <th>Name / Alias</th>
+                            <th>Alias</th>
                             <th>SIP URI</th>
                             <th>Password</th>
                             <th>URI Parameters</th>
@@ -244,7 +255,7 @@
                     <div class="modal-content">
                         <h3 id="accounts-modal-title">Add SIP Account</h3>
                         <div class="modal-row">
-                            <label>Name / Alias *</label>
+                            <label>Alias *</label>
                             <input type="text" id="accounts-name" placeholder="e.g. ua1 or testtrunk">
                             <small>Alphanumeric, underscores, and dashes only.</small>
                         </div>
@@ -271,6 +282,53 @@
                         <div class="modal-actions">
                             <button type="button" id="accounts-save">Save</button>
                             <button type="button" id="accounts-cancel">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="webhooks-panel" style="display: none;">
+                <div class="webhooks-header">
+                    <h2>Centralized Webhooks</h2>
+                    <div>
+                        <button type="button" id="webhooks-refresh" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="webhooks-new" title="New Webhook">+ Add Webhook</button>
+                    </div>
+                </div>
+
+                <table class="webhooks-table">
+                    <thead>
+                        <tr>
+                            <th>Alias</th>
+                            <th>Webhook URL</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="webhooks-list">
+                    </tbody>
+                </table>
+
+                <div id="webhooks-modal" class="modal">
+                    <div class="modal-content">
+                        <h3 id="webhooks-modal-title">Add Webhook</h3>
+                        <div class="modal-row">
+                            <label>Alias *</label>
+                            <input type="text" id="webhooks-alias" placeholder="e.g. TeamsNotify or SlackChannel">
+                            <small>Alphanumeric, underscores, and dashes only.</small>
+                        </div>
+                        <div class="modal-row">
+                            <label>Webhook URL *</label>
+                            <input type="text" id="webhooks-url" placeholder="https://outlook.office.com/webhook/...">
+                        </div>
+                        <div class="modal-row"
+                            style="flex-direction: row; align-items: center; gap: 8px; margin-top: 10px;">
+                            <input type="checkbox" id="webhooks-enabled" checked style="width: auto;">
+                            <label for="webhooks-enabled" style="margin-bottom: 0; font-weight: normal;">Enabled</label>
+                        </div>
+                        <div class="modal-actions" style="margin-top: 20px;">
+                            <button type="button" id="webhooks-save">Save</button>
+                            <button type="button" id="webhooks-cancel">Cancel</button>
                         </div>
                     </div>
                 </div>

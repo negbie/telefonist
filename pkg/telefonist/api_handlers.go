@@ -828,6 +828,77 @@ func HandleAPISIPAccountDelete(hub *WsHub) http.HandlerFunc {
 	})
 }
 
+func HandleAPIWebhooks(hub *WsHub) http.HandlerFunc {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
+		switch r.Method {
+		case http.MethodGet:
+			webhooks, err := store.ListWebhooks(ctx)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]any{
+				"status": "finished",
+				"items":  webhooks,
+			})
+		case http.MethodPost:
+			var req struct {
+				OldAlias string `json:"old_alias"`
+				Alias    string `json:"alias"`
+				URL      string `json:"url"`
+				Enabled  bool   `json:"enabled"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON", http.StatusBadRequest)
+				return
+			}
+			alias := strings.TrimSpace(req.Alias)
+			if alias == "" {
+				http.Error(w, "alias required", http.StatusBadRequest)
+				return
+			}
+			if !isSafeAlias(alias) {
+				http.Error(w, "invalid webhook alias (only alphanumeric, underscores, and dashes allowed)", http.StatusBadRequest)
+				return
+			}
+			url := strings.TrimSpace(req.URL)
+			if url == "" {
+				http.Error(w, "url required", http.StatusBadRequest)
+				return
+			}
+
+			err := store.SaveWebhook(ctx, req.OldAlias, alias, url, req.Enabled)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: fmt.Sprintf("webhook %s saved", alias)})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func HandleAPIWebhookDelete(hub *WsHub) http.HandlerFunc {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		alias := r.URL.Query().Get("alias")
+		if alias == "" {
+			http.Error(w, "alias parameter required", http.StatusBadRequest)
+			return
+		}
+		if err := store.DeleteWebhook(ctx, alias); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "webhook deleted"})
+	})
+}
+
 func jsonResponse(w http.ResponseWriter, code int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

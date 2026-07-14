@@ -19,6 +19,7 @@ import { initTestfileManager } from "./testfile_manager.js";
 import { initCompareWindow } from "./compare_window.js";
 import { initCronManager } from "./cron_manager.js";
 import { initAccountsManager } from "./accounts_manager.js";
+import { initWebhooksManager } from "./webhooks_manager.js";
 import { initHistoryManager } from "./history_manager.js";
 
 const flowEl = document.getElementById("flow");
@@ -165,12 +166,27 @@ if (initHistoryManager) {
 const btnModeTests = document.getElementById("btn-mode-tests");
 const btnModeCompare = document.getElementById("btn-mode-compare");
 const btnModeCron = document.getElementById("btn-mode-cron");
-const btnModeAccounts = document.getElementById("btn-mode-accounts");
+const btnModeSettings = document.getElementById("btn-mode-settings");
 
 const syncCompareWithActiveTestfile = () => {
   const key = tfManager?.getActiveKey?.() || "";
   const [project, name] = key ? key.split(":") : ["", ""];
   EventBus.emit("testfile:changed", name, project);
+};
+
+const switchSettingsSubPanel = (target) => {
+  const accountsPanel = document.getElementById("accounts-panel");
+  const webhooksPanel = document.getElementById("webhooks-panel");
+
+  if (target === "accounts") {
+    if (accountsPanel) accountsPanel.style.display = "flex";
+    if (webhooksPanel) webhooksPanel.style.display = "none";
+    EventBus.emit("accounts:opened");
+  } else if (target === "webhooks") {
+    if (accountsPanel) accountsPanel.style.display = "none";
+    if (webhooksPanel) webhooksPanel.style.display = "flex";
+    EventBus.emit("webhooks:opened");
+  }
 };
 
 const setBottomMode = (mode) => {
@@ -181,21 +197,51 @@ const setBottomMode = (mode) => {
   if (btnModeTests) btnModeTests.classList.toggle("active", mode === "tests");
   if (btnModeCompare) btnModeCompare.classList.toggle("active", mode === "compare");
   if (btnModeCron) btnModeCron.classList.toggle("active", mode === "cron");
-  if (btnModeAccounts) btnModeAccounts.classList.toggle("active", mode === "accounts");
+  if (btnModeSettings) btnModeSettings.classList.toggle("active", mode === "settings");
+
+  const settingsNavPane = document.getElementById("settings-nav-pane");
+  const testfileActionsPane = document.getElementById("testfile-actions-pane");
+
+  if (mode === "settings") {
+    if (settingsNavPane) settingsNavPane.style.display = "flex";
+    if (testfileActionsPane) testfileActionsPane.style.display = "none";
+    
+    const activeItem = document.querySelector(".settings-tree-item.active");
+    if (activeItem) {
+      switchSettingsSubPanel(activeItem.getAttribute("data-target"));
+    } else {
+      switchSettingsSubPanel("accounts");
+    }
+  } else {
+    if (settingsNavPane) settingsNavPane.style.display = "none";
+    if (testfileActionsPane) testfileActionsPane.style.display = "flex";
+
+    const accountsPanel = document.getElementById("accounts-panel");
+    const webhooksPanel = document.getElementById("webhooks-panel");
+    if (accountsPanel) accountsPanel.style.display = "none";
+    if (webhooksPanel) webhooksPanel.style.display = "none";
+  }
 
   if (mode === "compare") {
     syncCompareWithActiveTestfile();
   } else if (mode === "cron") {
     EventBus.emit("cron:opened");
-  } else if (mode === "accounts") {
-    EventBus.emit("accounts:opened");
   }
 };
 
 if (btnModeTests) btnModeTests.onclick = () => setBottomMode("tests");
 if (btnModeCompare) btnModeCompare.onclick = () => setBottomMode("compare");
 if (btnModeCron) btnModeCron.onclick = () => setBottomMode("cron");
-if (btnModeAccounts) btnModeAccounts.onclick = () => setBottomMode("accounts");
+if (btnModeSettings) btnModeSettings.onclick = () => setBottomMode("settings");
+
+// Bind Settings tree item clicks
+document.querySelectorAll(".settings-tree-item").forEach(item => {
+  item.onclick = () => {
+    document.querySelectorAll(".settings-tree-item").forEach(el => el.classList.remove("active"));
+    item.classList.add("active");
+    switchSettingsSubPanel(item.getAttribute("data-target"));
+  };
+});
 
 // Initialize Cron Manager
 if (initCronManager) {
@@ -205,6 +251,11 @@ if (initCronManager) {
 // Initialize Accounts Manager
 if (initAccountsManager) {
   initAccountsManager();
+}
+
+// Initialize Webhooks Manager
+if (initWebhooksManager) {
+  initWebhooksManager();
 }
 
 // Sidebar Toggle Logic
