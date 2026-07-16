@@ -127,19 +127,21 @@ func (m *BaresipManager) releasePorts(sipPort, rtpOffset int) {
 
 func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLine string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if !isSafeAlias(alias) {
+		m.mu.Unlock()
 		return fmt.Errorf("invalid agent alias %q: only alphanumeric, underscores, and dashes allowed", alias)
 	}
 
 	if _, ok := m.agents[alias]; ok {
+		m.mu.Unlock()
 		return fmt.Errorf("agent %s already exists", alias)
 	}
 
 	// Create unique data dir for agent
 	agentDir := filepath.Join(m.dataDir, "agents", alias)
 	if err := os.MkdirAll(agentDir, 0755); err != nil {
+		m.mu.Unlock()
 		return err
 	}
 
@@ -149,6 +151,8 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// 1. Proxy listener address (Master Hub connects here)
 	lProxy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 	proxyAddr := lProxy.Addr().String()
@@ -159,6 +163,8 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// 2. Baresip listener address (Internal Agent Proxy connects here)
 	lBaresip, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 	baresipAddr := lBaresip.Addr().String()
@@ -170,13 +176,19 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// We pass baresipAddr to CreateConfig so Baresip listens there
 	agentRecordsDir, err := filepath.Abs(filepath.Join(agentDir, "recorded_temp"))
 	if err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 	if err := os.MkdirAll(agentRecordsDir, 0755); err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 	globalSoundsDir, err := filepath.Abs(filepath.Join(m.dataDir, "sounds"))
 	if err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 	sipAddr := ""
@@ -184,6 +196,8 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		sipAddr = fmt.Sprintf("%s:%d", m.baseSIPIP, sipPort)
 	}
 	if err := CreateConfig(agentDir, m.maxCalls, m.rtpNet, rtpPorts, m.rtpTimeout, baresipAddr, sipAddr, m.useALSA, agentRecordsDir, globalSoundsDir); err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 
@@ -191,6 +205,8 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// Baresip will load UAs via explicit uanew command later.
 	accountsFile := filepath.Join(agentDir, "accounts")
 	if err := os.WriteFile(accountsFile, []byte(""), 0644); err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 
@@ -200,6 +216,8 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// -baresip_ctrl_address: where Baresip is listening locally
 	self, err := os.Executable()
 	if err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 
@@ -216,6 +234,8 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	cmd.Stderr = nil
 
 	if err := cmd.Start(); err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return err
 	}
 
@@ -250,6 +270,8 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		if killErr := cmd.Process.Kill(); killErr != nil {
 			log.Printf("hub: failed to kill agent process %s: %v", alias, killErr)
 		}
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
 		return fmt.Errorf("failed to connect to agent %s: %w", alias, err)
 	}
 
@@ -269,6 +291,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	}
 
 	m.agents[alias] = agent
+	m.mu.Unlock()
 
 	// Monitor agent process exit
 	go func() {
@@ -288,6 +311,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// Explicitly trigger UA registration now that the telemetry bridge is up
 	if err := agent.Baresip.CmdWs([]byte("uanew " + accountLine)); err != nil {
 		log.Printf("hub: failed to trigger registration for agent %s: %v", alias, err)
+		m.StopAgent(alias)
 		return err
 	}
 
@@ -295,18 +319,25 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	needsRegister := !strings.Contains(accountLine, "regint=0")
 	if needsRegister {
 		log.Printf("hub: waiting for SIP registration of agent %s...", alias)
+		var regErr error
 		select {
 		case err := <-regChan:
 			if err != nil {
-				return err
+				regErr = err
+			} else {
+				log.Printf("hub: agent %s registered successfully", alias)
 			}
-			log.Printf("hub: agent %s registered successfully", alias)
 		case <-agent.Done:
-			return fmt.Errorf("agent process exited while waiting for registration")
+			regErr = fmt.Errorf("agent process exited while waiting for registration")
 		case <-time.After(10 * time.Second):
-			return fmt.Errorf("timeout waiting for SIP registration of agent %s", alias)
+			regErr = fmt.Errorf("timeout waiting for SIP registration of agent %s", alias)
 		case <-ctx.Done():
-			return ctx.Err()
+			regErr = ctx.Err()
+		}
+
+		if regErr != nil {
+			m.StopAgent(alias)
+			return regErr
 		}
 	}
 

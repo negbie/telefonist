@@ -376,6 +376,14 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 			log.Printf("hub: hatching new agent %s", alias)
 			if err := h.bm.SpawnAgent(h.ctx, alias, accountLine); err != nil {
 				log.Printf("hub: failed to spawn agent %s: %v", alias, err)
+				h.internalCmd <- func() {
+					if h.trainSession != nil {
+						h.trainSession.failMsg = fmt.Sprintf("failed to spawn agent %s: %v", alias, err)
+					}
+				}
+				if h.testCancel != nil {
+					h.testCancel()
+				}
 			} else {
 				h.activeAgent = alias
 			}
