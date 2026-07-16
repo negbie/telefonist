@@ -396,13 +396,17 @@ func (m *BaresipManager) stopAgent(a *Agent) {
 
 	a.Baresip.Close()
 	m.releasePorts(a.SIPPort, a.RTPOffset)
-	delete(m.agents, a.Alias)
 }
 
 func (m *BaresipManager) StopAgent(alias string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if a, ok := m.agents[alias]; ok {
+	a, ok := m.agents[alias]
+	if ok {
+		delete(m.agents, alias)
+	}
+	m.mu.Unlock()
+
+	if ok {
 		m.stopAgent(a)
 	}
 }
@@ -416,10 +420,22 @@ func (m *BaresipManager) GetAgent(alias string) (*Agent, bool) {
 
 func (m *BaresipManager) CloseAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	agentsToStop := make([]*Agent, 0, len(m.agents))
 	for _, a := range m.agents {
-		m.stopAgent(a)
+		agentsToStop = append(agentsToStop, a)
 	}
+	m.agents = make(map[string]*Agent)
+	m.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for _, a := range agentsToStop {
+		wg.Add(1)
+		go func(agent *Agent) {
+			defer wg.Done()
+			m.stopAgent(agent)
+		}(a)
+	}
+	wg.Wait()
 }
 
 func (m *BaresipManager) ResolveTarget(cmd string, fallbackTarget string) (target string, finalCmd string) {

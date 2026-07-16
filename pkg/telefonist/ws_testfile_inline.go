@@ -195,7 +195,10 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 
 			tokens := parseChain(tc.sequence)
 			if len(tokens) > 0 && !tokens[len(tokens)-1].isDelay {
-				tokens = append(tokens, chainToken{delay: defaultTrailingDelay, isDelay: true})
+				// Don't add trailing delay for uanew commands since they already block waiting for registration
+				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(tc.sequence)), "uanew ") {
+					tokens = append(tokens, chainToken{delay: defaultTrailingDelay, isDelay: true})
+				}
 			}
 
 			h.chainMu.Lock()
