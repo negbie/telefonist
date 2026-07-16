@@ -27,6 +27,7 @@ type Agent struct {
 	Done          chan struct{} // Closed when Cmd exits
 	RecordingsDir string
 	RTPOffset     int
+	RegChan       chan error
 }
 
 type BaresipManager struct {
@@ -252,6 +253,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		return fmt.Errorf("failed to connect to agent %s: %w", alias, err)
 	}
 
+	regChan := make(chan error, 1)
 	agent := &Agent{
 		Alias:         alias,
 		ConfigDir:     agentDir,
@@ -263,6 +265,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		RTPOffset:     rtpOffset,
 		Done:          make(chan struct{}),
 		RecordingsDir: agentRecordsDir,
+		RegChan:       regChan,
 	}
 
 	m.agents[alias] = agent
@@ -285,6 +288,26 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// Explicitly trigger UA registration now that the telemetry bridge is up
 	if err := agent.Baresip.CmdWs([]byte("uanew " + accountLine)); err != nil {
 		log.Printf("hub: failed to trigger registration for agent %s: %v", alias, err)
+		return err
+	}
+
+	// Only wait for registration if it is not disabled via regint=0
+	needsRegister := !strings.Contains(accountLine, "regint=0")
+	if needsRegister {
+		log.Printf("hub: waiting for SIP registration of agent %s...", alias)
+		select {
+		case err := <-regChan:
+			if err != nil {
+				return err
+			}
+			log.Printf("hub: agent %s registered successfully", alias)
+		case <-agent.Done:
+			return fmt.Errorf("agent process exited while waiting for registration")
+		case <-time.After(10 * time.Second):
+			return fmt.Errorf("timeout waiting for SIP registration of agent %s", alias)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	return nil
@@ -299,6 +322,20 @@ func (m *BaresipManager) forwardMessages(ctx context.Context, a *Agent) {
 		case msg, ok := <-msgChan:
 			if !ok {
 				return
+			}
+			if msg.Event != nil {
+				e := msg.Event
+				if e.Type == "REGISTER_OK" && a.RegChan != nil {
+					select {
+					case a.RegChan <- nil:
+					default:
+					}
+				} else if e.Type == "REGISTER_FAIL" && a.RegChan != nil {
+					select {
+					case a.RegChan <- fmt.Errorf("SIP registration failed: %s", e.Param):
+					default:
+					}
+				}
 			}
 			m.master.ForwardAgentMsg(a.Alias, msg)
 		}
