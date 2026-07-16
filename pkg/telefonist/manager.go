@@ -375,8 +375,8 @@ func (m *BaresipManager) forwardMessages(ctx context.Context, a *Agent) {
 
 func (m *BaresipManager) stopAgent(a *Agent) {
 	log.Printf("stopping agent %s", a.Alias)
-	// Try a graceful shutdown first to allow SIP deregistrations
-	if err := a.Baresip.CmdWs([]byte("quit")); err != nil {
+	// Try a graceful shutdown first to allow SIP deregistrations and WAV file flushes
+	if err := a.Baresip.CmdQuit(); err != nil {
 		log.Printf("hub: failed to send quit to agent %s: %v", a.Alias, err)
 	}
 
