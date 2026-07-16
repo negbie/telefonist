@@ -372,13 +372,13 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 				log.Printf("hub: agent %s already exists, stopping it first for uanew", alias)
 				h.bm.StopAgent(alias)
 			}
+			h.BroadcastCommandHint(cmd, alias)
 			log.Printf("hub: hatching new agent %s", alias)
 			if err := h.bm.SpawnAgent(h.ctx, alias, accountLine); err != nil {
 				log.Printf("hub: failed to spawn agent %s: %v", alias, err)
 			} else {
 				h.activeAgent = alias
 			}
-			h.BroadcastCommandHint(cmd, alias)
 		}
 		return
 	}
@@ -390,13 +390,14 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 		// This second pass ensures agent-specific RECORDS_DIR is expanded if used
 		soundsDir := filepath.Join(h.DataDir, "sounds")
 		cmd = ExpandShortcuts(cmd, soundsDir, a.RecordingsDir)
+		h.BroadcastCommandHint(cmd, target)
 		if err := a.Baresip.CmdWs([]byte(cmd)); err != nil {
 			log.Printf("hub: error sending command to agent %s: %v", target, err)
 		}
 	} else {
+		h.BroadcastCommandHint(cmd, target)
 		log.Printf("hub: no active agent for command %q", cmd)
 	}
-	h.BroadcastCommandHint(cmd, target)
 }
 
 func ExpandShortcuts(cmd string, soundsDir string, recordsDir string) string {
