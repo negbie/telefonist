@@ -1,6 +1,7 @@
 package telefonist
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"log"
@@ -104,12 +105,14 @@ func (c *client) writePump() {
 				log.Printf("websocket write error: %v", err)
 				return
 			}
-			if err := writeQueuedMessages(w, c.send); err != nil {
-				if closeErr := w.Close(); closeErr != nil {
-					log.Printf("websocket writer close error after queued write failure: %v", closeErr)
+			if !bytes.Contains(message, newline) {
+				if err := writeQueuedMessages(w, c.send); err != nil {
+					if closeErr := w.Close(); closeErr != nil {
+						log.Printf("websocket writer close error after queued write failure: %v", closeErr)
+					}
+					log.Printf("websocket queued write error: %v", err)
+					return
 				}
-				log.Printf("websocket queued write error: %v", err)
-				return
 			}
 			if err := w.Close(); err != nil {
 				return

@@ -72,10 +72,10 @@ type WsHub struct {
 	// preventing interleaving of multi-step command sequences.
 	chainMu sync.Mutex
 
-	// messageFilters are case-insensitive substrings used to suppress event,
-	// SIP, and log messages from live output and test recordings.
-	messageFilterMu sync.RWMutex
-	messageFilters  []string
+	// logFilters are case-insensitive substrings used to suppress LOG messages
+	// from live output and test recordings.
+	logFilterMu sync.RWMutex
+	logFilters  []string
 
 	DataDir string
 
@@ -173,12 +173,12 @@ func (h *WsHub) SetTestStore(store *TestStore) {
 	if store == nil {
 		return
 	}
-	filters, err := store.GetMessageFilters(context.Background())
+	filters, err := store.GetLogFilters(context.Background())
 	if err != nil {
-		log.Printf("message filter: failed to load settings: %v", err)
+		log.Printf("log filter: failed to load settings: %v", err)
 		return
 	}
-	h.SetMessageFilters(filters)
+	h.SetLogFilters(filters)
 }
 
 // SetCronManager sets the cron job scaler engine
@@ -198,8 +198,9 @@ func (h *WsHub) Run() {
 			f()
 
 		case client := <-h.register:
-			// Replay history to the new client first (streaming, no allocations)
-			h.history.ReplayTo(client.send)
+			// Replay history to the new client first. Batching preserves the
+			// newline-delimited message format while reducing channel/frame overhead.
+			h.history.ReplayBatchesTo(client.send, 250, 512*1024)
 			h.clients[client] = true
 
 		case client := <-h.unregister:
@@ -275,11 +276,16 @@ func (h *WsHub) Run() {
 					continue
 				}
 
-				// No automatic ringing state tracking needed anymore.
-
-				if h.ShouldFilterMessageWithRaw(e.RawJSON, e.Type, e.Param) {
-					continue
+				if e.Type == "LOG" {
+					if authPassKeywordRegexp.MatchString(e.Param) {
+						continue
+					}
+					if h.ShouldFilterLog(e.Param) {
+						continue
+					}
 				}
+
+				// No automatic ringing state tracking needed anymore.
 
 				if h.trainSession != nil {
 					h.trainSession.recordEvent(e)
@@ -317,7 +323,7 @@ func (h *WsHub) Run() {
 				if authPassKeywordRegexp.MatchString(m.Log) {
 					continue
 				}
-				if h.ShouldFilterMessage("LOG", m.Log) {
+				if h.ShouldFilterLog(m.Log) {
 					continue
 				}
 				mLog := map[string]interface{}{
@@ -334,9 +340,6 @@ func (h *WsHub) Run() {
 				h.recordAndBroadcast(msg)
 
 			case m.SIP != "":
-				if h.ShouldFilterMessage("SIP", m.SIP) {
-					continue
-				}
 				mSIP := map[string]interface{}{
 					"event":  true,
 					"type":   "SIP",

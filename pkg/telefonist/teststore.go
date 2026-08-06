@@ -1654,22 +1654,22 @@ ON CONFLICT(key) DO UPDATE SET
 	return nil
 }
 
-// GetMessageFilters returns the persisted global message filter substrings.
-func (s *TestStore) GetMessageFilters(ctx context.Context) ([]string, error) {
-	value, err := s.GetSetting(ctx, messageFiltersSettingKey)
+// GetLogFilters returns the persisted global log filter substrings.
+func (s *TestStore) GetLogFilters(ctx context.Context) ([]string, error) {
+	value, err := s.GetSetting(ctx, logFiltersSettingKey)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(value) == "" {
 		return nil, nil
 	}
-	return normalizeMessageFilters(strings.Split(value, "\n")), nil
+	return normalizeLogFilters(strings.Split(value, "\n")), nil
 }
 
-// SaveMessageFilters persists global message filter substrings.
-func (s *TestStore) SaveMessageFilters(ctx context.Context, filters []string) error {
-	filters = normalizeMessageFilters(filters)
-	return s.SaveSetting(ctx, messageFiltersSettingKey, strings.Join(filters, "\n"))
+// SaveLogFilters persists global log filter substrings.
+func (s *TestStore) SaveLogFilters(ctx context.Context, filters []string) error {
+	filters = normalizeLogFilters(filters)
+	return s.SaveSetting(ctx, logFiltersSettingKey, strings.Join(filters, "\n"))
 }
 
 // Vacuum executes the SQLite VACUUM command to reclaim free space.

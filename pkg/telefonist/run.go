@@ -82,7 +82,7 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/accounts/delete", AuthMiddleware(HandleAPISIPAccountDelete(hub)))
 	mux.HandleFunc("/api/webhooks", AuthMiddleware(HandleAPIWebhooks(hub)))
 	mux.HandleFunc("/api/webhooks/delete", AuthMiddleware(HandleAPIWebhookDelete(hub)))
-	mux.HandleFunc("/api/settings/message-filter", AuthMiddleware(HandleAPIMessageFilter(hub)))
+	mux.HandleFunc("/api/settings/log-filter", AuthMiddleware(HandleAPILogFilter(hub)))
 	mux.HandleFunc("/", AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		StaticHandler().ServeHTTP(w, r)
 	}))

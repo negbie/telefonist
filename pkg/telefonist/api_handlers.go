@@ -914,11 +914,11 @@ func HandleAPIWebhookDelete(hub *WsHub) http.HandlerFunc {
 	})
 }
 
-func HandleAPIMessageFilter(hub *WsHub) http.HandlerFunc {
+func HandleAPILogFilter(hub *WsHub) http.HandlerFunc {
 	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
 		switch r.Method {
 		case http.MethodGet:
-			filters, err := store.GetMessageFilters(ctx)
+			filters, err := store.GetLogFilters(ctx)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -936,13 +936,13 @@ func HandleAPIMessageFilter(hub *WsHub) http.HandlerFunc {
 				http.Error(w, "invalid JSON", http.StatusBadRequest)
 				return
 			}
-			filters := normalizeMessageFilters(req.Filters)
-			if err := store.SaveMessageFilters(ctx, filters); err != nil {
+			filters := normalizeLogFilters(req.Filters)
+			if err := store.SaveLogFilters(ctx, filters); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.SetMessageFilters(filters)
-			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "message filter saved"})
+			hub.SetLogFilters(filters)
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "log filter saved"})
 
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

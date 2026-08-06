@@ -50,6 +50,39 @@ func TestRingBuffer(t *testing.T) {
 	}
 }
 
+func TestRingBufferSnapshot(t *testing.T) {
+	rb := NewRingBuffer(3)
+	rb.Add([]byte("msg1"))
+	rb.Add([]byte("msg2"))
+	rb.Add([]byte("msg3"))
+	rb.Add([]byte("msg4"))
+
+	snap := rb.Snapshot()
+	if len(snap) != 3 {
+		t.Fatalf("Expected 3 snapshot messages, got %d", len(snap))
+	}
+	if !bytes.Equal(snap[0], []byte("msg2")) || !bytes.Equal(snap[1], []byte("msg3")) || !bytes.Equal(snap[2], []byte("msg4")) {
+		t.Errorf("Unexpected snapshot order")
+	}
+}
+
+func TestRingBufferReplayBatchesTo(t *testing.T) {
+	rb := NewRingBuffer(5)
+	rb.Add([]byte("msg1"))
+	rb.Add([]byte("msg2"))
+	rb.Add([]byte("msg3"))
+
+	dest := make(chan []byte, 3)
+	rb.ReplayBatchesTo(dest, 2, 1024)
+
+	if len(dest) != 2 {
+		t.Fatalf("Expected 2 replay batches, got %d", len(dest))
+	}
+	if !bytes.Equal(<-dest, []byte("msg1\nmsg2")) || !bytes.Equal(<-dest, []byte("msg3")) {
+		t.Errorf("Unexpected replay batch payloads")
+	}
+}
+
 func TestRingBufferZeroLimit(t *testing.T) {
 	rb := NewRingBuffer(0)
 	rb.Add([]byte("msg1"))

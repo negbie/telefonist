@@ -7,11 +7,11 @@ function splitFilters(value) {
     .filter((line) => line.length > 0);
 }
 
-export function initMessageFilterManager() {
-  const refreshBtn = document.getElementById("message-filter-refresh");
-  const saveBtn = document.getElementById("message-filter-save");
-  const inputEl = document.getElementById("message-filter-input");
-  const statusEl = document.getElementById("message-filter-status");
+export function initLogFilterManager() {
+  const refreshBtn = document.getElementById("log-filter-refresh");
+  const saveBtn = document.getElementById("log-filter-save");
+  const inputEl = document.getElementById("log-filter-input");
+  const statusEl = document.getElementById("log-filter-status");
 
   if (!refreshBtn || !saveBtn || !inputEl) return;
 
@@ -24,14 +24,14 @@ export function initMessageFilterManager() {
   const loadFilters = async () => {
     setStatus("Loading…");
     try {
-      const res = await fetch("/api/settings/message-filter");
+      const res = await fetch("/api/settings/log-filter");
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       inputEl.value = (data.filters || []).join("\n");
       setStatus(`${(data.filters || []).length} filter(s) loaded.`);
     } catch (err) {
-      console.error("Failed to load message filters:", err);
-      setStatus("Failed to load message filters: " + err.message, true);
+      console.error("Failed to load log filters:", err);
+      setStatus("Failed to load log filters: " + err.message, true);
     }
   };
 
@@ -39,7 +39,7 @@ export function initMessageFilterManager() {
     const filters = splitFilters(inputEl.value);
     setStatus("Saving…");
     try {
-      const res = await fetch("/api/settings/message-filter", {
+      const res = await fetch("/api/settings/log-filter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filters }),
@@ -49,15 +49,15 @@ export function initMessageFilterManager() {
       inputEl.value = filters.join("\n");
       setStatus(`${filters.length} filter(s) saved.`);
     } catch (err) {
-      console.error("Failed to save message filters:", err);
-      setStatus("Failed to save message filters: " + err.message, true);
+      console.error("Failed to save log filters:", err);
+      setStatus("Failed to save log filters: " + err.message, true);
     }
   };
 
   refreshBtn.onclick = loadFilters;
   saveBtn.onclick = saveFilters;
 
-  EventBus.on("message-filter:opened", () => {
+  EventBus.on("log-filter:opened", () => {
     loadFilters();
   });
 }

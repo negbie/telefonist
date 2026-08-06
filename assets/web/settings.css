@@ -35,7 +35,7 @@
     border-color: #2563eb;
 }
 
-#message-filter-panel {
+#log-filter-panel {
     display: none;
     flex: 1;
     flex-direction: column;
@@ -46,20 +46,20 @@
     font-size: 0.8rem;
 }
 
-.message-filter-header {
+.log-filter-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
 }
 
-.message-filter-header h2 {
+.log-filter-header h2 {
     margin: 0;
     font-size: 1rem;
     color: var(--text);
 }
 
-.message-filter-card {
+.log-filter-card {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -70,11 +70,11 @@
     border-radius: var(--radius);
 }
 
-.message-filter-card label {
+.log-filter-card label {
     font-weight: 600;
 }
 
-#message-filter-input {
+#log-filter-input {
     min-height: 180px;
     padding: 10px;
     resize: vertical;
@@ -87,16 +87,16 @@
     line-height: 1.4;
 }
 
-.message-filter-card small {
+.log-filter-card small {
     color: var(--muted);
     line-height: 1.4;
 }
 
-.message-filter-status {
+.log-filter-status {
     min-height: 1.2em;
     color: var(--muted);
 }
 
-.message-filter-status.error {
+.log-filter-status.error {
     color: #dc2626;
 }

@@ -133,7 +133,7 @@
                                 Accounts</li>
                             <li class="settings-tree-item" id="settings-nav-webhooks" data-target="webhooks">Webhooks
                             </li>
-                            <li class="settings-tree-item" id="settings-nav-message-filter" data-target="message-filter">Message
+                            <li class="settings-tree-item" id="settings-nav-log-filter" data-target="log-filter">Log
                                 Filter</li>
                         </ul>
                     </div>
@@ -336,24 +336,24 @@
                 </div>
             </div>
 
-            <div id="message-filter-panel" style="display: none;">
-                <div class="message-filter-header">
-                    <h2>Message Filter</h2>
+            <div id="log-filter-panel" style="display: none;">
+                <div class="log-filter-header">
+                    <h2>Log Filter</h2>
                     <div>
-                        <button type="button" id="message-filter-refresh" title="Refresh">↻ Refresh</button>
-                        <button type="button" id="message-filter-save" title="Save filters">Save</button>
+                        <button type="button" id="log-filter-refresh" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="log-filter-save" title="Save filters">Save</button>
                     </div>
                 </div>
 
-                <div class="message-filter-card">
-                    <label for="message-filter-input">Filter strings</label>
-                    <textarea id="message-filter-input" spellcheck="false"
-                        placeholder="One filter string per line&#10;Example: CALL_RTCP&#10;Example: user-agent-noise"></textarea>
+                <div class="log-filter-card">
+                    <label for="log-filter-input">Filter strings</label>
+                    <textarea id="log-filter-input" spellcheck="false"
+                        placeholder="One filter string per line&#10;Example: DEBUG&#10;Example: user-agent-noise"></textarea>
                     <small>
-                        Case-insensitive substring filters. Any event, SIP, or LOG message containing one of these strings
-                        is suppressed from live views and test recordings. Leave empty to disable filtering.
+                        Case-insensitive substring filters. Any LOG message containing one of these strings is suppressed
+                        from live views and test recordings. Event and SIP messages are not affected.
                     </small>
-                    <div id="message-filter-status" class="message-filter-status"></div>
+                    <div id="log-filter-status" class="log-filter-status"></div>
                 </div>
             </div>
         </div>

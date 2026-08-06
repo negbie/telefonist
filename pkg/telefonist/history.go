@@ -1,6 +1,7 @@
 package telefonist
 
 import (
+	"bytes"
 	"sync"
 )
 
@@ -42,38 +43,89 @@ func (r *RingBuffer) Add(msg []byte) {
 	}
 }
 
-// ReplayTo streams all messages in the buffer to the provided channel.
-// Order is preserved from oldest to newest. Non-blocking send ensures
-// that slower consumers don't block the replayer.
-func (r *RingBuffer) ReplayTo(dest chan []byte) {
+// Snapshot returns the current messages from oldest to newest. The returned
+// slice is independent from the ring; message byte slices are shared because
+// history messages are immutable after insertion.
+func (r *RingBuffer) Snapshot() [][]byte {
 	if r.limit <= 0 {
-		return
+		return nil
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	count := r.cursor
+	if r.full {
+		count = r.limit
+	}
+	out := make([][]byte, 0, count)
+
 	if !r.full {
-		for i := 0; i < r.cursor; i++ {
-			select {
-			case dest <- r.data[i]:
-			default:
-				// buffer full, skip to keep replayer moving
-			}
-		}
-		return
+		out = append(out, r.data[:r.cursor]...)
+		return out
 	}
 
 	// Buffer is full; replay [cursor:limit] then [0:cursor]
-	for i := r.cursor; i < r.limit; i++ {
+	out = append(out, r.data[r.cursor:r.limit]...)
+	out = append(out, r.data[:r.cursor]...)
+	return out
+}
+
+// ReplayTo streams all messages in the buffer to the provided channel.
+// Order is preserved from oldest to newest. Non-blocking send ensures
+// that slower consumers don't block the replayer.
+func (r *RingBuffer) ReplayTo(dest chan []byte) {
+	for _, msg := range r.Snapshot() {
 		select {
-		case dest <- r.data[i]:
+		case dest <- msg:
 		default:
+			// buffer full, skip to keep replayer moving
 		}
 	}
-	for i := 0; i < r.cursor; i++ {
+}
+
+// ReplayBatchesTo snapshots history and replays it as newline-delimited batches.
+// This reduces channel and WebSocket frame overhead for new clients while keeping
+// the same per-line payload format consumed by the browser.
+func (r *RingBuffer) ReplayBatchesTo(dest chan []byte, maxMessages int, maxBytes int) {
+	messages := r.Snapshot()
+	if len(messages) == 0 {
+		return
+	}
+	if maxMessages <= 0 {
+		maxMessages = len(messages)
+	}
+	if maxBytes <= 0 {
+		maxBytes = 1024 * 1024
+	}
+
+	var batch bytes.Buffer
+	batchCount := 0
+	flush := func() bool {
+		if batchCount == 0 {
+			return true
+		}
+		payload := append([]byte(nil), batch.Bytes()...)
 		select {
-		case dest <- r.data[i]:
+		case dest <- payload:
+			batch.Reset()
+			batchCount = 0
+			return true
 		default:
+			return false
 		}
 	}
+
+	for _, msg := range messages {
+		if batchCount > 0 && (batchCount >= maxMessages || batch.Len()+1+len(msg) > maxBytes) {
+			if !flush() {
+				return
+			}
+		}
+		if batchCount > 0 {
+			batch.WriteByte('\n')
+		}
+		batch.Write(msg)
+		batchCount++
+	}
+	flush()
 }

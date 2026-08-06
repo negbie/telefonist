@@ -117,29 +117,29 @@ func TestStore_DataIntegrity(t *testing.T) {
 	})
 }
 
-func TestStore_MessageFilters(t *testing.T) {
+func TestStore_LogFilters(t *testing.T) {
 	ctx := context.Background()
 	s := prepareTestStore(t)
 	defer s.Close()
 
-	filters, err := s.GetMessageFilters(ctx)
+	filters, err := s.GetLogFilters(ctx)
 	if err != nil {
-		t.Fatalf("GetMessageFilters failed: %v", err)
+		t.Fatalf("GetLogFilters failed: %v", err)
 	}
 	if len(filters) != 0 {
 		t.Fatalf("expected no filters initially, got %v", filters)
 	}
 
-	input := []string{" CALL_RTCP ", "", "call_rtcp", "Noisy Header"}
-	if err := s.SaveMessageFilters(ctx, input); err != nil {
-		t.Fatalf("SaveMessageFilters failed: %v", err)
+	input := []string{" noisy log ", "", "NOISY LOG", "Debug Header"}
+	if err := s.SaveLogFilters(ctx, input); err != nil {
+		t.Fatalf("SaveLogFilters failed: %v", err)
 	}
 
-	filters, err = s.GetMessageFilters(ctx)
+	filters, err = s.GetLogFilters(ctx)
 	if err != nil {
-		t.Fatalf("GetMessageFilters failed: %v", err)
+		t.Fatalf("GetLogFilters failed: %v", err)
 	}
-	want := []string{"CALL_RTCP", "Noisy Header"}
+	want := []string{"noisy log", "Debug Header"}
 	if len(filters) != len(want) {
 		t.Fatalf("expected %d filters, got %d: %v", len(want), len(filters), filters)
 	}
@@ -149,10 +149,10 @@ func TestStore_MessageFilters(t *testing.T) {
 		}
 	}
 
-	if !messageMatchesFilters(`{"type":"CALL_RTCP"}`, filters) {
-		t.Fatal("expected message to match CALL_RTCP filter")
+	if !logMessageMatchesFilters(`{"type":"LOG","param":"noisy log line"}`, filters) {
+		t.Fatal("expected message to match log filter")
 	}
-	if messageMatchesFilters(`{"type":"CALL_ESTABLISHED"}`, filters) {
+	if logMessageMatchesFilters(`{"type":"LOG","param":"normal line"}`, filters) {
 		t.Fatal("did not expect unrelated message to match filters")
 	}
 }
