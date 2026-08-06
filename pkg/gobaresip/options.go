@@ -15,7 +15,8 @@ func (b *Baresip) SetOption(options ...func(*Baresip) error) error {
 	return nil
 }
 
-// SetCtrlTCPAddr sets the ctrl_tcp modules address.
+// SetCtrlTCPAddr sets the control address. It accepts TCP host:port addresses
+// and unix:/path/to/socket addresses for Telefonist proxy connections.
 func SetCtrlTCPAddr(opt string) func(*Baresip) error {
 	return func(b *Baresip) error {
 		b.ctrlAddr = opt

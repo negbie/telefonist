@@ -153,6 +153,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -343,9 +344,31 @@ func gobaresip_ui_output_handler(str *C.char) {
 	}
 }
 
+func splitControlAddr(addr string) (network string, address string) {
+	if strings.HasPrefix(addr, "unix:") {
+		return "unix", strings.TrimPrefix(addr, "unix:")
+	}
+	return "tcp", addr
+}
+
+func listenControl(addr string) (net.Listener, error) {
+	network, address := splitControlAddr(addr)
+	if network == "unix" {
+		if err := os.Remove(address); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+	return net.Listen(network, address)
+}
+
+func dialControl(addr string) (net.Conn, error) {
+	network, address := splitControlAddr(addr)
+	return net.Dial(network, address)
+}
+
 func (b *Baresip) connectCtrl() error {
 	var err error
-	b.ctrlConn, err = net.Dial("tcp", b.ctrlAddr)
+	b.ctrlConn, err = dialControl(b.ctrlAddr)
 	if err != nil {
 		atomic.StoreUint32(&b.ctrlConnAlive, 0)
 		return fmt.Errorf("%w: please make sure ctrl_tcp is enabled", err)
@@ -617,11 +640,11 @@ func (b *Baresip) end(errCode C.int) error {
 	return nil
 }
 
-// startProxy starts a TCP server that acts as a bridge between the Master
+// startProxy starts a control server that acts as a bridge between the Master
 // and Baresip (CGO). It multiplexes events, logs, and SIP traces.
 func (b *Baresip) startProxy() error {
 	log.Printf("gobaresip: agent proxy starting to listen on %s", b.ctrlAddr)
-	l, err := net.Listen("tcp", b.ctrlAddr)
+	l, err := listenControl(b.ctrlAddr)
 	if err != nil {
 		log.Printf("gobaresip: agent proxy listen failed: %v", err)
 		return err
@@ -632,6 +655,11 @@ func (b *Baresip) startProxy() error {
 		defer func() {
 			if err := l.Close(); err != nil {
 				log.Printf("gobaresip: agent proxy listener close failed: %v", err)
+			}
+			if network, address := splitControlAddr(b.ctrlAddr); network == "unix" {
+				if err := os.Remove(address); err != nil && !os.IsNotExist(err) {
+					log.Printf("gobaresip: agent proxy socket cleanup failed: %v", err)
+				}
 			}
 		}()
 		for {

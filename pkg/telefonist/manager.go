@@ -148,17 +148,16 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	// Allocate ports from the pool
 	sipPort, rtpPorts, rtpOffset := m.allocatePorts()
 
-	// 1. Proxy listener address (Master Hub connects here)
-	lProxy, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
+	// 1. Proxy listener address (Master Hub connects here).
+	// Use a Unix socket for the Telefonist master ↔ agent proxy hop to avoid
+	// loopback TCP port allocation and reduce local connection overhead.
+	proxySock := filepath.Join(agentDir, "proxy.sock")
+	if err := os.Remove(proxySock); err != nil && !os.IsNotExist(err) {
 		m.releasePorts(sipPort, rtpOffset)
 		m.mu.Unlock()
 		return err
 	}
-	proxyAddr := lProxy.Addr().String()
-	if err := lProxy.Close(); err != nil {
-		log.Printf("hub: failed to close proxy listener for agent %s: %v", alias, err)
-	}
+	proxyAddr := "unix:" + proxySock
 
 	// 2. Baresip listener address (Internal Agent Proxy connects here)
 	lBaresip, err := net.Listen("tcp", "127.0.0.1:0")

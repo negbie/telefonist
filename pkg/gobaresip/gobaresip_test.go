@@ -68,6 +68,24 @@ func TestNetstringFormatting(t *testing.T) {
 	}
 }
 
+func TestSplitControlAddr(t *testing.T) {
+	tests := []struct {
+		addr        string
+		wantNetwork string
+		wantAddress string
+	}{
+		{"127.0.0.1:4444", "tcp", "127.0.0.1:4444"},
+		{"unix:/tmp/telefonist.sock", "unix", "/tmp/telefonist.sock"},
+	}
+
+	for _, tt := range tests {
+		network, address := splitControlAddr(tt.addr)
+		if network != tt.wantNetwork || address != tt.wantAddress {
+			t.Fatalf("splitControlAddr(%q) = (%q, %q), want (%q, %q)", tt.addr, network, address, tt.wantNetwork, tt.wantAddress)
+		}
+	}
+}
+
 func TestCmdWsSentinelError(t *testing.T) {
 	// We can't run a full Baresip for CmdWs, but we can test the
 	// sentinel error paths that don't touch the TCP connection.
