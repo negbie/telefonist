@@ -133,6 +133,8 @@
                                 Accounts</li>
                             <li class="settings-tree-item" id="settings-nav-webhooks" data-target="webhooks">Webhooks
                             </li>
+                            <li class="settings-tree-item" id="settings-nav-message-filter" data-target="message-filter">Message
+                                Filter</li>
                         </ul>
                     </div>
                 </div>
@@ -331,6 +333,27 @@
                             <button type="button" id="webhooks-cancel">Cancel</button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div id="message-filter-panel" style="display: none;">
+                <div class="message-filter-header">
+                    <h2>Message Filter</h2>
+                    <div>
+                        <button type="button" id="message-filter-refresh" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="message-filter-save" title="Save filters">Save</button>
+                    </div>
+                </div>
+
+                <div class="message-filter-card">
+                    <label for="message-filter-input">Filter strings</label>
+                    <textarea id="message-filter-input" spellcheck="false"
+                        placeholder="One filter string per line&#10;Example: CALL_RTCP&#10;Example: user-agent-noise"></textarea>
+                    <small>
+                        Case-insensitive substring filters. Any event, SIP, or LOG message containing one of these strings
+                        is suppressed from live views and test recordings. Leave empty to disable filtering.
+                    </small>
+                    <div id="message-filter-status" class="message-filter-status"></div>
                 </div>
             </div>
         </div>

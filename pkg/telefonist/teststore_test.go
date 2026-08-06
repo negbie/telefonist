@@ -117,6 +117,46 @@ func TestStore_DataIntegrity(t *testing.T) {
 	})
 }
 
+func TestStore_MessageFilters(t *testing.T) {
+	ctx := context.Background()
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	filters, err := s.GetMessageFilters(ctx)
+	if err != nil {
+		t.Fatalf("GetMessageFilters failed: %v", err)
+	}
+	if len(filters) != 0 {
+		t.Fatalf("expected no filters initially, got %v", filters)
+	}
+
+	input := []string{" CALL_RTCP ", "", "call_rtcp", "Noisy Header"}
+	if err := s.SaveMessageFilters(ctx, input); err != nil {
+		t.Fatalf("SaveMessageFilters failed: %v", err)
+	}
+
+	filters, err = s.GetMessageFilters(ctx)
+	if err != nil {
+		t.Fatalf("GetMessageFilters failed: %v", err)
+	}
+	want := []string{"CALL_RTCP", "Noisy Header"}
+	if len(filters) != len(want) {
+		t.Fatalf("expected %d filters, got %d: %v", len(want), len(filters), filters)
+	}
+	for i := range want {
+		if filters[i] != want[i] {
+			t.Fatalf("filter[%d] = %q, want %q", i, filters[i], want[i])
+		}
+	}
+
+	if !messageMatchesFilters(`{"type":"CALL_RTCP"}`, filters) {
+		t.Fatal("expected message to match CALL_RTCP filter")
+	}
+	if messageMatchesFilters(`{"type":"CALL_ESTABLISHED"}`, filters) {
+		t.Fatal("did not expect unrelated message to match filters")
+	}
+}
+
 func TestStore_Projects(t *testing.T) {
 	ctx := context.Background()
 	s := prepareTestStore(t)

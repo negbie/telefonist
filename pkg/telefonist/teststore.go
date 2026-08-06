@@ -71,7 +71,6 @@ type SIPAccount struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-
 // OpenTestStore opens (and initializes) the SQLite database at <dataDir>/telefonist_tests.db.
 func OpenTestStore(ctx context.Context, dataDir string) (*TestStore, error) {
 	if dataDir == "" {
@@ -296,6 +295,16 @@ CREATE TABLE IF NOT EXISTS webhooks (
 		return fmt.Errorf("create webhooks table: %w", err)
 	}
 
+	// 11. Create app_settings table for small global UI/runtime settings.
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);`); err != nil {
+		return fmt.Errorf("create app_settings table: %w", err)
+	}
+
 	return nil
 }
 
@@ -342,8 +351,8 @@ func (s *TestStore) Save(ctx context.Context, name, projectName, content string)
 	// Check if content has changed from the latest version to prevent redundant entries
 	var lastContent string
 	err := s.db.QueryRowContext(ctx, `
-SELECT content FROM testfile_versions 
-WHERE name = ? AND project_name = ? 
+SELECT content FROM testfile_versions
+WHERE name = ? AND project_name = ?
 ORDER BY id DESC LIMIT 1;
 `, name, projectName).Scan(&lastContent)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -742,8 +751,8 @@ func (s *TestStore) SaveSIPAccount(ctx context.Context, oldName, name, sipURI, p
 		}
 
 		_, err = s.db.ExecContext(ctx, `
-UPDATE sip_accounts 
-SET name = ?, sip_uri = ?, password = ?, uri_params = ?, addr_params = ?, updated_at = ? 
+UPDATE sip_accounts
+SET name = ?, sip_uri = ?, password = ?, uri_params = ?, addr_params = ?, updated_at = ?
 WHERE name = ?;`, name, sipURI, password, uriParams, addrParams, now, oldName)
 		if err != nil {
 			return fmt.Errorf("rename SIP account: %w", err)
@@ -913,8 +922,8 @@ func (s *TestStore) SaveWebhook(ctx context.Context, oldAlias, alias, url string
 		}
 
 		_, err = s.db.ExecContext(ctx, `
-UPDATE webhooks 
-SET alias = ?, url = ?, enabled = ?, updated_at = ? 
+UPDATE webhooks
+SET alias = ?, url = ?, enabled = ?, updated_at = ?
 WHERE alias = ?;`, alias, url, enabledInt, now, oldAlias)
 		if err != nil {
 			return fmt.Errorf("rename webhook: %w", err)
@@ -1574,6 +1583,69 @@ func (s *TestStore) ListProjects(ctx context.Context) ([]ProjectRow, error) {
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// GetSetting returns a global app setting value by key. Missing settings return an empty string.
+func (s *TestStore) GetSetting(ctx context.Context, key string) (string, error) {
+	if s == nil || s.db == nil {
+		return "", errors.New("test store is not initialized")
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", errors.New("setting key is required")
+	}
+
+	var value string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = ?;`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get setting %q: %w", key, err)
+	}
+	return value, nil
+}
+
+// SaveSetting upserts a global app setting value.
+func (s *TestStore) SaveSetting(ctx context.Context, key, value string) error {
+	if s == nil || s.db == nil {
+		return errors.New("test store is not initialized")
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("setting key is required")
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO app_settings(key, value, updated_at)
+VALUES(?, ?, ?)
+ON CONFLICT(key) DO UPDATE SET
+  value = excluded.value,
+  updated_at = excluded.updated_at;
+`, key, value, now)
+	if err != nil {
+		return fmt.Errorf("save setting %q: %w", key, err)
+	}
+	return nil
+}
+
+// GetMessageFilters returns the persisted global message filter substrings.
+func (s *TestStore) GetMessageFilters(ctx context.Context) ([]string, error) {
+	value, err := s.GetSetting(ctx, messageFiltersSettingKey)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	return normalizeMessageFilters(strings.Split(value, "\n")), nil
+}
+
+// SaveMessageFilters persists global message filter substrings.
+func (s *TestStore) SaveMessageFilters(ctx context.Context, filters []string) error {
+	filters = normalizeMessageFilters(filters)
+	return s.SaveSetting(ctx, messageFiltersSettingKey, strings.Join(filters, "\n"))
 }
 
 // Vacuum executes the SQLite VACUUM command to reclaim free space.

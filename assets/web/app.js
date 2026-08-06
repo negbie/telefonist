@@ -20,6 +20,7 @@ import { initCompareWindow } from "./compare_window.js";
 import { initCronManager } from "./cron_manager.js";
 import { initAccountsManager } from "./accounts_manager.js";
 import { initWebhooksManager } from "./webhooks_manager.js";
+import { initMessageFilterManager } from "./message_filter_manager.js";
 import { initHistoryManager } from "./history_manager.js";
 
 const flowEl = document.getElementById("flow");
@@ -177,15 +178,21 @@ const syncCompareWithActiveTestfile = () => {
 const switchSettingsSubPanel = (target) => {
   const accountsPanel = document.getElementById("accounts-panel");
   const webhooksPanel = document.getElementById("webhooks-panel");
+  const messageFilterPanel = document.getElementById("message-filter-panel");
+
+  if (accountsPanel) accountsPanel.style.display = "none";
+  if (webhooksPanel) webhooksPanel.style.display = "none";
+  if (messageFilterPanel) messageFilterPanel.style.display = "none";
 
   if (target === "accounts") {
     if (accountsPanel) accountsPanel.style.display = "flex";
-    if (webhooksPanel) webhooksPanel.style.display = "none";
     EventBus.emit("accounts:opened");
   } else if (target === "webhooks") {
-    if (accountsPanel) accountsPanel.style.display = "none";
     if (webhooksPanel) webhooksPanel.style.display = "flex";
     EventBus.emit("webhooks:opened");
+  } else if (target === "message-filter") {
+    if (messageFilterPanel) messageFilterPanel.style.display = "flex";
+    EventBus.emit("message-filter:opened");
   }
 };
 
@@ -218,8 +225,10 @@ const setBottomMode = (mode) => {
 
     const accountsPanel = document.getElementById("accounts-panel");
     const webhooksPanel = document.getElementById("webhooks-panel");
+    const messageFilterPanel = document.getElementById("message-filter-panel");
     if (accountsPanel) accountsPanel.style.display = "none";
     if (webhooksPanel) webhooksPanel.style.display = "none";
+    if (messageFilterPanel) messageFilterPanel.style.display = "none";
   }
 
   if (mode === "compare") {
@@ -256,6 +265,11 @@ if (initAccountsManager) {
 // Initialize Webhooks Manager
 if (initWebhooksManager) {
   initWebhooksManager();
+}
+
+// Initialize Message Filter Manager
+if (initMessageFilterManager) {
+  initMessageFilterManager();
 }
 
 // Sidebar Toggle Logic

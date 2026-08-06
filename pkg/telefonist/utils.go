@@ -60,6 +60,7 @@ func ExtractAlias(s string) string {
 }
 
 var authPassRegexp = regexp.MustCompile(`(?i)(auth_pass=)([^; \r\n\t"\\]*)`)
+var authPassKeywordRegexp = regexp.MustCompile(`(?i)auth_pass`)
 
 // SanitizeString masks sensitive values like auth_pass in a string.
 func SanitizeString(s string) string {

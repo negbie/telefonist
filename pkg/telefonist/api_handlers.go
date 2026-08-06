@@ -899,6 +899,42 @@ func HandleAPIWebhookDelete(hub *WsHub) http.HandlerFunc {
 	})
 }
 
+func HandleAPIMessageFilter(hub *WsHub) http.HandlerFunc {
+	return withStore(hub, func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context) {
+		switch r.Method {
+		case http.MethodGet:
+			filters, err := store.GetMessageFilters(ctx)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]any{
+				"status":  "finished",
+				"filters": filters,
+			})
+
+		case http.MethodPost:
+			var req struct {
+				Filters []string `json:"filters"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON", http.StatusBadRequest)
+				return
+			}
+			filters := normalizeMessageFilters(req.Filters)
+			if err := store.SaveMessageFilters(ctx, filters); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			hub.SetMessageFilters(filters)
+			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "message filter saved"})
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
 func jsonResponse(w http.ResponseWriter, code int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

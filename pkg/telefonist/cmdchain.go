@@ -78,7 +78,7 @@ func splitByPipe(input string) []string {
 
 	for i := 0; i < len(input); i++ {
 		// Case insensitive check for auth_pass=
-		if !inSecret && i+10 <= len(input) && strings.ToLower(input[i:i+10]) == "auth_pass=" {
+		if !inSecret && i+10 <= len(input) && strings.EqualFold(input[i:i+10], "auth_pass=") {
 			inSecret = true
 		}
 
@@ -118,8 +118,6 @@ func isKnownCommand(s string) bool {
 
 	return knownCommands[firstWord] || knownCommands[strings.ToLower(firstWord)]
 }
-
-
 
 // parseChain parses a pipe-separated input into a slice of chainTokens.
 // Only '|' is treated as the chaining separator.

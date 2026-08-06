@@ -14,6 +14,12 @@ import (
 var idRegex = regexp.MustCompile(`"id":"[^"]+"`)
 var timeRegex = regexp.MustCompile(`"time":"[^"]+"`)
 
+var (
+	idReplacement    = []byte(`"id":""`)
+	rawActionMarker  = []byte(`"action":`)
+	rawCmdTypeMarker = []byte(`"type":"CMD"`)
+)
+
 // OrderIndependentHash computes a hash by summing up the xxhash of each line individually.
 // This ensures that the exact order of events doesn't change the final hash, while being
 // much more precise than counting characters.
@@ -109,10 +115,9 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 	}
 
 	// Strip the dynamic "id" field to maintain a deterministic hash
-	strippedJSON := idRegex.ReplaceAllString(string(e.RawJSON), `"id":""`)
-	extracted := strippedJSON + "\n\n"
-
-	t.outputBuf.WriteString(extracted)
+	strippedJSON := idRegex.ReplaceAll(e.RawJSON, idReplacement)
+	t.outputBuf.Write(strippedJSON)
+	t.outputBuf.WriteString("\n\n")
 }
 
 // Must only be called from the hub's run loop.
@@ -122,7 +127,7 @@ func (t *TrainSession) recordRaw(msg []byte) {
 	}
 	// Raw messages (like SIP/LOG) go ONLY to fullBuf to keep hash clean.
 	// We also skip action events and command hints to keep them out of the compare view/hash.
-	if bytes.Contains(msg, []byte(`"action":`)) || bytes.Contains(msg, []byte(`"type":"CMD"`)) {
+	if bytes.Contains(msg, rawActionMarker) || bytes.Contains(msg, rawCmdTypeMarker) {
 		return
 	}
 	t.fullBuf.Write(msg)

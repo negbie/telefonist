@@ -72,6 +72,11 @@ type WsHub struct {
 	// preventing interleaving of multi-step command sequences.
 	chainMu sync.Mutex
 
+	// messageFilters are case-insensitive substrings used to suppress event,
+	// SIP, and log messages from live output and test recordings.
+	messageFilterMu sync.RWMutex
+	messageFilters  []string
+
 	DataDir string
 
 	cmdCounter atomic.Uint64
@@ -165,6 +170,15 @@ func (h *WsHub) SetEventHandler(handler func(gobaresip.EventMsg)) {
 // SetTestStore attaches a persistent store (SQLite) used by UI-driven testfile management.
 func (h *WsHub) SetTestStore(store *TestStore) {
 	h.testStore = store
+	if store == nil {
+		return
+	}
+	filters, err := store.GetMessageFilters(context.Background())
+	if err != nil {
+		log.Printf("message filter: failed to load settings: %v", err)
+		return
+	}
+	h.SetMessageFilters(filters)
 }
 
 // SetCronManager sets the cron job scaler engine
@@ -263,6 +277,10 @@ func (h *WsHub) Run() {
 
 				// No automatic ringing state tracking needed anymore.
 
+				if h.ShouldFilterMessageWithRaw(e.RawJSON, e.Type, e.Param) {
+					continue
+				}
+
 				if h.trainSession != nil {
 					h.trainSession.recordEvent(e)
 					if h.trainSession.failMsg != "" && h.testCancel != nil {
@@ -296,7 +314,10 @@ func (h *WsHub) Run() {
 				h.recordAndBroadcast(enriched)
 
 			case m.Log != "":
-				if strings.Contains(strings.ToLower(m.Log), "auth_pass") {
+				if authPassKeywordRegexp.MatchString(m.Log) {
+					continue
+				}
+				if h.ShouldFilterMessage("LOG", m.Log) {
 					continue
 				}
 				mLog := map[string]interface{}{
@@ -313,6 +334,9 @@ func (h *WsHub) Run() {
 				h.recordAndBroadcast(msg)
 
 			case m.SIP != "":
+				if h.ShouldFilterMessage("SIP", m.SIP) {
+					continue
+				}
 				mSIP := map[string]interface{}{
 					"event":  true,
 					"type":   "SIP",
