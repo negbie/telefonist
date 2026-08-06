@@ -19,14 +19,21 @@ export function computeLCSDiff(aItems, bItems) {
     cj = n;
   while (ci > 0 || cj > 0) {
     if (ci > 0 && cj > 0 && aItems[ci - 1].compare === bItems[cj - 1].compare) {
-      result.unshift({ type: "common", text: aItems[ci - 1].display, textA: aItems[ci - 1].display, textB: bItems[cj - 1].display });
+      result.unshift({
+        type: "common",
+        text: aItems[ci - 1].display,
+        textA: aItems[ci - 1].display,
+        textB: bItems[cj - 1].display,
+        itemA: aItems[ci - 1],
+        itemB: bItems[cj - 1],
+      });
       ci--;
       cj--;
     } else if (cj > 0 && (ci === 0 || dp[ci][cj - 1] >= dp[ci - 1][cj])) {
-      result.unshift({ type: "b", text: bItems[cj - 1].display });
+      result.unshift({ type: "b", text: bItems[cj - 1].display, itemB: bItems[cj - 1] });
       cj--;
     } else {
-      result.unshift({ type: "a", text: aItems[ci - 1].display });
+      result.unshift({ type: "a", text: aItems[ci - 1].display, itemA: aItems[ci - 1] });
       ci--;
     }
   }

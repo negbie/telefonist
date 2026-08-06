@@ -1,7 +1,11 @@
 import { EventBus } from "./event_bus.js";
 import { safeText, escapeHTML, base64DecodeUTF8 } from "./utils.js";
 import { computeLCSDiff } from "./diff.js";
-import { generateSipLadderHTML } from "./sip_renderer.js";
+import {
+  generateSipLadderHTML,
+  getSipDiffKey,
+  getSipMessageInfo,
+} from "./sip_renderer.js";
 
 export function initCompareWindow(deps) {
   const { getActiveKey } = deps;
@@ -132,11 +136,13 @@ export function initCompareWindow(deps) {
   const structuralSkeleton = (text) => {
     if (!text) return "";
     const rules = [
-      [/^\d{2}:\d{2}:\d{2}\.\d{3}[| ]?/, ""],
+      [/^#?\d{2}:\d{2}:\d{2}\.\d{3}(?:\|[A-Z]+)?/gm, ""],
       [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "#"],
       [/([0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}/g, "#"],
-      [/[a-zA-Z0-9]{24,}/g, "#"],
-      [/(CSeq|Call-ID|tag|branch|User-Agent|Server|Via):[^ \n\r]+/gi, "$1:#"],
+      [/\b[A-Za-z0-9+/_-]{24,}={0,2}\b/g, "#"],
+      [/\b(branch|tag)=[^;>\s]+/gi, "$1=#"],
+      [/^CSeq:\s*\d+\s+([A-Z][A-Z0-9_-]*)\b.*$/gim, "CSeq:# $1"],
+      [/^(Call-ID|User-Agent|Server|Via):.*$/gim, "$1:#"],
     ];
     let l = text;
     rules.forEach(([reg, rep]) => (l = l.replace(reg, rep)));
@@ -153,8 +159,24 @@ export function initCompareWindow(deps) {
       return activeMode !== "evt" || !["sip", "log", "testfile"].includes(type);
     }).map((j, idx) => {
       const { time, id, RawJSON, run_id, idx: _, ...rest } = j;
-      const compare = ["sip", "log"].includes(activeMode) ? structuralSkeleton(j.param || "") : JSON.stringify({ ...rest, param: rest.param ? structuralSkeleton(rest.param) : undefined }, Object.keys(rest).sort());
-      const display = activeMode === "sip" ? generateSipLadderHTML(j, idx + 1) : renderEventHTML({ ...j, idx });
+      if (activeMode === "sip") {
+        const sipInfo = getSipMessageInfo(j.param || "");
+        const raw = sipInfo.message || j.param || "";
+        const seq = idx + 1;
+        const arrowKey = getSipDiffKey(j.param || "") || structuralSkeleton(raw);
+        const compare = `${seq} ${arrowKey}`;
+        const display = generateSipLadderHTML(j, seq);
+        return {
+          compare,
+          contentCompare: structuralSkeleton(raw),
+          display,
+          idx,
+          label: `(${seq}) ${sipInfo.label || arrowKey}`,
+          raw,
+        };
+      }
+      const compare = activeMode === "log" ? structuralSkeleton(j.param || "") : JSON.stringify({ ...rest, param: rest.param ? structuralSkeleton(rest.param) : undefined }, Object.keys(rest).sort());
+      const display = renderEventHTML({ ...j, idx });
       return { display, compare, idx };
     });
   };
@@ -170,6 +192,33 @@ export function initCompareWindow(deps) {
       bItems.sort((a, b) => a.compare.localeCompare(b.compare));
     }
     const diff = computeLCSDiff(aItems, bItems);
+
+    if (activeMode === "sip") {
+      const aParts = [];
+      const bParts = [];
+      const placeholder = (label) => `<div class="diff-sip-placeholder">${escapeHTML(label)}</div>`;
+      const ladder = (item, className) => `
+        <div class="diff-sip-ladder ${className}">
+          ${item.display}
+        </div>`;
+
+      diff.forEach((d) => {
+        if (d.type === "common") {
+          aParts.push(ladder(d.itemA, "diff-sip-changed"));
+          bParts.push(ladder(d.itemB, "diff-sip-changed"));
+        } else if (d.type === "a") {
+          aParts.push(ladder(d.itemA, "diff-sip-only-a"));
+          bParts.push(placeholder(`missing ${d.itemA.label || d.itemA.compare || "SIP"}`));
+        } else if (d.type === "b") {
+          aParts.push(placeholder(`missing ${d.itemB.label || d.itemB.compare || "SIP"}`));
+          bParts.push(ladder(d.itemB, "diff-sip-only-b"));
+        }
+      });
+      if (contentA) contentA.innerHTML = aParts.join("") || "<div class='diff-identical'>(no changes)</div>";
+      if (contentB) contentB.innerHTML = bParts.join("") || "<div class='diff-identical'>(no changes)</div>";
+      return;
+    }
+
     if (contentA) contentA.innerHTML = diff.filter(d => d.type === "a").map(d => `<div class="diff-only-a">${d.text}</div>`).join("") || "(no changes)";
     if (contentB) contentB.innerHTML = diff.filter(d => d.type === "b").map(d => `<div class="diff-only-b">${d.text}</div>`).join("") || "(no changes)";
   };

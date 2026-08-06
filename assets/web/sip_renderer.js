@@ -6,6 +6,53 @@ export function truncateText(text, maxLen) {
   return s.length > maxLen ? s.substring(0, maxLen) + "..." : s;
 }
 
+export function getSipMessageInfo(param) {
+  var text = safeText(param);
+  var lines = text.split("\n");
+  var envelopeOffset = 0;
+  var direction = "";
+
+  if (lines.length >= 3) {
+    var parts = safeText(lines[0].replace("#", "")).split("|");
+    direction = parts.length > 1 ? parts[1].toUpperCase() : "";
+    if (/^\w+\s+/.test(safeText(lines[1]))) {
+      envelopeOffset = 2;
+    }
+  }
+
+  var message = envelopeOffset ? lines.slice(envelopeOffset).join("\n") : text;
+  var firstLine = (message.split(/\r?\n/).find((line) => line.trim()) || "").trim();
+  var requestMatch = firstLine.match(/^([A-Z][A-Z0-9_-]*)\s+\S+\s+SIP\/2\.0\b/);
+  var responseMatch = firstLine.match(/^SIP\/2\.0\s+(\d{3})(?:\s+(.*))?/);
+  var cseqMatch = message.match(/^CSeq:\s*\d+\s+([A-Z][A-Z0-9_-]*)\b/im);
+  var method = requestMatch ? requestMatch[1] : cseqMatch ? cseqMatch[1] : "";
+  method = method.toUpperCase();
+
+  var statusCode = responseMatch ? responseMatch[1] : "";
+  var statusText = responseMatch ? safeText(responseMatch[2]).trim() : "";
+  var topText = method || firstLine;
+  var bottomText = responseMatch ? statusCode + (statusText ? " " + statusText : "") : "";
+  var label = topText + (bottomText ? " / " + bottomText : "");
+
+  return {
+    bottomText,
+    direction,
+    firstLine,
+    isResponse: Boolean(responseMatch),
+    label: label || "SIP",
+    message,
+    method,
+    statusCode,
+    statusText,
+    topText,
+  };
+}
+
+export function getSipDiffKey(param) {
+  var info = getSipMessageInfo(param);
+  return [info.topText, info.bottomText].filter(Boolean).join(" ") || safeText(param);
+}
+
 export function generateSipLadderHTML(j, msgCount) {
   var type = (j.type || j.token || "").toUpperCase();
   if (type !== "SIP") return "";
@@ -110,6 +157,7 @@ export function renderSipEvent(j, elements, getOptions) {
   el.className = "sip-ladder-row";
 
   var param = j.param || "";
+  var sipInfo = getSipMessageInfo(param);
   var lines = param.split("\n");
   var rest = "";
   var topText = "";
@@ -286,8 +334,9 @@ export function renderSipEvent(j, elements, getOptions) {
 
   // Store unformatted text for comparison
   el._sipData = {
-    raw: rest,
-    method: topText,
+    diffKey: getSipDiffKey(param),
+    method: sipInfo.label || topText,
+    raw: sipInfo.message || rest,
     seq: sipViewEl._msgCount,
   };
 
@@ -301,9 +350,9 @@ export function initSipCompare(elements) {
   const compareLeftRoot = document.getElementById("sip-compare-left");
   const compareRightRoot = document.getElementById("sip-compare-right");
   const compareLeftHeader =
-    compareLeftRoot?.querySelector(".sip-ladder-header");
+    compareLeftRoot?.querySelector(".sip-compare-header");
   const compareRightHeader =
-    compareRightRoot?.querySelector(".sip-ladder-header");
+    compareRightRoot?.querySelector(".sip-compare-header");
   const compareLeftContent = document.getElementById(
     "sip-compare-content-left",
   );
