@@ -211,6 +211,10 @@ CREATE INDEX IF NOT EXISTS idx_testruns_testfile_project ON testruns(testfile_na
 		return fmt.Errorf("check testruns schema: %w", err)
 	}
 
+	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_testruns_created_at ON testruns(created_at);`); err != nil {
+		return fmt.Errorf("create testruns created_at index: %w", err)
+	}
+
 	// 5. Create testrun_wavs table (path-based)
 	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS testrun_wavs (
@@ -1064,17 +1068,30 @@ VALUES(?, ?, ?, ?, ?, ?, ?);
 	return id, nil
 }
 
+func (s *TestStore) getRunWavLocation(ctx context.Context, testrunID int64) (testfileName string, projectName string, err error) {
+	if s == nil || s.db == nil {
+		return "", "", errors.New("test store is not initialized")
+	}
+	err = s.db.QueryRowContext(ctx, `SELECT testfile_name, project_name FROM testruns WHERE id = ?`, testrunID).Scan(&testfileName, &projectName)
+	if err != nil {
+		return "", "", fmt.Errorf("lookup testrun %d: %w", testrunID, err)
+	}
+	return testfileName, projectName, nil
+}
+
 // SaveWav stores a WAV file for a testrun on the filesystem and its path in the database.
 func (s *TestStore) SaveWav(ctx context.Context, testrunID int64, filename string, content []byte) error {
+	testfileName, projectName, err := s.getRunWavLocation(ctx, testrunID)
+	if err != nil {
+		return err
+	}
+	return s.SaveWavWithLocation(ctx, testrunID, testfileName, projectName, filename, content)
+}
+
+// SaveWavWithLocation stores a WAV when the testrun's path components are already known.
+func (s *TestStore) SaveWavWithLocation(ctx context.Context, testrunID int64, testfileName, projectName, filename string, content []byte) error {
 	if s == nil || s.db == nil {
 		return errors.New("test store is not initialized")
-	}
-
-	// Lookup testfile and project name for path organization
-	var testfileName, projectName string
-	err := s.db.QueryRowContext(ctx, `SELECT testfile_name, project_name FROM testruns WHERE id = ?`, testrunID).Scan(&testfileName, &projectName)
-	if err != nil {
-		return fmt.Errorf("lookup testrun %d: %w", testrunID, err)
 	}
 
 	pName := projectName
@@ -1094,10 +1111,10 @@ func (s *TestStore) SaveWav(ctx context.Context, testrunID int64, filename strin
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	_, err = s.db.ExecContext(ctx, `
-INSERT INTO testrun_wavs(testrun_id, filename, file_path, created_at)
-VALUES(?, ?, ?, ?);
-`, testrunID, filename, relPath, now)
+	_, err := s.db.ExecContext(ctx, `
+	INSERT INTO testrun_wavs(testrun_id, filename, file_path, created_at)
+	VALUES(?, ?, ?, ?);
+	`, testrunID, filename, relPath, now)
 	if err != nil {
 		return fmt.Errorf("save wav path %q for testrun %d: %w", filename, testrunID, err)
 	}
@@ -1147,10 +1164,10 @@ ORDER BY id ASC;
 	return out, rows.Err()
 }
 
-// GetWav returns the content and filename of a stored WAV from the filesystem.
-func (s *TestStore) GetWav(ctx context.Context, id int) (filename string, content []byte, err error) {
+// GetWavPath returns the display filename and absolute file path of a stored WAV.
+func (s *TestStore) GetWavPath(ctx context.Context, id int) (filename string, absPath string, err error) {
 	if s == nil || s.db == nil {
-		return "", nil, errors.New("test store is not initialized")
+		return "", "", errors.New("test store is not initialized")
 	}
 
 	var relPath, testfileName string
@@ -1162,21 +1179,28 @@ WHERE w.id = ?;
 `, id).Scan(&filename, &relPath, &testfileName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", nil, fmt.Errorf("wav %d not found", id)
+			return "", "", fmt.Errorf("wav %d not found", id)
 		}
-		return "", nil, fmt.Errorf("get wav %d: %w", id, err)
+		return "", "", fmt.Errorf("get wav %d: %w", id, err)
 	}
 
 	if testfileName != "" {
 		filename = testfileName + "_" + filename
 	}
 
-	absPath := filepath.Join(s.wavDir, relPath)
+	return filename, filepath.Join(s.wavDir, relPath), nil
+}
+
+// GetWav returns the content and filename of a stored WAV from the filesystem.
+func (s *TestStore) GetWav(ctx context.Context, id int) (filename string, content []byte, err error) {
+	filename, absPath, err := s.GetWavPath(ctx, id)
+	if err != nil {
+		return "", nil, err
+	}
 	content, err = os.ReadFile(absPath)
 	if err != nil {
 		return filename, nil, fmt.Errorf("read wav file: %w", err)
 	}
-
 	return filename, content, nil
 }
 

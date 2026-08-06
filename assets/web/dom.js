@@ -33,18 +33,77 @@ export function ensureElement(parent, tag, className) {
   return el;
 }
 
-export function appendAndMaintain(container, el, opts) {
-  if (!container || !el) return;
-  var options = opts || {};
-  var maxItems = options.maxItems || 0;
-  var doScroll = !!options.autoscroll && isNearBottom(container);
+var appendQueues = new WeakMap();
 
+function scheduleFrame(fn) {
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(fn);
+  } else {
+    setTimeout(fn, 0);
+  }
+}
+
+export function clearAppendQueue(container) {
+  if (container) appendQueues.delete(container);
+}
+
+function flushAppendQueue(container) {
+  var queue = appendQueues.get(container);
+  if (!queue) return;
+  appendQueues.delete(container);
+
+  var fragment = document.createDocumentFragment();
+  var maxItems = 0;
+  var doScroll = false;
+
+  for (var i = 0; i < queue.length; i++) {
+    fragment.appendChild(queue[i].el);
+    maxItems = queue[i].maxItems;
+    doScroll = doScroll || queue[i].doScroll;
+  }
+
+  container.appendChild(fragment);
+  trimChildrenToMax(container, maxItems);
+
+  if (doScroll) {
+    scrollToBottom(container);
+  }
+}
+
+function appendImmediately(container, el, maxItems, doScroll) {
   container.appendChild(el);
   trimChildrenToMax(container, maxItems);
 
   if (doScroll) {
     scrollToBottom(container);
   }
+}
+
+export function appendAndMaintain(container, el, opts) {
+  if (!container || !el) return;
+  var options = opts || {};
+  var maxItems = options.maxItems || 0;
+  var doScroll = !!options.autoscroll && isNearBottom(container);
+
+  if (
+    el.classList &&
+    (el.classList.contains("run-separator") ||
+      el.classList.contains("download-container"))
+  ) {
+    flushAppendQueue(container);
+    appendImmediately(container, el, maxItems, doScroll);
+    return;
+  }
+
+  var queue = appendQueues.get(container);
+  if (!queue) {
+    queue = [];
+    appendQueues.set(container, queue);
+    scheduleFrame(function () {
+      flushAppendQueue(container);
+    });
+  }
+  queue.push({ el: el, maxItems: maxItems, doScroll: doScroll });
 }
 
 export function tagToken(el, token) {

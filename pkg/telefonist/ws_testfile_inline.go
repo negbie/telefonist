@@ -489,6 +489,8 @@ func processRecordings(ctx context.Context, store *TestStore, runID int64, dataD
 		}
 
 		log.Printf("processing recordings in %s (found %d files)", recordsDir, len(files))
+		var wavLocationLoaded bool
+		var wavTestfileName, wavProjectName string
 		for _, f := range files {
 			if f.IsDir() {
 				continue
@@ -516,7 +518,16 @@ func processRecordings(ctx context.Context, store *TestStore, runID int64, dataD
 
 			newName := strings.TrimPrefix(f.Name(), "dump-")
 			if !strings.HasSuffix(newName, "-enc.wav") {
-				if err := store.SaveWav(ctx, runID, newName, data); err != nil {
+				if !wavLocationLoaded {
+					var err error
+					wavTestfileName, wavProjectName, err = store.getRunWavLocation(ctx, runID)
+					if err != nil {
+						log.Printf("failed to save wav %s to db: %v", newName, err)
+						continue
+					}
+					wavLocationLoaded = true
+				}
+				if err := store.SaveWavWithLocation(ctx, runID, wavTestfileName, wavProjectName, newName, data); err != nil {
 					log.Printf("failed to save wav %s to db: %v", newName, err)
 					continue
 				}

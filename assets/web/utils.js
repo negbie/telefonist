@@ -49,8 +49,10 @@ export function wireSearchFilter(inputEl, containerEl, selector) {
   if (!inputEl || !containerEl) return;
 
   var lastFilter = null;
+  var pending = false;
 
   function applyFilter() {
+    pending = false;
     var filter = safeText(inputEl.value).toLowerCase();
     if (filter === lastFilter) return;
     lastFilter = filter;
@@ -63,7 +65,17 @@ export function wireSearchFilter(inputEl, containerEl, selector) {
     }
   }
 
-  inputEl.addEventListener("input", applyFilter);
+  function scheduleApplyFilter() {
+    if (pending) return;
+    pending = true;
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(applyFilter);
+    } else {
+      setTimeout(applyFilter, 0);
+    }
+  }
+
+  inputEl.addEventListener("input", scheduleApplyFilter);
   applyFilter();
 }
 

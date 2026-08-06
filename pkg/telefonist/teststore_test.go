@@ -157,6 +157,55 @@ func TestStore_MessageFilters(t *testing.T) {
 	}
 }
 
+func TestStore_Wavs(t *testing.T) {
+	ctx := context.Background()
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	if err := s.Save(ctx, "wavtest", "", "content"); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	runID, err := s.SaveRun(ctx, "wavtest", "", 1, "hash", "PASS", "{}")
+	if err != nil {
+		t.Fatalf("SaveRun failed: %v", err)
+	}
+
+	content := []byte("RIFF-test-wav-content")
+	if err := s.SaveWav(ctx, runID, "sample.wav", content); err != nil {
+		t.Fatalf("SaveWav failed: %v", err)
+	}
+
+	wavs, err := s.ListWavs(ctx, runID)
+	if err != nil {
+		t.Fatalf("ListWavs failed: %v", err)
+	}
+	if len(wavs) != 1 {
+		t.Fatalf("expected 1 wav, got %d", len(wavs))
+	}
+
+	filename, got, err := s.GetWav(ctx, wavs[0].ID)
+	if err != nil {
+		t.Fatalf("GetWav failed: %v", err)
+	}
+	if filename != "wavtest_sample.wav" {
+		t.Fatalf("filename = %q, want %q", filename, "wavtest_sample.wav")
+	}
+	if string(got) != string(content) {
+		t.Fatalf("content = %q, want %q", got, content)
+	}
+
+	pathFilename, path, err := s.GetWavPath(ctx, wavs[0].ID)
+	if err != nil {
+		t.Fatalf("GetWavPath failed: %v", err)
+	}
+	if pathFilename != filename {
+		t.Fatalf("path filename = %q, want %q", pathFilename, filename)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected wav path to exist: %v", err)
+	}
+}
+
 func TestStore_Projects(t *testing.T) {
 	ctx := context.Background()
 	s := prepareTestStore(t)

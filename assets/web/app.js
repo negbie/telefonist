@@ -10,6 +10,7 @@ import {
   applyOnlyResultsFilterFromCheckbox,
 } from "./utils.js";
 import { initResizer } from "./resizer.js";
+import { clearAppendQueue } from "./dom.js";
 import { API } from "./api.js";
 import { createSocketHandler } from "./socket_handler.js";
 import { createSequentialFlowRenderer } from "./flow.js";
@@ -83,6 +84,7 @@ const flow =
 const clearMessages = () => {
   [flowEl, logViewEl, sipViewEl].forEach((el) => {
     if (!el) return;
+    clearAppendQueue(el);
     el.innerHTML = "";
     el.scrollTop = 0;
     if (el === sipViewEl) {
