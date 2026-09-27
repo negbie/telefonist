@@ -277,7 +277,7 @@ func (h *WsHub) Run() {
 				}
 
 				if e.Type == "LOG" {
-					if authPassKeywordRegexp.MatchString(e.Param) {
+					if HasAuthPass(e.Param) {
 						continue
 					}
 					if h.ShouldFilterLog(e.Param) {
@@ -320,7 +320,7 @@ func (h *WsHub) Run() {
 				h.recordAndBroadcast(enriched)
 
 			case m.Log != "":
-				if authPassKeywordRegexp.MatchString(m.Log) {
+				if HasAuthPass(m.Log) {
 					continue
 				}
 				if h.ShouldFilterLog(m.Log) {

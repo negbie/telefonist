@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -1082,21 +1083,53 @@ func (s *TestStore) getRunWavLocation(ctx context.Context, testrunID int64) (tes
 	return testfileName, projectName, nil
 }
 
-// SaveWav stores a WAV file for a testrun on the filesystem and its path in the database.
-func (s *TestStore) SaveWav(ctx context.Context, testrunID int64, filename string, content []byte) error {
-	testfileName, projectName, err := s.getRunWavLocation(ctx, testrunID)
-	if err != nil {
-		return err
-	}
-	return s.SaveWavWithLocation(ctx, testrunID, testfileName, projectName, filename, content)
-}
-
-// SaveWavWithLocation stores a WAV when the testrun's path components are already known.
-func (s *TestStore) SaveWavWithLocation(ctx context.Context, testrunID int64, testfileName, projectName, filename string, content []byte) error {
+// MoveWavWithLocation moves a WAV file from srcPath to the testrun's persistent path
+// and records its metadata in the database without loading the file into memory.
+func (s *TestStore) MoveWavWithLocation(ctx context.Context, testrunID int64, testfileName, projectName, filename, srcPath string) error {
 	if s == nil || s.db == nil {
 		return errors.New("test store is not initialized")
 	}
 
+	relPath, absPath, err := s.prepareWavPath(testrunID, testfileName, projectName, filename)
+	if err != nil {
+		return err
+	}
+	if err := moveFile(srcPath, absPath); err != nil {
+		return fmt.Errorf("move wav file: %w", err)
+	}
+	return s.recordWav(ctx, testrunID, filename, relPath)
+}
+
+// MoveWav moves a WAV file from srcPath to the testrun's persistent path.
+func (s *TestStore) MoveWav(ctx context.Context, testrunID int64, filename, srcPath string) error {
+	testfileName, projectName, err := s.getRunWavLocation(ctx, testrunID)
+	if err != nil {
+		return err
+	}
+	return s.MoveWavWithLocation(ctx, testrunID, testfileName, projectName, filename, srcPath)
+}
+
+// SaveWav stores in-memory WAV content for a testrun on the filesystem and in the database.
+func (s *TestStore) SaveWav(ctx context.Context, testrunID int64, filename string, content []byte) error {
+	if s == nil || s.db == nil {
+		return errors.New("test store is not initialized")
+	}
+	testfileName, projectName, err := s.getRunWavLocation(ctx, testrunID)
+	if err != nil {
+		return err
+	}
+
+	relPath, absPath, err := s.prepareWavPath(testrunID, testfileName, projectName, filename)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(absPath, content, 0644); err != nil {
+		return fmt.Errorf("write wav file: %w", err)
+	}
+	return s.recordWav(ctx, testrunID, filename, relPath)
+}
+
+func (s *TestStore) prepareWavPath(testrunID int64, testfileName, projectName, filename string) (string, string, error) {
 	pName := projectName
 	if pName == "" {
 		pName = "default"
@@ -1106,14 +1139,13 @@ func (s *TestStore) SaveWavWithLocation(ctx context.Context, testrunID int64, te
 	absPath := filepath.Join(s.wavDir, relPath)
 
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
-		return fmt.Errorf("create wav directory: %w", err)
+		return "", "", fmt.Errorf("create wav directory: %w", err)
 	}
-	if err := os.WriteFile(absPath, content, 0644); err != nil {
-		return fmt.Errorf("write wav file: %w", err)
-	}
+	return relPath, absPath, nil
+}
 
+func (s *TestStore) recordWav(ctx context.Context, testrunID int64, filename, relPath string) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-
 	_, err := s.db.ExecContext(ctx, `
 	INSERT INTO testrun_wavs(testrun_id, filename, file_path, created_at)
 	VALUES(?, ?, ?, ?);
@@ -1122,6 +1154,35 @@ func (s *TestStore) SaveWavWithLocation(ctx context.Context, testrunID int64, te
 		return fmt.Errorf("save wav path %q for testrun %d: %w", filename, testrunID, err)
 	}
 	return nil
+}
+
+// moveFile moves src to dst by attempting an atomic rename first,
+// falling back to streaming copy-and-remove across filesystem boundaries.
+func moveFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		return err
+	}
+	_ = in.Close()
+	return os.Remove(src)
 }
 
 // WavRow represents a stored WAV metadata.

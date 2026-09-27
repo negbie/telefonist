@@ -16,7 +16,7 @@ package gobaresip
 #include <stdlib.h>
 
 #define DEBUG_MODULE "gobaresip"
-#define DEBUG_LEVEL 7
+#define DEBUG_LEVEL 4
 
 #include <libbaresip/re/include/re.h>
 #include <libbaresip/re/include/re_dbg.h>
@@ -64,7 +64,7 @@ static void my_dbg_handler(int level, const char *p, size_t len, void *arg)
 {
 	(void)arg;
 	extern void gobaresip_log_handler(int level, char *p, int len);
-	if (len > 0) {
+	if (level <= DEBUG_LEVEL && len > 0) {
 		gobaresip_log_handler(level, (char *)p, (int)len);
 	}
 }
@@ -72,7 +72,7 @@ static void my_dbg_handler(int level, const char *p, size_t len, void *arg)
 static void my_log_handler(uint32_t level, const char *msg)
 {
 	extern void gobaresip_log_handler(int level, char *p, int len);
-	if (msg) {
+	if (level <= DEBUG_LEVEL && msg) {
 		int len = strlen(msg);
 		gobaresip_log_handler((int)level, (char *)msg, len);
 	}
@@ -537,7 +537,7 @@ func (b *Baresip) setup() error {
 		return b.end(err)
 	}
 
-	C.re_thread_async_init(4)
+	C.re_thread_async_init(2)
 
 	C.log_enable_stdout(false)
 

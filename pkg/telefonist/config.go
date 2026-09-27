@@ -159,7 +159,7 @@ video_jitter_buffer_size 250             # [packets]
 rtp_stats               yes
 #rtp_timeout            60
 #avt_bundle             no
-rtp_rxmode              thread
+rtp_rxmode              main
 
 # Network
 #dns_server             1.1.1.1:53
@@ -185,7 +185,7 @@ rtp_rxmode              thread
 #module                 httpd.so
 
 # Audio codec Modules (in order)
-module                  opus.so
+#module                 opus.so
 #module                 amr.so
 #module                 g7221.so
 module                  g722.so

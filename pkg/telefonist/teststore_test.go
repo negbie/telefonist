@@ -204,6 +204,23 @@ func TestStore_Wavs(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected wav path to exist: %v", err)
 	}
+
+	// Test MoveWavWithLocation
+	srcTemp := filepath.Join(t.TempDir(), "temp_source.wav")
+	movedContent := []byte("RIFF-moved-wav-content")
+	if err := os.WriteFile(srcTemp, movedContent, 0644); err != nil {
+		t.Fatalf("failed to write temp wav: %v", err)
+	}
+	if err := s.MoveWavWithLocation(ctx, runID, "wavtest", "", "moved.wav", srcTemp); err != nil {
+		t.Fatalf("MoveWavWithLocation failed: %v", err)
+	}
+	if _, err := os.Stat(srcTemp); !os.IsNotExist(err) {
+		t.Fatalf("expected srcTemp to be moved/deleted, stat err: %v", err)
+	}
+	allWavs, err := s.ListWavs(ctx, runID)
+	if err != nil || len(allWavs) != 2 {
+		t.Fatalf("expected 2 wavs after move, got %d, err: %v", len(allWavs), err)
+	}
 }
 
 func TestStore_Projects(t *testing.T) {

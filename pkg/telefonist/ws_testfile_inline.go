@@ -510,33 +510,34 @@ func processRecordings(ctx context.Context, store *TestStore, runID int64, dataD
 				continue
 			}
 
-			data, err := os.ReadFile(path)
-			if err != nil {
-				log.Printf("failed to read recorded file %s: %v", path, err)
+			newName := strings.TrimPrefix(f.Name(), "dump-")
+			if strings.HasSuffix(newName, "-enc.wav") {
+				// Encoded WAVs are not kept, remove directly
+				if err := os.Remove(path); err != nil {
+					log.Printf("failed to remove encoded wav %s: %v", path, err)
+				}
 				continue
 			}
 
-			newName := strings.TrimPrefix(f.Name(), "dump-")
-			if !strings.HasSuffix(newName, "-enc.wav") {
+			if store != nil {
 				if !wavLocationLoaded {
 					var err error
 					wavTestfileName, wavProjectName, err = store.getRunWavLocation(ctx, runID)
 					if err != nil {
-						log.Printf("failed to save wav %s to db: %v", newName, err)
+						log.Printf("failed to get wav location for %s: %v", newName, err)
+						_ = os.Remove(path)
 						continue
 					}
 					wavLocationLoaded = true
 				}
-				if err := store.SaveWavWithLocation(ctx, runID, wavTestfileName, wavProjectName, newName, data); err != nil {
-					log.Printf("failed to save wav %s to db: %v", newName, err)
+				if err := store.MoveWavWithLocation(ctx, runID, wavTestfileName, wavProjectName, newName, path); err != nil {
+					log.Printf("failed to move wav %s to storage: %v", newName, err)
+					_ = os.Remove(path)
 					continue
 				}
-			}
-
-			if err := os.Remove(path); err != nil {
-				log.Printf("failed to remove recorded file %s: %v", path, err)
-			} else {
 				log.Printf("captured and stored recording: %s", newName)
+			} else {
+				_ = os.Remove(path)
 			}
 		}
 

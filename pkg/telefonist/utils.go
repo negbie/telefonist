@@ -62,17 +62,67 @@ func ExtractAlias(s string) string {
 var authPassRegexp = regexp.MustCompile(`(?i)(auth_pass=)([^; \r\n\t"\\]*)`)
 var authPassKeywordRegexp = regexp.MustCompile(`(?i)auth_pass`)
 
+// HasAuthPass checks case-insensitively whether s contains "auth_pass" without regex allocations.
+func HasAuthPass(s string) bool {
+	const target = "auth_pass"
+	if len(s) < len(target) {
+		return false
+	}
+	for i := 0; i <= len(s)-len(target); i++ {
+		match := true
+		for j := 0; j < len(target); j++ {
+			c := s[i+j]
+			if c >= 'A' && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != target[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAuthPassBytes checks case-insensitively whether b contains "auth_pass" without regex allocations.
+func HasAuthPassBytes(b []byte) bool {
+	const target = "auth_pass"
+	if len(b) < len(target) {
+		return false
+	}
+	for i := 0; i <= len(b)-len(target); i++ {
+		match := true
+		for j := 0; j < len(target); j++ {
+			c := b[i+j]
+			if c >= 'A' && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != target[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
 // SanitizeString masks sensitive values like auth_pass in a string.
 func SanitizeString(s string) string {
-	if s == "" {
-		return ""
+	if s == "" || !HasAuthPass(s) {
+		return s
 	}
 	return authPassRegexp.ReplaceAllString(s, "${1}******")
 }
 
 // SanitizeBytes masks sensitive values like auth_pass in a byte slice.
 func SanitizeBytes(b []byte) []byte {
-	if len(b) == 0 {
+	if len(b) == 0 || !HasAuthPassBytes(b) {
 		return b
 	}
 	return authPassRegexp.ReplaceAll(b, []byte("${1}******"))

@@ -3,7 +3,6 @@ package telefonist
 import (
 	"bytes"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -12,12 +11,6 @@ import (
 )
 
 var (
-	idRegex         = regexp.MustCompile(`"id":"[^"]+"`)
-	timeRegex       = regexp.MustCompile(`"time":"[^"]+"`)
-	contacturiRegex = regexp.MustCompile(`"Contacturi":"[^"]+"`)
-	paramRegex      = regexp.MustCompile(`"Param":"[^"]+"`)
-
-	idReplacement    = []byte(`"id":""`)
 	rawActionMarker  = []byte(`"action":`)
 	rawCmdTypeMarker = []byte(`"type":"CMD"`)
 )
@@ -39,11 +32,7 @@ func OrderIndependentHash(s string) (string, []string) {
 		}
 
 		// Hash each individual event/line
-		// Strip dynamic fields like time and id to maintain a deterministic hash
-		cleanLine := idRegex.ReplaceAllString(line, `"id":""`)
-		cleanLine = timeRegex.ReplaceAllString(cleanLine, `"time":""`)
-
-		h := xxhash.Sum64String(cleanLine)
+		h := xxhash.Sum64String(line)
 		totalSum += h
 
 		sortedLines = append(sortedLines, line)
@@ -118,10 +107,11 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 	}
 
 	// Strip dynamic fields to maintain a deterministic hash
-	stripped := idRegex.ReplaceAll(e.RawJSON, idReplacement)
-	stripped = contacturiRegex.ReplaceAll(stripped, nil)
+	stripped := replaceFieldBytes(e.RawJSON, []byte(`"id":"`), nil)
+	stripped = replaceFieldBytes(stripped, []byte(`"contacturi":"`), nil)
+
 	if e.Type != "AUDIO_REPORT" && e.Type != "PRESENCE" {
-		stripped = paramRegex.ReplaceAll(stripped, nil)
+		stripped = replaceFieldBytes(stripped, []byte(`"param":"`), nil)
 	}
 
 	t.outputBuf.Write(stripped)
@@ -175,4 +165,37 @@ func sessionIsActive(session *TrainSession) bool {
 
 func hashOutput(s string) string {
 	return fmt.Sprintf("%016x", xxhash.Sum64String(s))
+}
+
+func replaceFieldBytes(b []byte, prefix []byte, replacement []byte) []byte {
+	idx := bytes.Index(b, prefix)
+	if idx == -1 {
+		return b
+	}
+
+	var res []byte
+	for idx != -1 {
+		valStart := idx + len(prefix)
+		endQuote := bytes.IndexByte(b[valStart:], '"')
+		if endQuote == -1 {
+			break
+		}
+		valEnd := valStart + endQuote + 1
+
+		if res == nil {
+			res = make([]byte, 0, len(b))
+		}
+		res = append(res, b[:idx]...)
+		if len(replacement) > 0 {
+			res = append(res, replacement...)
+		}
+		b = b[valEnd:]
+		idx = bytes.Index(b, prefix)
+	}
+
+	if res == nil {
+		return b
+	}
+	res = append(res, b...)
+	return res
 }

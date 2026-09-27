@@ -113,3 +113,51 @@ func TestExpandShortcuts(t *testing.T) {
 		})
 	}
 }
+
+func TestHasAuthPass(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected bool
+	}{
+		{"", false},
+		{"auth_pas", false},
+		{"auth_pass", true},
+		{"AUTH_PASS", true},
+		{"aUtH_pAsS", true},
+		{"uanew <sip:alice@domain>;auth_pass=secret", true},
+		{"reg: Auth_Pass=1234", true},
+		{"no password here", false},
+	}
+	for _, tc := range cases {
+		got := HasAuthPass(tc.input)
+		if got != tc.expected {
+			t.Errorf("HasAuthPass(%q) = %v; want %v", tc.input, got, tc.expected)
+		}
+		gotBytes := HasAuthPassBytes([]byte(tc.input))
+		if gotBytes != tc.expected {
+			t.Errorf("HasAuthPassBytes(%q) = %v; want %v", tc.input, gotBytes, tc.expected)
+		}
+	}
+}
+
+func TestSanitizeString(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"hello world", "hello world"},
+		{"auth_pass=secret;other=1", "auth_pass=******;other=1"},
+		{"AUTH_PASS=secret123", "AUTH_PASS=******"},
+	}
+	for _, tc := range cases {
+		got := SanitizeString(tc.input)
+		if got != tc.expected {
+			t.Errorf("SanitizeString(%q) = %q; want %q", tc.input, got, tc.expected)
+		}
+		gotBytes := string(SanitizeBytes([]byte(tc.input)))
+		if gotBytes != tc.expected {
+			t.Errorf("SanitizeBytes(%q) = %q; want %q", tc.input, gotBytes, tc.expected)
+		}
+	}
+}

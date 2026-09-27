@@ -146,8 +146,8 @@ static: telefonist_static
 
 telefonist_static: export CC := zig cc -target x86_64-linux-musl
 telefonist_static: export CXX := zig c++ -target x86_64-linux-musl
-telefonist_static: export CFLAGS := -Oz -fPIC -ffunction-sections -fdata-sections
-telefonist_static: export CXXFLAGS := -Oz -fPIC -ffunction-sections -fdata-sections
+telefonist_static: export CFLAGS := -O2 -fPIC -ffunction-sections -fdata-sections
+telefonist_static: export CXXFLAGS := -O2 -fPIC -ffunction-sections -fdata-sections
 telefonist_static: export LDFLAGS := -Wl,--gc-sections
 telefonist_static: $(BARESIP_LIB) stage_headers
 	$(call check_alsa,noalsa)
