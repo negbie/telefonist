@@ -11,10 +11,12 @@ import (
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
 )
 
-var idRegex = regexp.MustCompile(`"id":"[^"]+"`)
-var timeRegex = regexp.MustCompile(`"time":"[^"]+"`)
-
 var (
+	idRegex         = regexp.MustCompile(`"id":"[^"]+"`)
+	timeRegex       = regexp.MustCompile(`"time":"[^"]+"`)
+	contacturiRegex = regexp.MustCompile(`"Contacturi":"[^"]+"`)
+	paramRegex      = regexp.MustCompile(`"Param":"[^"]+"`)
+
 	idReplacement    = []byte(`"id":""`)
 	rawActionMarker  = []byte(`"action":`)
 	rawCmdTypeMarker = []byte(`"type":"CMD"`)
@@ -101,8 +103,9 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 		t.failMsg = "Registration failed"
 	}
 
-	// Following types should be excluded from the hash calculation
-	if e.Type == "CALL_RTCP" || e.Type == "SIP" || e.Type == "LOG" {
+	// Exclude non-deterministic and lifecycle event types from hash calculation
+	switch e.Type {
+	case "CALL_RTCP", "SIP", "LOG", "SHUTDOWN", "UNREGISTERING", "EXIT":
 		return
 	}
 
@@ -114,9 +117,14 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 		return
 	}
 
-	// Strip the dynamic "id" field to maintain a deterministic hash
-	strippedJSON := idRegex.ReplaceAll(e.RawJSON, idReplacement)
-	t.outputBuf.Write(strippedJSON)
+	// Strip dynamic fields to maintain a deterministic hash
+	stripped := idRegex.ReplaceAll(e.RawJSON, idReplacement)
+	stripped = contacturiRegex.ReplaceAll(stripped, nil)
+	if e.Type != "AUDIO_REPORT" && e.Type != "PRESENCE" {
+		stripped = paramRegex.ReplaceAll(stripped, nil)
+	}
+
+	t.outputBuf.Write(stripped)
 	t.outputBuf.WriteString("\n\n")
 }
 

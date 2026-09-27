@@ -32,6 +32,7 @@ struct presence {
 	struct contact *contact;
 	struct ua *ua;
 	bool shutdown;
+	bool await_direct_notify;
 };
 
 static struct list presencel = LIST_INIT;
@@ -88,8 +89,10 @@ static void notify_handler(struct sip *sip, const struct sip_msg *msg,
 	const struct sip_hdr *type_hdr, *length_hdr;
 	struct pl pl;
 
-	if (pres->shutdown)
-		goto done;
+	if (pres->shutdown) {
+		(void)sip_treply(NULL, sip, msg, 200, "OK");
+		return;
+	}
 
 	pres->failc = 0;
 
@@ -106,7 +109,7 @@ static void notify_handler(struct sip *sip, const struct sip_msg *msg,
 	}
 
 	if (!type_hdr ||
-	    0 != pl_strcasecmp(&type_hdr->val, "application/dialog-info+xml")) {
+	    0 != pl_strncasecmp(&type_hdr->val, "application/dialog-info+xml", 27)) {
 
 		if (type_hdr)
 			warning("presence: unsupported content-type: '%r'\n",
@@ -122,8 +125,12 @@ static void notify_handler(struct sip *sip, const struct sip_msg *msg,
 
 	if (msg && msg->mb && !re_regex((const char *)mbuf_buf(msg->mb),
 				   mbuf_get_left(msg->mb),
-				   "<state[ \t]*>[^<]+</state[ \t]*>",
+				   "<state[^>]*>[^<]+</state[ \t]*>",
 				   NULL, &pl, NULL)) {
+		struct ua *ua;
+		const char *uri;
+
+		(void)pl_trim(&pl);
 
 		if (0 == pl_strcasecmp(&pl, "confirmed") ||
 		    0 == pl_strcasecmp(&pl, "early") ||
@@ -137,6 +144,16 @@ static void notify_handler(struct sip *sip, const struct sip_msg *msg,
 		else {
 			status = PRESENCE_OPEN;
 		}
+
+		ua = pres->ua ? pres->ua : uag_find_aor(NULL);
+		uri = contact_uri(pres->contact);
+
+		if (ua && pres->await_direct_notify) {
+			pres->await_direct_notify = false;
+			bevent_ua_emit(BEVENT_PRESENCE, ua,
+				       "peeruri=%s;firststate=%r;",
+				       uri ? uri : "", &pl);
+		}
 	}
 	else {
 		status = PRESENCE_UNKNOWN;
@@ -146,9 +163,6 @@ done:
 	(void)sip_treply(NULL, sip, msg, 200, "OK");
 
 	contact_set_presence(pres->contact, status);
-
-	if (pres->shutdown)
-		mem_deref(pres);
 }
 
 static void close_handler(int err, const struct sip_msg *msg,
@@ -231,6 +245,8 @@ static int subscribe(struct presence *pres)
 
 	routev[0] = ua_outbound(ua);
 
+	pres->await_direct_notify = true;
+
 	err = sipevent_subscribe(&pres->sub, uag_sipevent_sock(),
 				 contact_uri(pres->contact), NULL,
 				 account_aor(ua_account(ua)),
@@ -243,6 +259,7 @@ static int subscribe(struct presence *pres)
 	debug("presence: subscribe %s: err=%d sub=%p\n",
 	      contact_uri(pres->contact), err, pres->sub);
 	if (err) {
+		pres->await_direct_notify = false;
 		warning("presence: sipevent_subscribe failed: %m\n", err);
 	}
 

@@ -37,7 +37,7 @@ OPENSSL_VER ?= 3.0.13
 G722_VER ?= master
 SNDFILE_VER ?= 1.2.2
 
-BARESIP_VER ?= 4.10.0
+BARESIP_VER ?= 4.11.0
 ifeq ($(BARESIP_VER),master)
 BARESIP_REF := master
 else

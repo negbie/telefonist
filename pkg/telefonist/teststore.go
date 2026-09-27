@@ -468,6 +468,9 @@ ORDER BY id DESC;
 		}
 		list = append(list, r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list versions rows: %w", err)
+	}
 	return list, nil
 }
 
@@ -1605,6 +1608,9 @@ func (s *TestStore) ListProjects(ctx context.Context) ([]ProjectRow, error) {
 			log.Printf("failed to parse project created_at %q for project %q: %v", created, r.Name, err)
 		}
 		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list projects rows: %w", err)
 	}
 	return out, nil
 }

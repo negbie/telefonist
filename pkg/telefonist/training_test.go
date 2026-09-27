@@ -1,6 +1,7 @@
 package telefonist
 
 import (
+	"strings"
 	"testing"
 
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
@@ -204,3 +205,122 @@ func TestTrainSessionRecordEventRegisterFail(t *testing.T) {
 		t.Errorf("expected failMsg 'Registration failed', got %q", session.failMsg)
 	}
 }
+
+func TestTrainSessionRecordEventExcludedTypes(t *testing.T) {
+	session := newTrainSession(nil, nil)
+
+	excludedTypes := []string{"SHUTDOWN", "UNREGISTERING", "EXIT", "CALL_RTCP", "SIP", "LOG"}
+	for _, et := range excludedTypes {
+		session.recordEvent(gobaresip.EventMsg{
+			Type:    et,
+			RawJSON: []byte(`{"event":true,"type":"` + et + `","id":"123"}`),
+		})
+	}
+
+	// Output buffer used for hashing must be empty
+	if session.outputBuf.Len() != 0 {
+		t.Errorf("expected empty outputBuf for excluded types, got %q", session.outputBuf.String())
+	}
+
+	// Full buffer for download/storage must still contain all events
+	full := session.GetFullOutput()
+	for _, et := range excludedTypes {
+		if !strings.Contains(full, `"`+et+`"`) {
+			t.Errorf("full output should contain %s, got: %s", et, full)
+		}
+	}
+}
+
+func TestTrainSessionRecordEventContacturiAndParam(t *testing.T) {
+	session := newTrainSession(nil, nil)
+
+	session.recordEvent(gobaresip.EventMsg{
+		Type:    "CALL_CLOSED",
+		RawJSON: []byte(`{"event":true,"type":"CALL_CLOSED","id":"abc","Contacturi":"sip:alice@127.0.0.1:5060","Param":"Connection reset"}`),
+	})
+
+	output := session.outputBuf.String()
+	expected := `{"event":true,"type":"CALL_CLOSED","id":"",,}` + "\n\n"
+
+	if output != expected {
+		t.Errorf("recordEvent parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
+	}
+}
+
+func TestTrainSessionRecordEventAudioReportAndPresence(t *testing.T) {
+	session := newTrainSession(nil, nil)
+
+	session.recordEvent(gobaresip.EventMsg{
+		Type:    "AUDIO_REPORT",
+		RawJSON: []byte(`{"event":true,"type":"AUDIO_REPORT","id":"123","Contacturi":"sip:alice@127.0.0.1","Param":"peeruri=sip:bob@biloxi.com;tx=true;"}`),
+	})
+	session.recordEvent(gobaresip.EventMsg{
+		Type:    "PRESENCE",
+		RawJSON: []byte(`{"event":true,"type":"PRESENCE","id":"456","Param":"firststate=open;"}`),
+	})
+
+	output := session.outputBuf.String()
+	expected := `{"event":true,"type":"AUDIO_REPORT","id":"",,"Param":"peeruri=sip:bob@biloxi.com;tx=true;"}` + "\n\n" +
+		`{"event":true,"type":"PRESENCE","id":"","Param":"firststate=open;"}` + "\n\n"
+
+	if output != expected {
+		t.Errorf("recordEvent for AUDIO_REPORT and PRESENCE parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
+	}
+}
+
+func TestTrainSessionFinishDeterministicHash(t *testing.T) {
+	// Two runs with different dynamic Contacturi, Param, id, plus lifecycle events should produce identical hash
+	s1 := newTrainSession(nil, nil)
+	s1.recordEvent(gobaresip.EventMsg{
+		Type:    "CALL_CLOSED",
+		RawJSON: []byte(`{"event":true,"type":"CALL_CLOSED","id":"id1","Contacturi":"sip:alice@10.0.0.1:1234","Param":"normal"}`),
+	})
+	s1.recordEvent(gobaresip.EventMsg{
+		Type:    "SHUTDOWN",
+		RawJSON: []byte(`{"event":true,"type":"SHUTDOWN","id":"id2"}`),
+	})
+
+	s2 := newTrainSession(nil, nil)
+	s2.recordEvent(gobaresip.EventMsg{
+		Type:    "CALL_CLOSED",
+		RawJSON: []byte(`{"event":true,"type":"CALL_CLOSED","id":"id3","Contacturi":"sip:alice@10.0.0.2:5678","Param":"other"}`),
+	})
+	s2.recordEvent(gobaresip.EventMsg{
+		Type:    "UNREGISTERING",
+		RawJSON: []byte(`{"event":true,"type":"UNREGISTERING","id":"id4"}`),
+	})
+	s2.recordEvent(gobaresip.EventMsg{
+		Type:    "EXIT",
+		RawJSON: []byte(`{"event":true,"type":"EXIT","id":"id5"}`),
+	})
+
+	h1 := s1.finish()
+	h2 := s2.finish()
+	if h1 != h2 {
+		t.Errorf("hashes should match despite dynamic fields and lifecycle events: %q != %q", h1, h2)
+	}
+}
+
+func TestTrainSessionFinishDifferentiatesAudioReportAndPresence(t *testing.T) {
+	// Different param in AUDIO_REPORT must produce different hashes
+	sAR1 := newTrainSession(nil, nil)
+	sAR1.recordEvent(gobaresip.EventMsg{Type: "AUDIO_REPORT", RawJSON: []byte(`{"event":true,"type":"AUDIO_REPORT","param":"tx=true;"}`)})
+	sAR2 := newTrainSession(nil, nil)
+	sAR2.recordEvent(gobaresip.EventMsg{Type: "AUDIO_REPORT", RawJSON: []byte(`{"event":true,"type":"AUDIO_REPORT","param":"tx=false;"}`)})
+
+	if sAR1.finish() == sAR2.finish() {
+		t.Errorf("AUDIO_REPORT with different param should produce different hashes")
+	}
+
+	// Different param in PRESENCE must produce different hashes
+	sPres1 := newTrainSession(nil, nil)
+	sPres1.recordEvent(gobaresip.EventMsg{Type: "PRESENCE", RawJSON: []byte(`{"event":true,"type":"PRESENCE","param":"firststate=open;"}`)})
+	sPres2 := newTrainSession(nil, nil)
+	sPres2.recordEvent(gobaresip.EventMsg{Type: "PRESENCE", RawJSON: []byte(`{"event":true,"type":"PRESENCE","param":"firststate=closed;"}`)})
+
+	if sPres1.finish() == sPres2.finish() {
+		t.Errorf("PRESENCE with different param should produce different hashes")
+	}
+}
+
+

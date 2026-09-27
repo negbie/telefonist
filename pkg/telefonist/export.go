@@ -33,7 +33,8 @@ func filterFlowEvents(events []map[string]interface{}) string {
 			}
 			first = false
 			param, _ := e["param"].(string)
-			sb.WriteString(param + "\n")
+			sb.WriteString(param)
+			sb.WriteByte('\n')
 			continue
 		}
 
@@ -70,7 +71,11 @@ func filterFlowEvents(events []map[string]interface{}) string {
 			if sval == "" {
 				continue
 			}
-			sb.WriteString(strings.ToUpper(k[:1]) + k[1:] + ": " + sval + "\n")
+			sb.WriteString(strings.ToUpper(k[:1]))
+			sb.WriteString(k[1:])
+			sb.WriteString(": ")
+			sb.WriteString(sval)
+			sb.WriteByte('\n')
 		}
 	}
 	return sb.String()

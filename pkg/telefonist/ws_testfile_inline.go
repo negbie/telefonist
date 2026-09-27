@@ -284,7 +284,7 @@ func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, c
 				log.Printf("failed to save run: %v", err)
 			} else {
 				runID = id
-				h.broadcast <- []byte(fmt.Sprintf(`{"status":"finished","token":"testruns","action":"save","testfile":%q,"project":%q}`, fileName, projectName))
+				h.broadcast <- fmt.Appendf(nil, `{"status":"finished","token":"testruns","action":"save","testfile":%q,"project":%q}`, fileName, projectName)
 			}
 		}
 

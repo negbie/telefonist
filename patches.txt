@@ -24,6 +24,7 @@ replace:
 with:
 	case BEVENT_CUSTOM:               return "CUSTOM";
 	case BEVENT_AUDIO_REPORT:         return "AUDIO_REPORT";
+	case BEVENT_PRESENCE:             return "PRESENCE";
 	case BEVENT_SIPSESS_FAILED:       return "SIPSESS_FAILED";
 
 
@@ -34,4 +35,22 @@ replace:
 with:
 	BEVENT_CUSTOM,
 	BEVENT_AUDIO_REPORT,
+	BEVENT_PRESENCE,
 	BEVENT_SIPSESS_CONN,
+
+
+file: libbaresip/git/baresip/src/aureceiver.c
+replace:
+		if (err) {
+			warning("audio_recv: start_player failed (%s.%s): "
+				"%m\n",
+				ar->module, ar->device, err);
+			return err;
+		}
+with:
+		if (err) {
+			warning("audio_recv: start_player failed (%s.%s): "
+				"%m\n",
+				ar->module, ar->device, err);
+			return 0;
+		}
