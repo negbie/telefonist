@@ -209,6 +209,14 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		return err
 	}
 
+	// Write empty contacts file to prevent baresip from generating default template contacts.
+	contactsFile := filepath.Join(agentDir, "contacts")
+	if err := os.WriteFile(contactsFile, []byte(""), 0644); err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		m.mu.Unlock()
+		return err
+	}
+
 	// Start agent process
 	// We pass both addresses to the agent:
 	// -ctrl_address: where the proxy listens for the Master
