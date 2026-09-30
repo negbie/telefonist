@@ -1,22 +1,3 @@
-file: libbaresip/git/baresip/modules/menu/dynamic_menu.c
-replace:
-	if (!call_supported(menu->xfer_call, REPLACES)) {
-		info ("menu: peer does not support Replaces header\n");
-		goto out;
-	}
-with:
-	// don't check for replaces header
-
-
-file: libbaresip/git/baresip/modules/menu/dynamic_menu.c
-replace:
-		err = call_hold(ua_call(ua), true);
-		if (err)
-			goto out;
-with:
-	// don't hold
-
-
 file: libbaresip/git/baresip/src/bevent.c
 replace:
 	case BEVENT_CUSTOM:               return "CUSTOM";
@@ -37,20 +18,3 @@ with:
 	BEVENT_AUDIO_REPORT,
 	BEVENT_PRESENCE,
 	BEVENT_SIPSESS_CONN,
-
-
-file: libbaresip/git/baresip/src/aureceiver.c
-replace:
-		if (err) {
-			warning("audio_recv: start_player failed (%s.%s): "
-				"%m\n",
-				ar->module, ar->device, err);
-			return err;
-		}
-with:
-		if (err) {
-			warning("audio_recv: start_player failed (%s.%s): "
-				"%m\n",
-				ar->module, ar->device, err);
-			return 0;
-		}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
 )
@@ -53,7 +54,7 @@ func newBaresipInstance(f AppFlags) (*gobaresip.Baresip, error) {
 	)
 }
 
-func startHTTPServer(f AppFlags, hub *WsHub) {
+func newHTTPHandler(f AppFlags, hub *WsHub) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ws", AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +77,10 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 	mux.HandleFunc("/api/testrun/download", AuthMiddleware(HandleAPITestrunDownload(hub)))
 	mux.HandleFunc("/api/maintenance", AuthMiddleware(HandleAPIDatabaseMaintenance(hub.testStore)))
 	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UIAPIKey))
+	mux.HandleFunc("/api/runner", AuthMiddleware(HandleRunner(hub)))
+	mux.HandleFunc("/api/operations", AuthMiddleware(HandleOperations(hub)))
+	mux.HandleFunc("/api/batch", APIKeyOrSession(f.UIAPIKey, HandleBatch(hub)))
+	mux.HandleFunc("/api/batch/junit", APIKeyOrSession(f.UIAPIKey, HandleBatchJUnit(hub)))
 	mux.HandleFunc("/api/cron", AuthMiddleware(HandleAPICronJobs(hub)))
 	mux.HandleFunc("/api/cron/modify", AuthMiddleware(HandleAPICronJobModify(hub)))
 	mux.HandleFunc("/api/accounts", AuthMiddleware(HandleAPISIPAccounts(hub)))
@@ -87,14 +92,7 @@ func startHTTPServer(f AppFlags, hub *WsHub) {
 		StaticHandler().ServeHTTP(w, r)
 	}))
 
-	go func() {
-		if f.TLSCert != "" && f.TLSKey != "" {
-			log.Printf("Starting HTTPS server on %s", f.UIAddr)
-			log.Fatal(http.ListenAndServeTLS(f.UIAddr, f.TLSCert, f.TLSKey, mux))
-		}
-		log.Printf("Starting HTTP server on %s", f.UIAddr)
-		log.Fatal(http.ListenAndServe(f.UIAddr, mux))
-	}()
+	return limitRequests(mux)
 }
 
 func Run() error {
@@ -140,7 +138,7 @@ func Run() error {
 
 	store, err := OpenTestStore(context.Background(), f.DataDir)
 	if err != nil {
-		log.Printf("teststore: disabled: %v", err)
+		return fmt.Errorf("test store unavailable: %w", err)
 	} else {
 		hub.SetTestStore(store)
 		defer func() {
@@ -156,22 +154,43 @@ func Run() error {
 		defer cm.Stop()
 	}
 
-	go hub.Run()
-
-	if f.UIAPIKey == "" {
-		if f.UIAPIKey, err = GenerateSessionToken(); err != nil {
-			return err
-		}
+	if err := ensureCredentials(&f); err != nil {
+		return err
 	}
-	log.Printf("UI Admin API Key (X-API-Key): %s", f.UIAPIKey)
-
-	startHTTPServer(f, hub)
-
+	go hub.Run()
+	defer func() { hub.Stop(); <-hub.done; hub.bm.CloseAll() }()
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	workerDone := runWebhookWorker(workerCtx, store)
+	defer func() { workerCancel(); <-workerDone }()
+	server := &http.Server{Addr: f.UIAddr, Handler: newHTTPHandler(f, hub), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 * 1024}
+	serverErrors := make(chan error, 1)
+	go func() {
+		if f.TLSCert != "" && f.TLSKey != "" {
+			serverErrors <- server.ListenAndServeTLS(f.TLSCert, f.TLSKey)
+		} else {
+			serverErrors <- server.ListenAndServe()
+		}
+	}()
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
+	defer signal.Stop(sig)
+	var serveErr error
+	select {
+	case <-sig:
+	case err := <-serverErrors:
+		if err != http.ErrServerClosed {
+			log.Printf("HTTP server: %v", err)
+			serveErr = err
+		}
+	}
+	if hub.cronManager != nil {
+		hub.cronManager.Stop()
+	}
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	_ = server.Shutdown(shutdownCtx)
 
 	hub.Stop()
 	hub.bm.CloseAll()
-	return nil
+	return serveErr
 }

@@ -1,5 +1,6 @@
 import { EventBus } from "./event_bus.js";
 import { API } from "./api.js";
+import { escapeHTML } from "./utils.js";
 
 export function initAccountsManager() {
     const refreshBtn = document.getElementById("accounts-refresh");
@@ -14,6 +15,7 @@ export function initAccountsManager() {
     const nameInput = document.getElementById("accounts-name");
     const sipUriInput = document.getElementById("accounts-sip-uri");
     const passwordInput = document.getElementById("accounts-password");
+    const clearPassword = document.getElementById("accounts-clear-password");
     const uriParamsInput = document.getElementById("accounts-uri-params");
     const addrParamsInput = document.getElementById("accounts-addr-params");
 
@@ -38,14 +40,14 @@ export function initAccountsManager() {
             const tr = document.createElement("tr");
 
             tr.innerHTML = `
-                <td><strong>${acc.name}</strong></td>
-                <td><code>${acc.sip_uri}</code></td>
-                <td><span class="password-masked" title="Password status">${acc.has_password ? "••••••••" : "(no password)"}</span></td>
-                <td><code>${acc.uri_params || ""}</code></td>
-                <td><code>${acc.addr_params || ""}</code></td>
-                <td>
-                    <button type="button" class="accounts-edit" data-name="${acc.name}">Edit</button>
-                    <button type="button" class="accounts-del" data-name="${acc.name}">Delete</button>
+                <td><strong>${escapeHTML(acc.name)}</strong></td>
+                <td><code title="${escapeHTML(acc.sip_uri)}">${escapeHTML(acc.sip_uri)}</code></td>
+                <td><span class="password-masked" title="Password">${acc.has_password ? "••••••••" : "-"}</span></td>
+                <td><code title="${escapeHTML(acc.uri_params || "")}">${escapeHTML(acc.uri_params || "-")}</code></td>
+                <td><code title="${escapeHTML(acc.addr_params || "")}">${escapeHTML(acc.addr_params || "-")}</code></td>
+                <td class="col-actions accounts-actions">
+                    <button type="button" class="btn-action-edit accounts-edit" title="Edit account">Edit</button>
+                    <button type="button" class="btn-action-del accounts-del" title="Delete account">Delete</button>
                 </td>
             `;
             listEl.appendChild(tr);
@@ -57,6 +59,7 @@ export function initAccountsManager() {
                 nameInput.disabled = false;
                 sipUriInput.value = acc.sip_uri;
                 passwordInput.value = "";
+                clearPassword.checked = false;
                 uriParamsInput.value = acc.uri_params || "";
                 addrParamsInput.value = acc.addr_params || "";
                 modal.classList.add("active");
@@ -85,6 +88,7 @@ export function initAccountsManager() {
         nameInput.disabled = false;
         sipUriInput.value = "";
         passwordInput.value = "";
+        clearPassword.checked = false;
         uriParamsInput.value = "";
         addrParamsInput.value = "";
         modal.classList.add("active");
@@ -93,6 +97,18 @@ export function initAccountsManager() {
     cancelBtn.onclick = () => {
         modal.classList.remove("active");
     };
+
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.classList.remove("active");
+    };
+
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && modal.classList.contains("active")) {
+                modal.classList.remove("active");
+            }
+        });
+    }
 
     const normalizeParamString = (p) => {
         p = p.trim();
@@ -111,6 +127,7 @@ export function initAccountsManager() {
             name: nameInput.value.trim(),
             sip_uri: sipUriInput.value.trim(),
             password: passwordInput.value,
+            clear_password: clearPassword.checked,
             uri_params: normalizeParamString(uriParamsInput.value),
             addr_params: normalizeParamString(addrParamsInput.value)
         };

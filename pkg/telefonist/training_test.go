@@ -1,11 +1,48 @@
 package telefonist
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
 )
+
+// Exercise the hub boundary: metadata must remain useful in evidence without
+// altering the historical bytes used by existing _hash baselines.
+func TestHubPreservesLegacyHashBeforeEnrichment(t *testing.T) {
+	const legacyBytes = `{"_agent":"alice",,"event":true,,,"type":"CALL_ESTABLISHED"}` + "\n\n"
+	const want = "0f03b168a55a808f"
+	for _, runID := range []int64{1, 987654} {
+		s := newTrainSession(nil, nil)
+		s.runID = runID
+		s.started = time.Now().Add(-time.Duration(runID) * time.Second)
+		s.eventSequence = uint64(runID)
+		h := &WsHub{trainSession: s, history: NewRingBuffer(32)}
+		raw := []byte(`{"_agent":"alice","contacturi":"sip:alice@127.0.0.1:1234","event":true,"id":"dynamic","param":"varies","type":"CALL_ESTABLISHED"}`)
+		h.handleAgentMsg(AgentMsg{Alias: "alice", Msg: gobaresip.Msg{Event: &gobaresip.EventMsg{Type: "CALL_ESTABLISHED", RawJSON: raw}}})
+		// Responses and telemetry newly retained as evidence were never hashed.
+		h.handleAgentMsg(AgentMsg{Alias: "alice", Msg: gobaresip.Msg{Response: &gobaresip.ResponseMsg{Data: "ok"}}})
+		for _, kind := range []string{"CALL_RTCP", "MODULE", "END_OF_FILE", "NATIVE_DONE", "LOG", "SIP"} {
+			noise := []byte(`{"event":true,"type":"` + kind + `","param":"variable"}`)
+			h.handleAgentMsg(AgentMsg{Alias: "alice", Msg: gobaresip.Msg{Event: &gobaresip.EventMsg{Type: kind, RawJSON: noise}}})
+		}
+		if got := s.outputBuf.String(); got != legacyBytes {
+			t.Fatalf("legacy hash input changed: %q", got)
+		}
+		if got := s.finish(); got != want {
+			t.Fatalf("legacy hash changed: got %s, want %s", got, want)
+		}
+		var evidence map[string]any
+		if err := json.Unmarshal([]byte(strings.Split(s.GetFullOutput(), "\n\n")[0]), &evidence); err != nil {
+			t.Fatal(err)
+		}
+		if evidence["run_id"] != float64(runID) || evidence["timestamp"] == nil || evidence["elapsed_ms"] == nil || evidence["event_sequence"] != float64(runID+1) {
+			t.Fatalf("missing diagnostic metadata: %v", evidence)
+		}
+	}
+}
 
 func TestHashOutput(t *testing.T) {
 	tests := []struct {
@@ -322,5 +359,3 @@ func TestTrainSessionFinishDifferentiatesAudioReportAndPresence(t *testing.T) {
 		t.Errorf("PRESENCE with different param should produce different hashes")
 	}
 }
-
-

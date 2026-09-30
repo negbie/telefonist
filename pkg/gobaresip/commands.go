@@ -2,6 +2,7 @@ package gobaresip
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -279,4 +280,47 @@ func (b *Baresip) CmdWs(raw []byte) error {
 		return b.Cmd(m[0], "", "cmd_"+m[0])
 	}
 	return b.Cmd(m[0], m[1], "cmd_"+m[0]+"_"+m[1])
+}
+
+// CmdWsContext waits for the actual baresip acknowledgement, rather than
+// equating a successful socket write with a successful command.
+func (b *Baresip) CmdWsContext(ctx context.Context, raw []byte) error {
+	parts := strings.SplitN(strings.TrimSpace(string(raw)), " ", 2)
+	if parts[0] == "" {
+		return ErrIgnoredCommand
+	}
+	params := ""
+	if len(parts) == 2 {
+		params = parts[1]
+	}
+	token := fmt.Sprintf("request_%d", b.requestID.Add(1))
+	reply := make(chan ResponseMsg, 1)
+	b.pendingMu.Lock()
+	if b.pending == nil {
+		b.pending = make(map[string]chan ResponseMsg)
+	}
+	b.pending[token] = reply
+	b.pendingMu.Unlock()
+	defer func() { b.pendingMu.Lock(); delete(b.pending, token); b.pendingMu.Unlock() }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := b.Cmd(strings.ToLower(parts[0]), params, token); err != nil {
+		return err
+	}
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case response := <-reply:
+		if !response.Ok {
+			return fmt.Errorf("command rejected: %s", response.Data)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.closeCh:
+		return errors.New("agent disconnected before command acknowledgement")
+	case <-timer.C:
+		return errors.New("command acknowledgement timed out")
+	}
 }

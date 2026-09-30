@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 )
 
 const (
-	lengthDelim byte = ':'
-	dataDelim   byte = ','
+	lengthDelim      byte = ':'
+	dataDelim        byte = ','
+	maxNetstringSize      = 256 * 1024
 )
 
 type reader struct {
@@ -22,18 +22,26 @@ func newReader(r io.Reader) *reader {
 }
 
 func (r *reader) readNetstring() ([]byte, error) {
-	raw, err := r.r.ReadBytes(lengthDelim)
-	if err != nil {
-		return nil, err
+	var header []byte
+	for {
+		c, err := r.r.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		if c == lengthDelim {
+			break
+		}
+		if c < '0' || c > '9' || len(header) >= 7 {
+			return nil, fmt.Errorf("invalid netstring length prefix")
+		}
+		header = append(header, c)
 	}
-
-	// Trim the trailing ':' delimiter and any surrounding whitespace.
-	lenStr := strings.TrimRight(string(raw[:len(raw)-1]), " ")
+	lenStr := string(header)
 	l, err := strconv.Atoi(lenStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid netstring length %q: %w", lenStr, err)
 	}
-	if l <= 0 {
+	if l <= 0 || l > maxNetstringSize || (len(header) > 1 && header[0] == '0') {
 		return nil, fmt.Errorf("wrong netstring length: %d", l)
 	}
 
@@ -43,11 +51,11 @@ func (r *reader) readNetstring() ([]byte, error) {
 		return nil, err
 	}
 	next, err := r.r.ReadByte()
-	if err != nil && err != io.EOF {
+	if err != nil {
 		return nil, err
 	}
 	if next != dataDelim {
-		r.r.UnreadByte()
+		return nil, fmt.Errorf("invalid netstring terminator %q", next)
 	}
 	return ret, nil
 }

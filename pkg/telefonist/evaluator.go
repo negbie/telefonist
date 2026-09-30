@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/grafana/sobek"
 )
@@ -25,8 +26,13 @@ func NewEvaluator() *Evaluator {
 // RunScript parses the full log output from TrainSession, constructs the
 // events and stats objects, injects the telefonist helper, and runs the script.
 func (e *Evaluator) RunScript(ctx context.Context, script string, rawLogOutput string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if len(script) > 256*1024 || len(rawLogOutput) > 32*1024*1024 {
+		return fmt.Errorf("evaluation input exceeds limit")
+	}
 	lines := strings.Split(rawLogOutput, "\n\n")
-	
+
 	var events []map[string]interface{}
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -34,16 +40,16 @@ func (e *Evaluator) RunScript(ctx context.Context, script string, rawLogOutput s
 			continue
 		}
 		var evt map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &evt); err == nil {
-			events = append(events, evt)
+		if err := json.Unmarshal([]byte(line), &evt); err != nil || evt == nil {
+			return fmt.Errorf("invalid recorded event")
 		}
+		events = append(events, evt)
 	}
 
 	// Make events array available
 	e.vm.Set("events", events)
 
 	// Make a mock stats object available for now (could be populated from events)
-	e.vm.Set("stats", map[string]interface{}{})
 
 	// Setup the telefonist utility functions
 	telefonistObj := e.vm.NewObject()
@@ -66,10 +72,7 @@ func (e *Evaluator) RunScript(ctx context.Context, script string, rawLogOutput s
 		if len(call.Arguments) >= 1 {
 			reason = call.Arguments[0].String()
 		}
-		if true {
-			panic(e.vm.ToValue(reason))
-		}
-		return sobek.Undefined()
+		panic(e.vm.ToValue(reason))
 	})
 	e.vm.Set("telefonist", telefonistObj)
 

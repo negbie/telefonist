@@ -25,7 +25,15 @@ function request(path, options) {
       throw new Error("Unauthorized");
     }
 
-    return response.json();
+    return response.text().then(text => {
+      let body;
+      try { body = JSON.parse(text); } catch (_) {
+        if (!response.ok) throw new Error("HTTP " + response.status + ": " + text.slice(0,300));
+        throw new Error("HTTP " + response.status + ": invalid server response");
+      }
+      if (!response.ok) throw new Error(body.message || "HTTP " + response.status);
+      return body;
+    });
   });
 }
 
@@ -68,11 +76,12 @@ export const API = {
   getTestfile(name, project) {
     return request("/api/testfile" + toQueryString({ name, project }));
   },
-  saveTestfile(name, project, contentB64) {
+  saveTestfile(name, project, contentB64, revision) {
     return requestJSON("/api/testfile", "POST", {
       name,
       project,
       content_b64: contentB64,
+      revision,
     });
   },
   deleteTestfile(name, project) {

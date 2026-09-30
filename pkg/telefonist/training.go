@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cespare/xxhash/v2"
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
@@ -50,12 +51,15 @@ func OrderIndependentHash(s string) (string, []string) {
 // through the WsHub's internalCmd channel (actor/monitor pattern).
 // Do NOT add a mutex here — the hub's single goroutine owns this value.
 type TrainSession struct {
-	active    bool
-	outputBuf bytes.Buffer // For hashing (filtered/clean)
-	fullBuf   bytes.Buffer // For downloads/storage (raw)
-	ignored   map[string]bool
-	accepted  map[string]bool // nil = accept all
-	failMsg   string
+	active        bool
+	outputBuf     bytes.Buffer // For hashing (filtered/clean)
+	fullBuf       bytes.Buffer // For downloads/storage (raw)
+	ignored       map[string]bool
+	accepted      map[string]bool // nil = accept all
+	failMsg       string
+	runID         int64
+	started       time.Time
+	eventSequence uint64
 }
 
 // newTrainSession creates a new testing session.
@@ -73,6 +77,7 @@ func newTrainSession(ignoredEvents []string, acceptedEvents []string) *TrainSess
 	}
 	return &TrainSession{
 		active:   true,
+		started:  time.Now(),
 		ignored:  ignored,
 		accepted: accepted,
 	}
@@ -84,17 +89,36 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 		return
 	}
 
-	// Always record to fullBuf for storage/download
-	t.fullBuf.Write(e.RawJSON)
-	t.fullBuf.WriteString("\n\n")
+	t.recordEvidence(e.RawJSON)
+	t.recordHashEvent(e)
+}
 
+// Evidence may contain timestamps and run metadata; it never feeds the hash.
+func (t *TrainSession) recordEvidence(raw []byte) {
+	if !t.active {
+		return
+	}
+	// Always record to fullBuf for storage/download
+	if t.fullBuf.Len()+len(raw)+2 > 32*1024*1024 {
+		t.failMsg = "telemetry exceeded 32 MiB run limit"
+		return
+	}
+	t.fullBuf.Write(raw)
+	t.fullBuf.WriteString("\n\n")
+}
+
+// Hash the original agent event, before enrichment or reserialization.
+func (t *TrainSession) recordHashEvent(e gobaresip.EventMsg) {
+	if !t.active {
+		return
+	}
 	if e.Type == "REGISTER_FAIL" {
 		t.failMsg = "Registration failed"
 	}
 
 	// Exclude non-deterministic and lifecycle event types from hash calculation
 	switch e.Type {
-	case "CALL_RTCP", "SIP", "LOG", "SHUTDOWN", "UNREGISTERING", "EXIT":
+	case "CALL_RTCP", "SIP", "LOG", "SHUTDOWN", "UNREGISTERING", "EXIT", "RESPONSE", "MODULE", "END_OF_FILE", "NATIVE_DONE":
 		return
 	}
 
@@ -106,7 +130,6 @@ func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
 		return
 	}
 
-	// Strip dynamic fields to maintain a deterministic hash
 	stripped := replaceFieldBytes(e.RawJSON, []byte(`"id":"`), nil)
 	stripped = replaceFieldBytes(stripped, []byte(`"contacturi":"`), nil)
 
@@ -167,6 +190,8 @@ func hashOutput(s string) string {
 	return fmt.Sprintf("%016x", xxhash.Sum64String(s))
 }
 
+// Preserve the historical bytes, including leftover commas: existing baselines
+// depend on them. This is hash input, not JSON for display or storage.
 func replaceFieldBytes(b []byte, prefix []byte, replacement []byte) []byte {
 	idx := bytes.Index(b, prefix)
 	if idx == -1 {

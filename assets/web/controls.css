@@ -81,8 +81,9 @@ input[type="text"] {
 /* Testfile List and Select */
 #testfile-select {
     width: 100%;
-    font-size: 11px;
-    font-family: var(--font-mono);
+    font-size: 13px;
+    font-family: var(--font-sans);
+    line-height: 1.5;
     border: 1px solid var(--border);
     border-radius: var(--input-radius);
     background: #fff;
@@ -95,24 +96,38 @@ input[type="text"] {
 }
 
 #testfile-select optgroup {
-    font-weight: bold;
+    font-weight: 600;
+    font-size: 12px;
+    font-family: var(--font-sans);
     font-style: normal;
     background: #f9fafb;
     color: #4b5563;
-    padding-top: 8px;
+    padding: 6px 8px 4px 8px;
+    border-top: 1px solid var(--border);
+    letter-spacing: 0.02em;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
+#testfile-select optgroup:first-child {
+    border-top: none;
+}
+
 #testfile-select optgroup option {
     font-weight: normal;
+    font-size: 13px;
+    font-family: var(--font-sans);
     background: #fff;
+    padding: 3px 8px 3px 18px;
 }
 
 #testfile-select option {
     font-weight: normal;
+    font-size: 13px;
+    font-family: var(--font-sans);
     background: #fff;
+    padding: 3px 8px;
 }
 
 #testfile-select option:last-child {
@@ -192,13 +207,21 @@ input[type="text"] {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 5px;
     background: #fff;
     border: 1px solid var(--border);
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
+    font-family: var(--font-sans);
     color: var(--muted);
     transition: all 0.2s;
+}
+
+.controls-sidebar button svg {
+    flex-shrink: 0;
+    display: inline-block;
+    vertical-align: middle;
 }
 
 .controls-sidebar button:hover {
@@ -219,27 +242,49 @@ input[type="text"] {
     color: #111827;
 }
 
-.controls-sidebar #testfiles-new {
-    color: #3b82f6;
-    font-weight: bold;
-    font-size: 18px;
-}
-
-.controls-sidebar #testfiles-rename {
-    color: #f59e0b;
-}
-
-.controls-sidebar #testfiles-delete {
-    color: #ef4444;
-}
-
+.controls-sidebar #testfiles-new,
 .controls-sidebar #projects-new {
     color: #3b82f6;
     font-weight: bold;
 }
 
+.controls-sidebar #testfiles-rename,
+.controls-sidebar #projects-rename {
+    color: #f59e0b;
+}
+
+.controls-sidebar #testfiles-clone,
+.controls-sidebar #projects-clone {
+    color: #4b5563;
+}
+
+.controls-sidebar #testfiles-delete,
 .controls-sidebar #projects-delete {
     color: #ef4444;
+}
+
+.controls-sidebar #testfiles-new:hover,
+.controls-sidebar #projects-new:hover {
+    color: #2563eb;
+    border-color: #93c5fd;
+}
+
+.controls-sidebar #testfiles-rename:hover,
+.controls-sidebar #projects-rename:hover {
+    color: #d97706;
+    border-color: #fcd34d;
+}
+
+.controls-sidebar #testfiles-clone:hover,
+.controls-sidebar #projects-clone:hover {
+    color: #111827;
+    border-color: #d1d5db;
+}
+
+.controls-sidebar #testfiles-delete:hover,
+.controls-sidebar #projects-delete:hover {
+    color: #dc2626;
+    border-color: #fca5a5;
 }
 
 .controls-sidebar button.active {

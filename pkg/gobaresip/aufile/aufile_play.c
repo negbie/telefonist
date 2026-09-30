@@ -97,7 +97,7 @@ int aufile_play_alloc(struct auplay_st **stp, const struct auplay *ap,
 	int err;
 	(void)ap;
 
-	if (!prm || !wh)
+	if (!stp || !prm || !wh)
 		return EINVAL;
 
 	if (!prm->ch || !prm->srate || !prm->ptime)
@@ -108,10 +108,13 @@ int aufile_play_alloc(struct auplay_st **stp, const struct auplay *ap,
 		return ENOMEM;
 
 	char file_buf[256];
+	static unsigned long recording_sequence;
 	time_t tnow = time(NULL);
 	struct tm *tm = localtime(&tnow);
-	re_snprintf(file_buf, sizeof(file_buf), "%s-%H.wav",
-		    str_isset(device) ? device : "speaker", timestamp_print, tm);
+	if (str_len(device) > 160) { err=ENAMETOOLONG; goto out; }
+	re_snprintf(file_buf, sizeof(file_buf), "%s-%H-%lu.wav",
+		    str_isset(device) ? device : "speaker", timestamp_print, tm,
+		    ++recording_sequence);
 	file = file_buf;
 
 
@@ -123,7 +126,7 @@ int aufile_play_alloc(struct auplay_st **stp, const struct auplay *ap,
 	err = aufile_open(&st->auf, &aufprm, file, AUFILE_WRITE);
 	if (err) {
 		warning("aufile: could not open %s for writing\n", file);
-		return err;
+		goto out;
 	}
 
 	st->wh = wh;
@@ -132,8 +135,7 @@ int aufile_play_alloc(struct auplay_st **stp, const struct auplay *ap,
 	st->sampc = st->prm.ch * st->prm.srate * st->prm.ptime / 1000;
 	st->num_bytes = st->sampc * aufmt_sample_size(prm->fmt);
 	st->sampv = mem_zalloc(st->num_bytes, NULL);
-	if (!st->sampv)
-		return ENOMEM;
+	if (!st->sampv) { err=ENOMEM; goto out; }
 
 	info("aufile: writing speaker audio to %s\n", file);
 	re_atomic_rlx_set(&st->run, true);

@@ -2,8 +2,10 @@ package telefonist
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -28,6 +30,10 @@ type storeHandler func(w http.ResponseWriter, r *http.Request, store *TestStore,
 // withStore wraps a handler to check testStore availability and create a 5s timeout context.
 func withStore(hub *WsHub, fn storeHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && hub.runner != nil && hub.runner.Snapshot().Active && (strings.HasPrefix(r.URL.Path, "/api/testfile") || strings.HasPrefix(r.URL.Path, "/api/projects") || r.URL.Path == "/api/maintenance") {
+			http.Error(w, "stop the active run before changing test identities", http.StatusConflict)
+			return
+		}
 		if hub.testStore == nil {
 			http.Error(w, "test store not enabled", http.StatusServiceUnavailable)
 			return
@@ -82,7 +88,7 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "save", "message": "saved", "name": req.Name}))
+			broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "save", "message": "saved", "name": req.Name}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "saved"})
 
 		case http.MethodDelete:
@@ -95,7 +101,7 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "delete", "message": "deleted", "name": name}))
+			broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "delete", "message": "deleted", "name": name}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "deleted"})
 
 		default:
@@ -128,7 +134,7 @@ func HandleAPIProjectRename(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "rename", "message": "renamed", "old_name": req.OldName, "new_name": req.NewName}))
+		broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "rename", "message": "renamed", "old_name": req.OldName, "new_name": req.NewName}))
 		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "renamed"})
 	})
 }
@@ -157,7 +163,7 @@ func HandleAPIProjectClone(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "clone", "message": "cloned", "src_name": req.SrcName, "target_name": req.TargetName}))
+		broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "projects", "action": "clone", "message": "cloned", "src_name": req.SrcName, "target_name": req.TargetName}))
 		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "cloned"})
 	})
 }
@@ -212,9 +218,10 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 
 		case http.MethodPost:
 			var req struct {
-				Name    string `json:"name"`
-				Project string `json:"project"`
-				Content string `json:"content_b64"`
+				Name     string  `json:"name"`
+				Project  string  `json:"project"`
+				Content  string  `json:"content_b64"`
+				Revision *string `json:"revision"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "invalid request", http.StatusBadRequest)
@@ -230,13 +237,22 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			if err := store.Save(ctx, req.Name, req.Project, string(decoded)); err != nil {
+			if err := store.SaveExpected(ctx, req.Name, req.Project, string(decoded), req.Revision); err != nil {
+				if errors.Is(err, ErrSaveConflict) {
+					jsonResponse(w, http.StatusConflict, apiResponse{Status: "error", Message: err.Error()})
+					return
+				}
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "save", "message": "saved", "name": req.Name, "project": req.Project}))
-			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "saved"})
+			broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "save", "message": "saved", "name": req.Name, "project": req.Project}))
+			row, err := store.Load(ctx, req.Name, req.Project)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]any{"status": "finished", "message": "saved", "revision": row.UpdatedAt.UTC().Format(time.RFC3339Nano)})
 
 		case http.MethodDelete:
 			name := r.URL.Query().Get("name")
@@ -251,7 +267,7 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "delete", "message": "deleted", "name": name, "project": project}))
+			broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "delete", "message": "deleted", "name": name, "project": project}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "deleted"})
 
 		default:
@@ -288,7 +304,7 @@ func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "rename", "message": "renamed", "old_name": req.OldName, "old_project": req.OldProject, "new_name": req.NewName, "new_project": req.NewProject}))
+		broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "rename", "message": "renamed", "old_name": req.OldName, "old_project": req.OldProject, "new_name": req.NewName, "new_project": req.NewProject}))
 		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "renamed"})
 	})
 }
@@ -379,7 +395,7 @@ func HandleAPITestfileClone(hub *WsHub) http.HandlerFunc {
 			return
 		}
 
-		hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "clone", "message": "cloned", "src_name": req.SrcName, "target_name": req.TargetName, "project": req.Project}))
+		broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "testfiles", "action": "clone", "message": "cloned", "src_name": req.SrcName, "target_name": req.TargetName, "project": req.Project}))
 		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "cloned"})
 	})
 }
@@ -425,7 +441,7 @@ func HandleAPITestruns(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testruns", "action": "delete", "testfile": name, "project": project, "message": "all runs deleted"}))
+			broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "testruns", "action": "delete", "testfile": name, "project": project, "message": "all runs deleted"}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "all runs deleted"})
 
 		default:
@@ -460,6 +476,11 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 				"run_number":      row.RunNumber,
 				"hash":            row.Hash,
 				"result":          row.Status,
+				"failure_reason":  row.FailureReason,
+				"source":          row.Source,
+				"script":          row.Script,
+				"batch_id":        row.BatchID,
+				"finished_at":     row.FinishedAt,
 				"flow_events_b64": base64.StdEncoding.EncodeToString([]byte(row.FlowEvents)),
 				"created_at":      row.CreatedAt.UTC().Format(time.RFC3339Nano),
 			})
@@ -477,7 +498,7 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 				return
 			}
 
-			hub.broadcast <- []byte(statusJSON(map[string]string{"status": "finished", "token": "testruns", "action": "delete", "id": strconv.Itoa(id), "message": "run deleted"}))
+			broadcastInfo(hub, statusJSON(map[string]string{"status": "finished", "token": "testruns", "action": "delete", "id": strconv.Itoa(id), "message": "run deleted"}))
 			jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "run deleted"})
 
 		default:
@@ -613,7 +634,7 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 			return
 		}
 
-		if r.Header.Get("X-API-Key") != apiKey {
+		if apiKey == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-API-Key")), []byte(apiKey)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -650,12 +671,13 @@ func HandleAPIProjectRun(hub *WsHub, apiKey string) http.HandlerFunc {
 			return
 		}
 
-		if !runTestfilesBatch(hub, batch) {
+		batchID, started := hub.runner.StartWithID(batch)
+		if !started {
 			http.Error(w, "another test run is already active", http.StatusConflict)
 			return
 		}
 
-		jsonResponse(w, http.StatusOK, apiResponse{Status: "finished", Message: "started"})
+		jsonResponse(w, http.StatusAccepted, map[string]any{"status": "started", "batch_id": batchID})
 	}
 }
 
@@ -777,12 +799,13 @@ func HandleAPISIPAccounts(hub *WsHub) http.HandlerFunc {
 			})
 		case http.MethodPost:
 			var req struct {
-				OldName    string `json:"old_name"`
-				Name       string `json:"name"`
-				SIPURI     string `json:"sip_uri"`
-				Password   string `json:"password"`
-				URIParams  string `json:"uri_params"`
-				AddrParams string `json:"addr_params"`
+				OldName       string `json:"old_name"`
+				Name          string `json:"name"`
+				SIPURI        string `json:"sip_uri"`
+				Password      string `json:"password"`
+				ClearPassword bool   `json:"clear_password"`
+				URIParams     string `json:"uri_params"`
+				AddrParams    string `json:"addr_params"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -805,7 +828,10 @@ func HandleAPISIPAccounts(hub *WsHub) http.HandlerFunc {
 
 			password := req.Password
 			oldName := strings.TrimSpace(req.OldName)
-			if password == "" && oldName != "" {
+			if req.ClearPassword {
+				password = ""
+			}
+			if password == "" && oldName != "" && !req.ClearPassword {
 				if existing, err := store.GetSIPAccount(ctx, oldName); err == nil {
 					password = existing.Password
 				}

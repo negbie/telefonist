@@ -22,26 +22,46 @@ const (
 var (
 	newline  = []byte{'\n'}
 	upgrader = websocket.Upgrader{
-		ReadBufferSize:  maxMessageSize,
-		WriteBufferSize: maxMessageSize,
+		ReadBufferSize:  4096,
+		WriteBufferSize: 4096,
 	}
 )
 
 type client struct {
-	hub  *WsHub
-	conn *websocket.Conn
-	send chan []byte
+	hub     *WsHub
+	conn    *websocket.Conn
+	send    chan []byte
+	session string
 }
 
 func (c *client) readPump() {
+	done := make(chan struct{})
+	defer close(done)
 	defer func() {
-		c.hub.unregister <- c
+		select {
+		case c.hub.unregister <- c:
+		case <-c.hub.ctx.Done():
+		}
 		logWebsocketCloseError(c.conn.Close())
 	}()
 
 	go func() {
-		<-c.hub.ctx.Done()
-		logWebsocketCloseError(c.conn.Close())
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if c.session != "" && !validSession(c.session) {
+					_ = c.conn.Close()
+					return
+				}
+			case <-c.hub.ctx.Done():
+				logWebsocketCloseError(c.conn.Close())
+				return
+			case <-done:
+				return
+			}
+		}
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
@@ -134,7 +154,7 @@ func (c *client) writePump() {
 }
 
 func writeQueuedMessages(w io.Writer, send chan []byte) error {
-	for {
+	for count := 0; count < 250; count++ {
 		select {
 		case msg, ok := <-send:
 			if !ok {
@@ -150,6 +170,7 @@ func writeQueuedMessages(w io.Writer, send chan []byte) error {
 			return nil
 		}
 	}
+	return nil
 }
 
 func logWebsocketCloseError(err error) {
@@ -160,6 +181,11 @@ func logWebsocketCloseError(err error) {
 }
 
 func ServeWs(hub *WsHub, w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || !validSession(cookie.Value) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("websocket upgrade error: %v", err)
@@ -167,11 +193,17 @@ func ServeWs(hub *WsHub, w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &client{
-		hub:  hub,
-		conn: conn,
-		send: make(chan []byte, 8192),
+		hub:     hub,
+		conn:    conn,
+		send:    make(chan []byte, 256),
+		session: cookie.Value,
 	}
-	client.hub.register <- client
+	select {
+	case client.hub.register <- client:
+	case <-hub.ctx.Done():
+		conn.Close()
+		return
+	}
 
 	go client.writePump()
 	go client.readPump()

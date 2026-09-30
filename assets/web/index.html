@@ -24,6 +24,9 @@
 <body>
     <div id="layout">
         <div id="top-bar">
+            <strong>Telefonist</strong>
+            <button type="button" id="toggle-live" aria-pressed="false">Live inspector</button>
+            <span id="connection-state" role="status">Connecting…</span>
             <form id="form">
                 <input type="text" id="search" placeholder="Search Flow..." />
                 <input type="text" id="search-sip" placeholder="Search SIP..." />
@@ -48,6 +51,9 @@
             <button id="clear" type="button">Clear</button>
             <button id="logout" type="button">Logout 🚪</button>
         </div>
+
+        <div id="run-summary" role="status" aria-live="polite">No active run</div>
+        <div id="live-warning" role="alert" hidden></div>
 
         <div id="top-row">
             <div class="col-pane" id="left-col">
@@ -85,34 +91,34 @@
             <div id="test-controls" class="expanded">
                 <div class="controls-sidebar">
                     <div class="sidebar-group">
-                        <button type="button" id="btn-mode-tests" class="active" title="Tests Mode">🧪</button>
-                        <button type="button" id="btn-mode-compare" title="Compare Mode">⚖️</button>
-                        <button type="button" id="btn-mode-cron" title="Cron Mode">⏱</button>
-                        <button type="button" id="btn-mode-settings" title="Settings Mode">⚙️</button>
+                        <button type="button" id="btn-mode-tests" class="active" title="Tests Mode">Tests</button>
+                        <button type="button" id="btn-mode-compare" title="Compare Mode">Results</button>
+                        <button type="button" id="btn-mode-cron" title="Cron Mode">Schedule</button>
+                        <button type="button" id="btn-mode-settings" title="Settings Mode">Settings</button>
+                        <button type="button" id="testfiles-history" title="Git Version History">Git</button>
                     </div>
                     <div class="sidebar-separator"></div>
                     <div class="sidebar-group">
-                        <button type="button" id="testfiles-run" title="Run Testfile (Alt+R)">▶</button>
-                        <button type="button" id="testfiles-stop" title="Stop Run">■</button>
-                        <button type="button" id="testfiles-save" title="Save Testfile (Alt+S)">💾</button>
-                        <button type="button" id="testfiles-history" title="Testfile Version History">⏳</button>
+                        <button type="button" id="testfiles-run" title="Run Testfile (Alt+R)"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Run</button>
+                        <button type="button" id="testfiles-stop" title="Stop Run"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg> Stop</button>
+                        <button type="button" id="testfiles-save" title="Save Testfile (Alt+S)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> Save</button>
                     </div>
                     <div class="sidebar-separator"></div>
                     <div class="sidebar-group">
-                        <button type="button" id="testfiles-new" title="New Testfile">+</button>
-                        <button type="button" id="testfiles-rename" title="Rename Testfile">✎</button>
-                        <button type="button" id="testfiles-clone" title="Clone Testfile">⤴︎</button>
-                        <button type="button" id="testfiles-delete" title="Delete Testfile">✖</button>
+                        <button type="button" id="testfiles-new" title="New Testfile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
+                        <button type="button" id="testfiles-rename" title="Rename Testfile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
+                        <button type="button" id="testfiles-clone" title="Clone Testfile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                        <button type="button" id="testfiles-delete" title="Delete Testfile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
                     </div>
                     <div class="sidebar-separator"></div>
                     <div class="sidebar-group">
-                        <button type="button" id="projects-new" title="New Project">📁+</button>
-                        <button type="button" id="projects-rename" title="Rename Project">📁✎</button>
-                        <button type="button" id="projects-clone" title="Clone Project">📁⤴︎</button>
-                        <button type="button" id="projects-delete" title="Delete Project">📁x</button>
+                        <button type="button" id="projects-new" title="New Project"><svg width="22" height="18" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H9l-2 3H4a2 2 0 0 0-2 2z"></path><line x1="22" y1="10" x2="22" y2="18"></line><line x1="18" y1="14" x2="26" y2="14"></line></svg></button>
+                        <button type="button" id="projects-rename" title="Rename Project"><svg width="22" height="18" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H9l-2 3H4a2 2 0 0 0-2 2z"></path><path d="M23 7l3 3-5 5h-3v-3l5-5z"></path></svg></button>
+                        <button type="button" id="projects-clone" title="Clone Project"><svg width="22" height="18" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H9l-2 3H4a2 2 0 0 0-2 2z"></path><rect x="18" y="9" width="8" height="10" rx="1.5"></rect></svg></button>
+                        <button type="button" id="projects-delete" title="Delete Project"><svg width="22" height="18" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H9l-2 3H4a2 2 0 0 0-2 2z"></path><line x1="19" y1="11" x2="25" y2="17"></line><line x1="25" y1="11" x2="19" y2="17"></line></svg></button>
                     </div>
                     <div class="sidebar-spacer"></div>
-                    <button type="button" id="sidebar-toggle" title="Toggle Sidebar">»</button>
+                    <button type="button" id="sidebar-toggle" title="Toggle Sidebar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg></button>
                 </div>
                 <div class="controls-main">
                     <div class="testfile-actions" id="testfile-actions-pane">
@@ -128,6 +134,7 @@
                     </div>
 
                     <div class="settings-nav" id="settings-nav-pane" style="display: none;">
+
                         <ul class="settings-tree">
                             <li class="settings-tree-item active" id="settings-nav-accounts" data-target="accounts">SIP
                                 Accounts</li>
@@ -169,6 +176,7 @@
                     <button type="button" id="compare-delete-all"
                         title="Delete all stored runs for the current testfile">Delete All</button>
                 </div>
+                <p id="compare-note" role="status"></p>
                 <div id="compare-panes">
                     <div class="compare-pane" id="compare-pane-a">
                         <div class="compare-pane-header" id="compare-header-a">Run A</div>
@@ -230,23 +238,31 @@
             </div>
 
             <div id="accounts-panel">
-                <div class="accounts-header">
-                    <h2>Centralized SIP Accounts</h2>
-                    <div>
-                        <button type="button" id="accounts-refresh" title="Refresh">↻ Refresh</button>
-                        <button type="button" id="accounts-new" title="New Account">+ Add Account</button>
+                <div class="settings-subpanel-header accounts-header">
+                    <h2>SIP Accounts</h2>
+                    <div class="header-actions">
+                        <button type="button" id="accounts-refresh" class="settings-btn-secondary" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="accounts-new" class="settings-btn-primary" title="New Account">+ Add Account</button>
                     </div>
                 </div>
 
-                <table class="accounts-table">
+                <table class="settings-data-table accounts-table">
+                    <colgroup>
+                        <col style="width: 16%;">
+                        <col style="width: 30%;">
+                        <col style="width: 10%;">
+                        <col style="width: 15%;">
+                        <col style="width: 15%;">
+                        <col style="width: 140px;">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>Alias</th>
                             <th>SIP URI</th>
                             <th>Password</th>
-                            <th>URI Parameters</th>
-                            <th>Address Parameters</th>
-                            <th>Actions</th>
+                            <th>URI Params</th>
+                            <th>Addr Params</th>
+                            <th class="col-actions" style="text-align: right;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="accounts-list">
@@ -269,14 +285,15 @@
                             <label>Password</label>
                             <input type="password" id="accounts-password"
                                 placeholder="Set new password (leave empty to keep unchanged)">
+                            <label><input type="checkbox" id="accounts-clear-password"> Clear stored password</label>
                         </div>
                         <div class="modal-row">
-                            <label>URI Parameters (uri-params)</label>
+                            <label>URI Parameters</label>
                             <input type="text" id="accounts-uri-params" placeholder="e.g. ;transport=tls">
                             <small>Placed inside angle brackets (&lt;sip_uri;uri-params&gt;)</small>
                         </div>
                         <div class="modal-row">
-                            <label>Address Parameters (addr-params)</label>
+                            <label>Address Parameters</label>
                             <input type="text" id="accounts-addr-params"
                                 placeholder="e.g. ;mediaenc=srtp-mand;input_wav=alice.wav">
                             <small>Placed outside angle brackets after password</small>
@@ -290,21 +307,27 @@
             </div>
 
             <div id="webhooks-panel" style="display: none;">
-                <div class="webhooks-header">
-                    <h2>Centralized Webhooks</h2>
-                    <div>
-                        <button type="button" id="webhooks-refresh" title="Refresh">↻ Refresh</button>
-                        <button type="button" id="webhooks-new" title="New Webhook">+ Add Webhook</button>
+                <div class="settings-subpanel-header webhooks-header">
+                    <h2>Webhooks</h2>
+                    <div class="header-actions">
+                        <button type="button" id="webhooks-refresh" class="settings-btn-secondary" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="webhooks-new" class="settings-btn-primary" title="New Webhook">+ Add Webhook</button>
                     </div>
                 </div>
 
-                <table class="webhooks-table">
+                <table class="settings-data-table webhooks-table">
+                    <colgroup>
+                        <col style="width: 22%;">
+                        <col style="width: 52%;">
+                        <col style="width: 90px;">
+                        <col style="width: 140px;">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>Alias</th>
                             <th>Webhook URL</th>
                             <th>Status</th>
-                            <th>Actions</th>
+                            <th class="col-actions" style="text-align: right;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="webhooks-list">
@@ -361,7 +384,7 @@
         <div id="history-modal" class="modal">
             <div class="modal-content"
                 style="width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
-                <h3 style="margin-top: 0; margin-bottom: 10px;">Testfile Version History</h3>
+                <h3 style="margin-top: 0; margin-bottom: 10px;">Git Version History</h3>
                 <div class="history-layout"
                     style="display: flex; flex: 1 1 auto; overflow: hidden; gap: 15px; border: 1px solid var(--border); border-radius: var(--radius); height: 0;">
                     <div class="history-sidebar" id="history-versions-list"

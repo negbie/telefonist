@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <re.h>
 #include <rem_au.h>
 #include <baresip.h>
@@ -138,6 +139,11 @@ static int encode(struct auenc_state *st,
 	int n;
 	(void)marker;
 
+	if (!st || !buf || !len || !sampv || (sampc & 1))
+		return EINVAL;
+	if (sampc > INT_MAX || sampc / 2 > *len)
+		return EOVERFLOW;
+
 	if (fmt != AUFMT_S16LE)
 		return ENOTSUP;
 
@@ -161,8 +167,10 @@ static int decode(struct audec_state *st, int fmt, void *sampv, size_t *sampc,
 	int n;
 	(void)marker;
 
-	if (!st || !sampv || !buf)
+	if (!st || !sampv || !buf || !sampc)
 		return EINVAL;
+	if (len > INT_MAX || len > *sampc / 2)
+		return EOVERFLOW;
 
 	if (fmt != AUFMT_S16LE)
 		return ENOTSUP;

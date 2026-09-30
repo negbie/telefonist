@@ -2,6 +2,7 @@ package telefonist
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
@@ -28,12 +30,21 @@ type Agent struct {
 	RecordingsDir string
 	RTPOffset     int
 	RegChan       chan error
+	ForwardDone   chan struct{}
+	SocketDir     string
+	stopping      atomic.Bool
+	nativeDone    atomic.Bool
 }
 
 type BaresipManager struct {
-	mu     sync.RWMutex
-	agents map[string]*Agent
-	master *WsHub
+	mu         sync.RWMutex
+	spawnMu    sync.Mutex
+	stoppingWG sync.WaitGroup
+	runID      int64
+	maxRTPPort int
+	configErr  error
+	agents     map[string]*Agent
+	master     *WsHub
 
 	baseSIPIP    string
 	baseSIPPort  int
@@ -55,6 +66,8 @@ func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string,
 	baseIP := "0.0.0.0"
 	basePort := 5060
 	baseRtpPort := 10000
+	maxRtpPort := 11000
+	var configErr error
 
 	hasSipListen := sipListen != ""
 	if sipListen != "" {
@@ -62,9 +75,11 @@ func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string,
 			baseIP = host
 			if p, err := strconv.Atoi(portStr); err == nil {
 				basePort = p
+			} else {
+				configErr = fmt.Errorf("invalid SIP listen port: %w", err)
 			}
 		} else {
-			baseIP = sipListen
+			configErr = fmt.Errorf("invalid SIP listen address: %w", err)
 		}
 	}
 
@@ -73,15 +88,31 @@ func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string,
 		parts := strings.Split(rtpPorts, "-")
 		if p, err := strconv.Atoi(strings.TrimSpace(parts[0])); err == nil {
 			baseRtpPort = p
+		} else {
+			configErr = err
 		}
+		if len(parts) == 2 {
+			p, err := strconv.Atoi(parts[1])
+			if err != nil {
+				configErr = err
+			} else {
+				maxRtpPort = p
+			}
+		} else {
+			maxRtpPort = baseRtpPort + 100
+		}
+	}
+	if baseRtpPort < 1024 || maxRtpPort > 65535 || maxRtpPort < baseRtpPort+100 || basePort < 1 || basePort > 65534 {
+		configErr = fmt.Errorf("invalid SIP/RTP port range")
 	}
 
 	return &BaresipManager{
-		agents:       make(map[string]*Agent),
-		master:       hub,
-		baseSIPIP:    baseIP,
-		baseSIPPort:  basePort,
-		baseRTPPort:  baseRtpPort,
+		agents:      make(map[string]*Agent),
+		master:      hub,
+		baseSIPIP:   baseIP,
+		baseSIPPort: basePort,
+		baseRTPPort: baseRtpPort,
+		maxRTPPort:  maxRtpPort, configErr: configErr,
 		maxCalls:     maxCalls,
 		rtpNet:       rtpNet,
 		rtpTimeout:   rtpTimeout,
@@ -93,7 +124,9 @@ func NewBaresipManager(hub *WsHub, dataDir string, maxCalls uint, rtpNet string,
 	}
 }
 
-func (m *BaresipManager) allocatePorts() (int, string, int) {
+func (m *BaresipManager) SetRun(id int64) { m.mu.Lock(); m.runID = id; m.mu.Unlock() }
+
+func (m *BaresipManager) allocatePorts() (int, string, int, error) {
 	m.portMu.Lock()
 	defer m.portMu.Unlock()
 
@@ -101,19 +134,25 @@ func (m *BaresipManager) allocatePorts() (int, string, int) {
 	sipOffset := 0
 	for ; m.sipPorts[sipOffset]; sipOffset += 2 {
 	}
-	m.sipPorts[sipOffset] = true
+	if m.configErr != nil {
+		return 0, "", 0, m.configErr
+	}
 	sipPort := m.baseSIPPort + sipOffset
 
 	// Find free RTP range offset
 	rtpOffset := 0
 	for ; m.rtpPorts[rtpOffset]; rtpOffset += 102 {
 	}
-	m.rtpPorts[rtpOffset] = true
 	rtpStart := m.baseRTPPort + rtpOffset
 	rtpEnd := rtpStart + 100
+	if rtpEnd > m.maxRTPPort || sipPort > 65534 {
+		return 0, "", 0, fmt.Errorf("agent port capacity exhausted")
+	}
+	m.sipPorts[sipOffset] = true
+	m.rtpPorts[rtpOffset] = true
 	rtpPortsStr := fmt.Sprintf("%d-%d", rtpStart, rtpEnd)
 
-	return sipPort, rtpPortsStr, rtpOffset
+	return sipPort, rtpPortsStr, rtpOffset, nil
 }
 
 func (m *BaresipManager) releasePorts(sipPort, rtpOffset int) {
@@ -126,35 +165,54 @@ func (m *BaresipManager) releasePorts(sipPort, rtpOffset int) {
 }
 
 func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLine string) error {
-	m.mu.Lock()
+	m.spawnMu.Lock()
+	defer m.spawnMu.Unlock()
 
-	if !isSafeAlias(alias) {
-		m.mu.Unlock()
+	if alias == "" || len(alias) > 2048 || strings.ContainsAny(alias, "\r\n\x00") {
 		return fmt.Errorf("invalid agent alias %q: only alphanumeric, underscores, and dashes allowed", alias)
 	}
 
-	if _, ok := m.agents[alias]; ok {
-		m.mu.Unlock()
+	if _, ok := m.GetAgent(alias); ok {
 		return fmt.Errorf("agent %s already exists", alias)
 	}
 
 	// Create unique data dir for agent
-	agentDir := filepath.Join(m.dataDir, "agents", alias)
+	m.mu.RLock()
+	runID := m.runID
+	m.mu.RUnlock()
+	agentID, err := GenerateSessionToken()
+	if err != nil {
+		return err
+	}
+	agentDir := filepath.Join(m.dataDir, "agents", fmt.Sprintf("run-%d", runID), agentID[:12])
 	if err := os.MkdirAll(agentDir, 0755); err != nil {
-		m.mu.Unlock()
 		return err
 	}
 
 	// Allocate ports from the pool
-	sipPort, rtpPorts, rtpOffset := m.allocatePorts()
+	sipPort, rtpPorts, rtpOffset, err := m.allocatePorts()
+	if err != nil {
+		return err
+	}
 
 	// 1. Proxy listener address (Master Hub connects here).
 	// Use a Unix socket for the Telefonist master ↔ agent proxy hop to avoid
 	// loopback TCP port allocation and reduce local connection overhead.
-	proxySock := filepath.Join(agentDir, "proxy.sock")
+	socketDir, err := os.MkdirTemp("", "telefonist-")
+	if err != nil {
+		m.releasePorts(sipPort, rtpOffset)
+		return err
+	}
+	keepSocket := false
+	defer func() {
+		if !keepSocket {
+			_ = os.Remove(filepath.Join(socketDir, "proxy.sock"))
+			_ = os.Remove(socketDir)
+		}
+	}()
+	proxySock := filepath.Join(socketDir, "proxy.sock")
 	if err := os.Remove(proxySock); err != nil && !os.IsNotExist(err) {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 	proxyAddr := "unix:" + proxySock
@@ -163,7 +221,6 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	lBaresip, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 	baresipAddr := lBaresip.Addr().String()
@@ -176,27 +233,23 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	agentRecordsDir, err := filepath.Abs(filepath.Join(agentDir, "recorded_temp"))
 	if err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 	if err := os.MkdirAll(agentRecordsDir, 0755); err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 	globalSoundsDir, err := filepath.Abs(filepath.Join(m.dataDir, "sounds"))
 	if err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 	sipAddr := ""
 	if m.hasSIPListen {
-		sipAddr = fmt.Sprintf("%s:%d", m.baseSIPIP, sipPort)
+		sipAddr = net.JoinHostPort(m.baseSIPIP, strconv.Itoa(sipPort))
 	}
 	if err := CreateConfig(agentDir, m.maxCalls, m.rtpNet, rtpPorts, m.rtpTimeout, baresipAddr, sipAddr, m.useALSA, agentRecordsDir, globalSoundsDir); err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 
@@ -205,7 +258,6 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	accountsFile := filepath.Join(agentDir, "accounts")
 	if err := os.WriteFile(accountsFile, []byte(""), 0644); err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 
@@ -213,7 +265,6 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	contactsFile := filepath.Join(agentDir, "contacts")
 	if err := os.WriteFile(contactsFile, []byte(""), 0644); err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 
@@ -224,11 +275,10 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 	self, err := os.Executable()
 	if err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, self,
+	cmd := exec.Command(self,
 		"-data_dir", agentDir,
 		"-sounds_dir", globalSoundsDir,
 		"-ctrl_address", proxyAddr)
@@ -242,7 +292,6 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 
 	if err := cmd.Start(); err != nil {
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
 		return err
 	}
 
@@ -254,7 +303,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		gb, err = gobaresip.New(
 			gobaresip.SetRemote(true),
 			gobaresip.SetCtrlTCPAddr(proxyAddr),
-			gobaresip.SetContext(ctx),
+			gobaresip.SetContext(m.master.ctx),
 		)
 		if err == nil {
 			break
@@ -278,7 +327,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 			log.Printf("hub: failed to kill agent process %s: %v", alias, killErr)
 		}
 		m.releasePorts(sipPort, rtpOffset)
-		m.mu.Unlock()
+		_ = cmd.Wait()
 		return fmt.Errorf("failed to connect to agent %s: %w", alias, err)
 	}
 
@@ -295,10 +344,13 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 		Done:          make(chan struct{}),
 		RecordingsDir: agentRecordsDir,
 		RegChan:       regChan,
+		ForwardDone:   make(chan struct{}), SocketDir: socketDir,
 	}
 
+	m.mu.Lock()
 	m.agents[alias] = agent
 	m.mu.Unlock()
+	keepSocket = true
 
 	// Monitor agent process exit
 	go func() {
@@ -309,21 +361,25 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 			log.Printf("hub: agent %s exited", alias)
 		}
 		close(agent.Done)
-		m.StopAgent(alias)
+		if !agent.stopping.Load() {
+			raw, _ := json.Marshal(map[string]any{"event": true, "type": "AGENT_EXIT", "param": "agent exited unexpectedly"})
+			m.master.ForwardAgentMsg(alias, gobaresip.Msg{Event: &gobaresip.EventMsg{Type: "AGENT_EXIT", RawJSON: raw}})
+		}
+		m.stopIfCurrent(agent)
 	}()
 
 	// Forward agent messages to master hub
 	go m.forwardMessages(m.master.ctx, agent)
 
 	// Explicitly trigger UA registration now that the telemetry bridge is up
-	if err := agent.Baresip.CmdWs([]byte("uanew " + accountLine)); err != nil {
+	if err := agent.Baresip.CmdWsContext(ctx, []byte("uanew "+accountLine)); err != nil {
 		log.Printf("hub: failed to trigger registration for agent %s: %v", alias, err)
 		m.StopAgent(alias)
 		return err
 	}
 
 	// Only wait for registration if it is not disabled via regint=0
-	needsRegister := !strings.Contains(accountLine, "regint=0")
+	needsRegister := !strings.Contains(";"+accountLine+";", ";regint=0;")
 	if needsRegister {
 		log.Printf("hub: waiting for SIP registration of agent %s...", alias)
 		var regErr error
@@ -352,6 +408,7 @@ func (m *BaresipManager) SpawnAgent(ctx context.Context, alias string, accountLi
 }
 
 func (m *BaresipManager) forwardMessages(ctx context.Context, a *Agent) {
+	defer close(a.ForwardDone)
 	msgChan := a.Baresip.GetMsgChan()
 	for {
 		select {
@@ -363,6 +420,9 @@ func (m *BaresipManager) forwardMessages(ctx context.Context, a *Agent) {
 			}
 			if msg.Event != nil {
 				e := msg.Event
+				if e.Type == "NATIVE_DONE" {
+					a.nativeDone.Store(true)
+				}
 				if e.Type == "REGISTER_OK" && a.RegChan != nil {
 					select {
 					case a.RegChan <- nil:
@@ -381,6 +441,7 @@ func (m *BaresipManager) forwardMessages(ctx context.Context, a *Agent) {
 }
 
 func (m *BaresipManager) stopAgent(a *Agent) {
+	a.stopping.Store(true)
 	log.Printf("stopping agent %s", a.Alias)
 	// Try a graceful shutdown first to allow SIP deregistrations and WAV file flushes
 	if err := a.Baresip.CmdQuit(); err != nil {
@@ -391,7 +452,7 @@ func (m *BaresipManager) stopAgent(a *Agent) {
 	select {
 	case <-a.Done:
 		// Process exited naturally or via quit
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		// Process did not exit in time, force kill
 		if a.Cmd.Process != nil {
 			if err := a.Cmd.Process.Kill(); err != nil {
@@ -401,19 +462,45 @@ func (m *BaresipManager) stopAgent(a *Agent) {
 		<-a.Done // Wait for monitor goroutine to finish Wait()
 	}
 
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	_ = a.Baresip.WaitReadDrain(drainCtx)
+	drainCancel()
 	a.Baresip.Close()
+	<-a.ForwardDone
+	if !a.nativeDone.Load() {
+		raw, _ := json.Marshal(map[string]any{"event": true, "type": "TELEMETRY_LOSS", "param": "agent exited without complete telemetry flush"})
+		m.master.ForwardAgentMsg(a.Alias, gobaresip.Msg{Event: &gobaresip.EventMsg{Type: "TELEMETRY_LOSS", RawJSON: raw}})
+	}
+	_ = os.Remove(filepath.Join(a.SocketDir, "proxy.sock"))
+	_ = os.Remove(a.SocketDir)
 	m.releasePorts(a.SIPPort, a.RTPOffset)
+}
+
+func (m *BaresipManager) stopIfCurrent(a *Agent) {
+	m.mu.Lock()
+	current := m.agents[a.Alias] == a
+	if current {
+		m.stoppingWG.Add(1)
+		delete(m.agents, a.Alias)
+	}
+	m.mu.Unlock()
+	if current {
+		defer m.stoppingWG.Done()
+		m.stopAgent(a)
+	}
 }
 
 func (m *BaresipManager) StopAgent(alias string) {
 	m.mu.Lock()
 	a, ok := m.agents[alias]
 	if ok {
+		m.stoppingWG.Add(1)
 		delete(m.agents, alias)
 	}
 	m.mu.Unlock()
 
 	if ok {
+		defer m.stoppingWG.Done()
 		m.stopAgent(a)
 	}
 }
@@ -426,6 +513,8 @@ func (m *BaresipManager) GetAgent(alias string) (*Agent, bool) {
 }
 
 func (m *BaresipManager) CloseAll() {
+	m.spawnMu.Lock()
+	defer m.spawnMu.Unlock()
 	m.mu.Lock()
 	agentsToStop := make([]*Agent, 0, len(m.agents))
 	for _, a := range m.agents {
@@ -443,6 +532,7 @@ func (m *BaresipManager) CloseAll() {
 		}(a)
 	}
 	wg.Wait()
+	m.stoppingWG.Wait()
 }
 
 func (m *BaresipManager) ResolveTarget(cmd string, fallbackTarget string) (target string, finalCmd string) {
@@ -467,9 +557,13 @@ func (m *BaresipManager) ResolveTarget(cmd string, fallbackTarget string) (targe
 }
 
 func isSafeAlias(alias string) bool {
-	if alias == "" || strings.HasPrefix(alias, ".") || strings.Contains(alias, "..") ||
-		strings.ContainsAny(alias, "/\\ \t\n\r") {
+	if len(alias) == 0 || len(alias) > 64 {
 		return false
+	}
+	for _, c := range alias {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+			return false
+		}
 	}
 	return true
 }

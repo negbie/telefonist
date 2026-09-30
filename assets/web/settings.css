@@ -3,7 +3,11 @@
     display: flex;
     flex-direction: column;
     width: 100%;
+    padding: 10px;
+    box-sizing: border-box;
+    overflow-y: auto;
 }
+
 .settings-tree {
     list-style: none;
     padding: 0;
@@ -12,6 +16,7 @@
     flex-direction: column;
     gap: 8px;
 }
+
 .settings-tree-item {
     padding: 10px 14px;
     background: var(--panel);
@@ -26,39 +31,439 @@
     color: var(--text);
     font-size: 0.85rem;
 }
+
 .settings-tree-item:hover {
     background: #f1f5f9;
 }
+
 .settings-tree-item.active {
     background: #3b82f6;
     color: #fff;
-    border-color: #2563eb;
+    border-color: #3b82f6;
 }
 
+/* Common Settings Panels */
+#accounts-panel,
+#webhooks-panel,
 #log-filter-panel {
-    display: none;
     flex: 1;
     flex-direction: column;
     padding: 20px;
     background-color: var(--bg);
     overflow-y: auto;
     color: var(--text);
-    font-size: 0.8rem;
+    font-size: 0.85rem;
 }
 
+/* Common Settings Subpanel Header */
+.settings-subpanel-header,
+.accounts-header,
+.webhooks-header,
 .log-filter-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 }
 
+.settings-subpanel-header h2,
+.accounts-header h2,
+.webhooks-header h2,
 .log-filter-header h2 {
     margin: 0;
-    font-size: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
     color: var(--text);
 }
 
+.settings-subpanel-header .header-actions,
+.accounts-header > div,
+.webhooks-header > div,
+.log-filter-header > div {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Header Buttons */
+.settings-btn-secondary,
+.settings-btn-primary,
+.accounts-header button,
+.webhooks-header button,
+.log-filter-header button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    border-radius: 6px;
+    cursor: pointer;
+    line-height: 1.3;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+}
+
+.settings-btn-secondary,
+#accounts-refresh,
+#webhooks-refresh,
+#log-filter-refresh {
+    background: #ffffff;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.settings-btn-secondary:hover,
+#accounts-refresh:hover,
+#webhooks-refresh:hover,
+#log-filter-refresh:hover {
+    background: #f9fafb;
+    color: #111827;
+    border-color: #9ca3af;
+}
+
+.settings-btn-primary,
+#accounts-new,
+#webhooks-new,
+#log-filter-save {
+    background: #3b82f6;
+    color: #ffffff;
+    border: 1px solid #3b82f6;
+    box-shadow: 0 1px 2px rgba(59, 130, 246, 0.25);
+}
+
+.settings-btn-primary:hover,
+#accounts-new:hover,
+#webhooks-new:hover,
+#log-filter-save:hover {
+    background: #2563eb;
+    border-color: #2563eb;
+}
+
+.settings-btn-primary:active,
+#accounts-new:active,
+#webhooks-new:active,
+#log-filter-save:active {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+}
+
+/* Data Tables */
+.settings-data-table,
+.accounts-table,
+.webhooks-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.settings-data-table th, .settings-data-table td,
+.accounts-table th, .accounts-table td,
+.webhooks-table th, .webhooks-table td {
+    padding: 9px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    vertical-align: middle;
+}
+
+.settings-data-table tbody tr:last-child td,
+.accounts-table tbody tr:last-child td,
+.webhooks-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.settings-data-table th,
+.accounts-table th,
+.webhooks-table th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #475569;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.settings-data-table tbody tr:hover,
+.accounts-table tbody tr:hover,
+.webhooks-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.settings-data-table td code,
+.accounts-table td code,
+.webhooks-table td code {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: transparent;
+    padding: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #334155;
+}
+
+.settings-data-table .password-masked,
+.accounts-table .password-masked {
+    font-family: var(--font-mono);
+    color: #94a3b8;
+    letter-spacing: 1px;
+    font-size: 11px;
+}
+
+/* Actions Column */
+.settings-data-table th.col-actions,
+.accounts-table th:last-child,
+.webhooks-table th:last-child,
+.settings-data-table td.col-actions,
+.accounts-table td:last-child,
+.webhooks-table td:last-child,
+.accounts-actions,
+.webhooks-actions {
+    width: 140px;
+    min-width: 140px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.settings-data-table td.col-actions,
+.accounts-table td.accounts-actions,
+.webhooks-table td.webhooks-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 7px 12px;
+    overflow: visible;
+}
+
+/* Action Buttons */
+.btn-action-edit,
+.btn-action-del,
+.accounts-table button,
+.webhooks-table button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    line-height: 1.25;
+    border-radius: 6px;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-action-edit,
+.accounts-edit,
+.webhooks-edit {
+    background: #ffffff;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-action-edit:hover,
+.accounts-edit:hover,
+.webhooks-edit:hover {
+    background: #f9fafb;
+    color: #111827;
+    border-color: #9ca3af;
+}
+
+.btn-action-edit:active,
+.accounts-edit:active,
+.webhooks-edit:active {
+    background: #f3f4f6;
+}
+
+.btn-action-del,
+.accounts-del,
+.webhooks-del {
+    background: #fff5f5;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    box-shadow: 0 1px 2px rgba(220, 38, 38, 0.04);
+}
+
+.btn-action-del:hover,
+.accounts-del:hover,
+.webhooks-del:hover {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: #f87171;
+}
+
+.btn-action-del:active,
+.accounts-del:active,
+.webhooks-del:active {
+    background: #ef4444;
+    color: #ffffff;
+    border-color: #dc2626;
+}
+
+/* Status Badges */
+.webhook-status {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 9999px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.webhook-status.enabled {
+    background-color: #dcfce7;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+.webhook-status.disabled {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+
+/* Modals */
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 24px;
+    border-radius: 10px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    width: 440px;
+    max-width: 90vw;
+    box-sizing: border-box;
+}
+
+.modal-content h3 {
+    margin: 0 0 16px 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.modal-row {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 14px;
+}
+
+.modal-row label {
+    margin-bottom: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.modal-row input[type="text"],
+.modal-row input[type="password"],
+.modal-row select {
+    padding: 7px 10px;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease;
+}
+
+.modal-row input:focus,
+.modal-row select:focus {
+    border-color: #3b82f6;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.modal-row small {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.modal-actions button {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+#accounts-save,
+#webhooks-save {
+    background: #3b82f6;
+    color: #ffffff;
+    border: 1px solid #3b82f6;
+}
+
+#accounts-save:hover,
+#webhooks-save:hover {
+    background: #2563eb;
+    border-color: #2563eb;
+}
+
+#accounts-save:active,
+#webhooks-save:active {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+}
+
+#accounts-cancel,
+#webhooks-cancel {
+    background: #ffffff;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+#accounts-cancel:hover,
+#webhooks-cancel:hover {
+    background: #f9fafb;
+    border-color: #9ca3af;
+}
+
+/* Log Filter */
 .log-filter-card {
     display: flex;
     flex-direction: column;

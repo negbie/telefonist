@@ -7,6 +7,18 @@ import {
   getSipMessageInfo,
 } from "./sip_renderer.js";
 
+export const ignoredEvtTypes = new Set([
+  "sip",
+  "log",
+  "testfile",
+  "module",
+  "response",
+  "native_done",
+  "shutdown",
+  "exit",
+  "end_of_file",
+]);
+
 export function initCompareWindow(deps) {
   const { getActiveKey } = deps;
   const selectA = document.getElementById("compare-run-a");
@@ -116,7 +128,7 @@ export function initCompareWindow(deps) {
     const type = (j.type || j.token || "EVENT").toUpperCase();
     const content = Object.entries(j)
       .sort(([a], [b]) => a.localeCompare(b))
-      .filter(([k, v]) => v != null && v !== "" && !["type", "token", "class", "event", "time", "id", "RawJSON", "run_id", "idx"].includes(k))
+      .filter(([k, v]) => v != null && v !== "" && !["type", "token", "class", "event", "time", "timestamp", "elapsed_ms", "event_sequence", "schema_version", "id", "RawJSON", "run_id", "idx", "_seq", "_epoch"].includes(k))
       .map(([k, v]) => {
         const pk = k.charAt(0).toUpperCase() + k.slice(1);
         return `<div class="json-row"><span class="json-key">${escapeHTML(pk)}</span>: <span class="json-value">${escapeHTML(String(v))}</span></div>`;
@@ -127,44 +139,32 @@ export function initCompareWindow(deps) {
 <details class="event list" open>
     <summary>
         <span class="evt-seq" data-idx="${j.idx}" title="Sync other side">${j.idx + 1}</span>
-        <span class="evt-type">${type}</span>
+        <span class="evt-type">${escapeHTML(type)}</span>
     </summary>
     <div class="evt-content">${content}</div>
 </details>`.trim();
   };
 
-  const structuralSkeleton = (text) => {
-    if (!text) return "";
-    const rules = [
-      [/^#?\d{2}:\d{2}:\d{2}\.\d{3}(?:\|[A-Z]+)?/gm, ""],
-      [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "#"],
-      [/([0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}/g, "#"],
-      [/\b[A-Za-z0-9+/_-]{24,}={0,2}\b/g, "#"],
-      [/\b(branch|tag)=[^;>\s]+/gi, "$1=#"],
-      [/^CSeq:\s*\d+\s+([A-Z][A-Z0-9_-]*)\b.*$/gim, "CSeq:# $1"],
-      [/^(Call-ID|User-Agent|Server|Via):.*$/gim, "$1:#"],
-    ];
-    let l = text;
-    rules.forEach(([reg, rep]) => (l = l.replace(reg, rep)));
-    return l.split("\n").map(line => line.trim()).filter(Boolean).join("\n");
-  };
+  // Preserve protocol values. Blanket removal of IPs, identifiers and headers
+  // hid real differences. Only normalize transport line endings here.
+  const structuralSkeleton = text => String(text || "").replace(/\r\n/g, "\n").trim();
 
   const parseEvents = (text) => {
     return (text || "").split(/\n\n+/).map(s => s.trim()).filter(Boolean).map(line => {
       try { return JSON.parse(line); } catch (e) { return null; }
     }).filter(Boolean).filter(j => {
       const type = (j.type || j.token || "").toLowerCase();
-      if (activeMode === "sip") return type === "sip" && !/\d+\s+OPTIONS/i.test(j.param || "");
+      if (activeMode === "sip") return type === "sip";
       if (activeMode === "log") return type === "log";
-      return activeMode !== "evt" || !["sip", "log", "testfile"].includes(type);
+      return activeMode !== "evt" || !ignoredEvtTypes.has(type);
     }).map((j, idx) => {
-      const { time, id, RawJSON, run_id, idx: _, ...rest } = j;
+      const { time, timestamp, elapsed_ms, event_sequence, _seq, _epoch, id, RawJSON, run_id, idx: _, ...rest } = j;
       if (activeMode === "sip") {
         const sipInfo = getSipMessageInfo(j.param || "");
         const raw = sipInfo.message || j.param || "";
         const seq = idx + 1;
         const arrowKey = getSipDiffKey(j.param || "") || structuralSkeleton(raw);
-        const compare = `${seq} ${arrowKey}`;
+        const compare = arrowKey;
         const display = generateSipLadderHTML(j, seq);
         return {
           compare,
@@ -185,13 +185,33 @@ export function initCompareWindow(deps) {
     if (el) el.innerHTML = parseEvents(text).map(e => e.display).join("");
   };
 
-  const renderDiff = () => {
+  let diffWorker = null, generation = 0;
+  const renderDiff = async () => {
+    const current = generation;
     const aItems = parseEvents(rawA), bItems = parseEvents(rawB);
     if (activeMode === "evt") {
       aItems.sort((a, b) => a.compare.localeCompare(b.compare));
       bItems.sort((a, b) => a.compare.localeCompare(b.compare));
     }
-    const diff = computeLCSDiff(aItems, bItems);
+    let diff;
+    if (typeof Worker === "function") {
+      diffWorker = new Worker(new URL("./diff_worker.js", import.meta.url), { type: "module" });
+      try {
+        diff = await new Promise((resolve, reject) => {
+          diffWorker.onmessage = event => resolve(event.data);
+          diffWorker.onerror = reject;
+          diffWorker.postMessage({ a: aItems, b: bItems });
+        });
+      } catch (_) {
+        if (current === generation) contentA.textContent = "Comparison failed. Switch to the raw view to inspect the run.";
+        return;
+      }
+      if (current !== generation) return;
+      diffWorker.terminate(); diffWorker = null;
+    } else diff = computeLCSDiff(aItems, bItems);
+    const note = aItems.length * bItems.length > 2000000
+      ? "Large comparison: all events shown as removed/added; exact alignment skipped to bound memory." : "Comparison ignores envelope timestamps and run IDs; protocol values are preserved.";
+    document.getElementById("compare-note").textContent = note;
 
     if (activeMode === "sip") {
       const aParts = [];
@@ -204,8 +224,9 @@ export function initCompareWindow(deps) {
 
       diff.forEach((d) => {
         if (d.type === "common") {
-          aParts.push(ladder(d.itemA, "diff-sip-changed"));
-          bParts.push(ladder(d.itemB, "diff-sip-changed"));
+          const style = d.itemA.contentCompare === d.itemB.contentCompare ? "diff-sip-common" : "diff-sip-changed";
+          aParts.push(ladder(d.itemA, style));
+          bParts.push(ladder(d.itemB, style));
         } else if (d.type === "a") {
           aParts.push(ladder(d.itemA, "diff-sip-only-a"));
           bParts.push(placeholder(`missing ${d.itemA.label || d.itemA.compare || "SIP"}`));
@@ -224,6 +245,8 @@ export function initCompareWindow(deps) {
   };
 
   const applyCurrentMode = () => {
+    generation++;
+    if (diffWorker) { diffWorker.terminate(); diffWorker = null; }
     if (!contentA || !contentB) return;
     contentA.scrollTop = 0;
     contentB.scrollTop = 0;
@@ -334,13 +357,17 @@ export function initCompareWindow(deps) {
     selects.forEach((sel, i) => {
       sel.value = prevValues[i] || "";
     });
+    if (selectA && selectA.value) fetchRun(selectA.value, "a");
+    if (selectB && selectB.value) fetchRun(selectB.value, "b");
   };
 
   const fetchRun = (id, side) => {
     if (!id) return;
+    const selected = () => String(side === "a" ? selectA.value : selectB.value) === String(id);
     fetch(`/api/testrun?id=${id}`)
       .then((r) => r.json())
       .then((j) => {
+        if (!selected()) return;
         if (j.status === "finished") {
           const label = `#${j.id} run ${j.run_number} [${j.result}] ${j.created_at ? new Date(j.created_at).toLocaleString() : ""}`;
           const content = base64DecodeUTF8(j.flow_events_b64) || "(decode error)";
@@ -352,10 +379,10 @@ export function initCompareWindow(deps) {
             headerB && (headerB.textContent = `Run B – ${label}`);
             rawB = content;
           }
-
           fetch(`/api/testrun/wavs?id=${id}`)
             .then((r) => r.json())
             .then((wj) => {
+              if (!selected()) return;
               if (wj.status === "finished") {
                 const items = wj.items || [];
                 items.sort((a, b) => {
@@ -476,7 +503,6 @@ export function initCompareWindow(deps) {
           (j) => j.status !== "finished" && alert(`Error: ${j.message}`),
         );
         refreshList();
-        fetch("/api/maintenance", { method: "POST" });
       });
     };
   }
@@ -493,7 +519,6 @@ export function initCompareWindow(deps) {
         .then((j) => {
           if (j.status !== "finished") alert(`Error: ${j.message}`);
           refreshList();
-          fetch("/api/maintenance", { method: "POST" });
         });
     };
   }
@@ -505,8 +530,16 @@ export function initCompareWindow(deps) {
   });
 
   EventBus.on("ws:open", refreshList);
+  EventBus.on("compare:opened", refreshList);
 
   EventBus.on("ws:message", (j) => {
+    if (
+      (j.token === "testfile" && (j.status === "finished" || j.status === "running")) ||
+      (j.token === "runner")
+    ) {
+      refreshList();
+      return;
+    }
     if (j.token !== "testruns") return;
     if (["save", "list", "delete"].includes(j.action)) {
       const { name, project } = getEffectiveTestfileAndProject();

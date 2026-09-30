@@ -22,7 +22,13 @@ export function initHistoryManager(deps) {
   if (!modal || !historyBtn) return;
 
   historyBtn.onclick = () => {
-    const activeKey = getActiveKey();
+    let activeKey = getActiveKey();
+    if (!activeKey) {
+      const select = document.getElementById("testfile-select");
+      if (select && select.value) {
+        activeKey = select.value;
+      }
+    }
     if (!activeKey) {
       alert("Please select a testfile first.");
       return;

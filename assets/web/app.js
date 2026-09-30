@@ -235,6 +235,7 @@ const setBottomMode = (mode) => {
 
   if (mode === "compare") {
     syncCompareWithActiveTestfile();
+    EventBus.emit("compare:opened");
   } else if (mode === "cron") {
     EventBus.emit("cron:opened");
   }
@@ -274,6 +275,7 @@ if (initLogFilterManager) {
   initLogFilterManager();
 }
 
+
 // Sidebar Toggle Logic
 const testControls = document.getElementById("test-controls");
 const sidebarToggle = document.getElementById("sidebar-toggle");
@@ -285,8 +287,13 @@ if (sidebarToggle && testControls) {
 }
 
 // WebSocket Handler
+document.getElementById("toggle-live").onclick = event => {
+  const visible = document.body.classList.toggle("show-live");
+  event.currentTarget.setAttribute("aria-pressed", String(visible));
+};
 socket = createSocketHandler(wsURL(), {
   onOpen: () => {
+    document.getElementById("connection-state").textContent = "Connected";
     if (tfManager) {
       tfManager.requestTestfilesList();
       tfManager.updateSaveEnabled();
@@ -294,10 +301,21 @@ socket = createSocketHandler(wsURL(), {
     EventBus.emit("ws:open");
   },
   onClose: () => {
+    document.getElementById("connection-state").textContent = "Disconnected · reconnecting…";
     if (tfManager) tfManager.updateSaveEnabled();
     EventBus.emit("ws:close");
   },
+  onGap: message => {
+    const warning = document.getElementById("live-warning");
+    warning.hidden = false; warning.textContent = message;
+  },
   onMessage: (j) => {
+    if (j.token === "runner") {
+      const state = j.state || {};
+      document.getElementById("run-summary").textContent = state.active
+        ? `Running ${state.project || "Uncategorized"} / ${state.file || "Preparing"} · step ${state.step || 0} of ${state.total || 0} · Run ${state.run_id || "pending"}`
+        : "No active run";
+    }
     EventBus.emit("ws:message", j);
 
     const isStatusProgressLike =

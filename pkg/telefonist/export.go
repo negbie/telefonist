@@ -2,6 +2,7 @@ package telefonist
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -168,11 +169,28 @@ func generatePcap(events []map[string]interface{}) []byte {
 			payloadIdx = 2
 		}
 		srcIP, srcPort, dstIP, dstPort := parseSipTraceLine(addrLine)
+		if srcIP == nil || dstIP == nil {
+			continue
+		}
 
 		payloadStr := strings.ReplaceAll(strings.Join(lines[payloadIdx:], "\n"), "\r\n", "\n")
 		payload := []byte(strings.ReplaceAll(strings.TrimSpace(payloadStr), "\n", "\r\n") + "\r\n\r\n")
 
+		if len(payload) > 65507 {
+			continue
+		}
+		ipv6 := srcIP.To4() == nil || dstIP.To4() == nil
+		if (srcIP.To4() == nil) != (dstIP.To4() == nil) {
+			continue
+		}
 		totalLen := uint32(len(payload) + 42)
+		if ipv6 {
+			totalLen += 20
+		}
+		if stamp, ok := e["timestamp"].(float64); ok {
+			sec = uint32(int64(stamp) / 1000)
+			usec = uint32(int64(stamp)%1000) * 1000
+		}
 
 		buf.Write([]byte{
 			byte(sec), byte(sec >> 8), byte(sec >> 16), byte(sec >> 24),
@@ -181,30 +199,60 @@ func generatePcap(events []map[string]interface{}) []byte {
 			byte(totalLen), byte(totalLen >> 8), byte(totalLen >> 16), byte(totalLen >> 24),
 		})
 
-		buf.Write([]byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x08, 0x00})
-
-		ipTotalLen := uint16(28 + len(payload))
-		ipHeader := []byte{
-			0x45, 0x00, // Version/IHL, TOS
-			byte(ipTotalLen >> 8), byte(ipTotalLen), // Total Length
-			0x00, 0x01, // ID
-			0x40, 0x00, // Flags (DF), Fragment
-			0x40, 17, // TTL, Protocol (UDP)
-			0x00, 0x00, // Checksum (filled below)
-			srcIP.To4()[0], srcIP.To4()[1], srcIP.To4()[2], srcIP.To4()[3],
-			dstIP.To4()[0], dstIP.To4()[1], dstIP.To4()[2], dstIP.To4()[3],
+		ether := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x08, 0x00}
+		if ipv6 {
+			ether[12], ether[13] = 0x86, 0xdd
 		}
-		cs := ipChecksum(ipHeader)
-		ipHeader[10], ipHeader[11] = byte(cs>>8), byte(cs)
-		buf.Write(ipHeader)
+		buf.Write(ether)
+
+		if !ipv6 {
+			ipTotalLen := uint16(28 + len(payload))
+			ipHeader := []byte{
+				0x45, 0x00, // Version/IHL, TOS
+				byte(ipTotalLen >> 8), byte(ipTotalLen), // Total Length
+				0x00, 0x01, // ID
+				0x40, 0x00, // Flags (DF), Fragment
+				0x40, 17, // TTL, Protocol (UDP)
+				0x00, 0x00, // Checksum (filled below)
+				srcIP.To4()[0], srcIP.To4()[1], srcIP.To4()[2], srcIP.To4()[3],
+				dstIP.To4()[0], dstIP.To4()[1], dstIP.To4()[2], dstIP.To4()[3],
+			}
+			cs := ipChecksum(ipHeader)
+			ipHeader[10], ipHeader[11] = byte(cs>>8), byte(cs)
+			buf.Write(ipHeader)
+		} else {
+			header := make([]byte, 40)
+			header[0], header[6], header[7] = 0x60, 17, 64
+			binary.BigEndian.PutUint16(header[4:6], uint16(8+len(payload)))
+			copy(header[8:24], srcIP.To16())
+			copy(header[24:40], dstIP.To16())
+			buf.Write(header)
+		}
 
 		udpLen := uint16(8 + len(payload))
-		buf.Write([]byte{
+		udp := []byte{
 			byte(srcPort >> 8), byte(srcPort),
 			byte(dstPort >> 8), byte(dstPort),
 			byte(udpLen >> 8), byte(udpLen),
 			0x00, 0x00,
-		})
+		}
+		if ipv6 {
+			pseudo := make([]byte, 40)
+			copy(pseudo, srcIP.To16())
+			copy(pseudo[16:], dstIP.To16())
+			binary.BigEndian.PutUint32(pseudo[32:36], uint32(udpLen))
+			pseudo[39] = 17
+			check := append(append(pseudo, udp...), payload...)
+			if len(check)%2 != 0 {
+				check = append(check, 0)
+			}
+			cs := ipChecksum(check)
+			if cs == 0 {
+				cs = 0xffff
+			}
+			binary.BigEndian.PutUint16(udp[6:], cs)
+		}
+		buf.Write(udp)
 
 		buf.Write(payload)
 	}
@@ -243,9 +291,12 @@ func parseSipTraceLine(line string) (net.IP, uint16, net.IP, uint16) {
 		if sIP == nil || dIP == nil {
 			break
 		}
-		sPort, _ := strconv.Atoi(sPortStr)
-		dPort, _ := strconv.Atoi(dPortStr)
+		sPort, errS := strconv.Atoi(sPortStr)
+		dPort, errD := strconv.Atoi(dPortStr)
+		if errS != nil || errD != nil || sPort < 1 || sPort > 65535 || dPort < 1 || dPort > 65535 {
+			break
+		}
 		return sIP, uint16(sPort), dIP, uint16(dPort)
 	}
-	return net.ParseIP("10.0.0.1"), 5060, net.ParseIP("10.0.0.2"), 5060
+	return nil, 0, nil, 0
 }

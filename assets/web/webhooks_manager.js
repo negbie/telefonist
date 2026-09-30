@@ -1,3 +1,4 @@
+import { escapeHTML } from "./utils.js";
 import { EventBus } from "./event_bus.js";
 
 export function initWebhooksManager() {
@@ -35,12 +36,12 @@ export function initWebhooksManager() {
             const tr = document.createElement("tr");
 
             tr.innerHTML = `
-                <td><strong>${wh.alias}</strong></td>
-                <td><code>${wh.url}</code></td>
+                <td><strong title="${escapeHTML(wh.alias)}">${escapeHTML(wh.alias)}</strong></td>
+                <td><code title="${escapeHTML(wh.url)}">${escapeHTML(wh.url)}</code></td>
                 <td><span class="webhook-status ${wh.enabled ? 'enabled' : 'disabled'}">${wh.enabled ? 'Enabled' : 'Disabled'}</span></td>
-                <td>
-                    <button type="button" class="webhooks-edit" data-alias="${wh.alias}">Edit</button>
-                    <button type="button" class="webhooks-del" data-alias="${wh.alias}">Delete</button>
+                <td class="col-actions webhooks-actions">
+                    <button type="button" class="btn-action-edit webhooks-edit" title="Edit webhook" data-alias="${escapeHTML(wh.alias)}">Edit</button>
+                    <button type="button" class="btn-action-del webhooks-del" title="Delete webhook" data-alias="${escapeHTML(wh.alias)}">Delete</button>
                 </td>
             `;
             listEl.appendChild(tr);
@@ -55,7 +56,7 @@ export function initWebhooksManager() {
             };
 
             tr.querySelector(".webhooks-del").onclick = async () => {
-                if (!confirm(`Delete webhook "${wh.alias}"?`)) return;
+                if (!confirm(`Delete webhook "${escapeHTML(wh.alias)}"?`)) return;
                 try {
                     const res = await fetch(`/api/webhooks/delete?alias=${encodeURIComponent(wh.alias)}`, { method: "DELETE" });
                     if (!res.ok) throw new Error(await res.text());
@@ -82,6 +83,18 @@ export function initWebhooksManager() {
     cancelBtn.onclick = () => {
         modal.classList.remove("active");
     };
+
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.classList.remove("active");
+    };
+
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && modal.classList.contains("active")) {
+                modal.classList.remove("active");
+            }
+        });
+    }
 
     saveBtn.onclick = async () => {
         const body = {

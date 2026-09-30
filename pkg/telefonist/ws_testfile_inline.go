@@ -2,13 +2,8 @@ package telefonist
 
 import (
 	"bufio"
-	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,299 +54,6 @@ func handleTestfileInlineCommand(h *WsHub, input string) {
 	runTestfilesBatch(h, []TestfileData{{Name: fileName, ProjectName: projectName, Content: string(decoded)}})
 }
 
-func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
-	if h == nil || len(batch) == 0 {
-		return false
-	}
-
-	if !h.inlineRunActive.CompareAndSwap(false, true) {
-		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "message": "cannot start test: another run is already active"}))
-		return false
-	}
-
-	go func() {
-		defer h.inlineRunActive.Store(false)
-
-		ctx, cancel := context.WithCancel(h.ctx)
-		defer cancel()
-
-		h.setBatchCancel(cancel)
-		defer func() {
-			h.setBatchCancel(nil)
-			h.setTestCancel(nil)
-			h.internalCmd <- func() {
-				if h.trainSession != nil {
-					h.trainSession.finish()
-					h.trainSession = nil
-				}
-			}
-			h.bm.CloseAll()
-		}()
-
-		for _, tf := range batch {
-			// Check if the entire batch was canceled (e.g. via test_stop)
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			done := make(chan struct{})
-			var activeSession bool
-			h.internalCmd <- func() {
-				activeSession = sessionIsActive(h.trainSession)
-				close(done)
-			}
-			select {
-			case <-done:
-			case <-ctx.Done():
-				return
-			}
-
-			if activeSession {
-				broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "file": tf.Name, "message": "cannot start test: a session is already active"}))
-				continue // Try next test in batch instead of aborting everything
-			}
-
-			// Create a per-test context that is also canceled if the batch is canceled
-			testCtx, testCancel := context.WithCancel(ctx)
-			h.setTestCancel(testCancel)
-
-			runTestfileInternal(testCtx, h, tf.Name, tf.ProjectName, tf.Content)
-			testCancel() // Cleanup per-test context
-
-			h.setTestCancel(nil)
-
-			// Small pause between tests for cleanup
-			select {
-			case <-time.After(500 * time.Millisecond):
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return true
-}
-
-func runTestfileInternal(ctx context.Context, h *WsHub, fileName, projectName, content string) {
-	var accounts []SIPAccount
-	if h.testStore != nil {
-		var err error
-		accounts, err = h.testStore.ListSIPAccounts(ctx)
-		if err != nil {
-			log.Printf("error loading centralized SIP accounts: %v", err)
-		}
-	}
-	cases, expectedGlobalHash, includeScript, repeatCount, ignoredEvents, acceptedEvents, webhookURL, err := parseTestfile(content, accounts)
-	if err != nil {
-		broadcastInfo(h, fmt.Sprintf(`{"status":"error","token":"testfile","file":%q,"project":%q,"message":%q}`, fileName, projectName, err.Error()))
-		return
-	}
-
-	if len(cases) == 0 {
-		broadcastInfo(h, fmt.Sprintf(`{"status":"finished","token":"testfile","file":%q,"project":%q,"total":0,"result":"PASS"}`, fileName, projectName))
-		return
-	}
-
-	log.Printf("running testfile: %s (project %s) (%d cases, %d repeats, include: %s)", fileName, projectName, len(cases), repeatCount, includeScript)
-
-	// Stop all active agents before starting a test run to ensure a clean state
-	h.bm.CloseAll()
-
-	for rep := 1; rep <= repeatCount; rep++ {
-		var actualHash, fullLog, status, failReason string
-		var runID int64
-
-		broadcastInfo(h, fmt.Sprintf(`{"status":"running","token":"testfile","file":%q,"project":%q,"total":%d}`, fileName, projectName, len(cases)))
-
-		// Start session
-		sessionReady := make(chan struct{})
-		h.internalCmd <- func() {
-			h.trainSession = newTrainSession(ignoredEvents, acceptedEvents)
-			close(sessionReady)
-		}
-		select {
-		case <-sessionReady:
-		case <-ctx.Done():
-			failReason = checkTestFailure(h, fileName, projectName)
-			goto finish_run
-		}
-
-		// Run cases
-		for _, tc := range cases {
-			select {
-			case <-ctx.Done():
-				failReason = checkTestFailure(h, fileName, projectName)
-				goto finish_run
-			default:
-			}
-
-			tokens := parseChain(tc.sequence)
-			if len(tokens) > 0 && !tokens[len(tokens)-1].isDelay {
-				// Don't add trailing delay for uanew commands since they already block waiting for registration
-				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(tc.sequence)), "uanew ") {
-					tokens = append(tokens, chainToken{delay: defaultTrailingDelay, isDelay: true})
-				}
-			}
-
-			h.chainMu.Lock()
-			executeChain(ctx, h, tokens)
-			h.chainMu.Unlock()
-		}
-
-		// Ensure all events from this run are processed by WsHub.run
-		h.Drain()
-
-		// Finish session and get results
-		{
-			done := make(chan struct{})
-			h.internalCmd <- func() {
-				if h.trainSession != nil {
-					actualHash = h.trainSession.finish()
-					fullLog = h.trainSession.GetFullOutput()
-					failReason = h.trainSession.failMsg
-					h.trainSession = nil
-				}
-				close(done)
-			}
-			select {
-			case <-done:
-			case <-ctx.Done():
-				failReason = checkTestFailure(h, fileName, projectName)
-				goto finish_run
-			}
-		}
-
-		status = "PASS"
-		if failReason != "" {
-			status = "FAIL"
-		} else if includeScript != "" {
-			scriptPath := filepath.Join(h.DataDir, "scripts", filepath.Base(includeScript))
-			scriptBytes, err := os.ReadFile(scriptPath)
-			if err != nil {
-				status = "FAIL"
-				failReason = fmt.Sprintf("failed to read include script %s: %v", includeScript, err)
-			} else {
-				eval := NewEvaluator()
-				if err := eval.RunScript(ctx, string(scriptBytes), fullLog); err != nil {
-					status = "FAIL"
-					failReason = err.Error()
-				}
-			}
-		} else if expectedGlobalHash != "" && actualHash != expectedGlobalHash {
-			status = "FAIL"
-			failReason = "Hash mismatch"
-		}
-
-	finish_run:
-		if ctx.Err() != nil {
-			st := "finished"
-			msg := failReason
-			if msg == "" {
-				st = "stopped"
-			}
-			resultMsg := map[string]interface{}{
-				"status":        st,
-				"token":         "testfile",
-				"file":          fileName,
-				"project":       projectName,
-				"total":         len(cases),
-				"expected_hash": expectedGlobalHash,
-				"actual_hash":   actualHash,
-				"result":        "FAIL",
-			}
-			if msg != "" {
-				resultMsg["message"] = msg
-			}
-			b, _ := json.Marshal(resultMsg)
-			broadcastInfo(h, string(b))
-			return
-		}
-
-		if failReason != "" && status == "" {
-			status = "FAIL"
-		}
-
-		if store := h.testStore; store != nil {
-			if id, err := store.SaveRun(context.Background(), fileName, projectName, rep, actualHash, status, fullLog); err != nil {
-				log.Printf("failed to save run: %v", err)
-			} else {
-				runID = id
-				h.broadcast <- fmt.Appendf(nil, `{"status":"finished","token":"testruns","action":"save","testfile":%q,"project":%q}`, fileName, projectName)
-			}
-		}
-
-		// Collect final recordings
-		processRecordings(ctx, h.testStore, runID, h.DataDir)
-
-		// Broadcast final result to UI
-		resultMsg := map[string]interface{}{
-			"status":        "finished",
-			"token":         "testfile",
-			"file":          fileName,
-			"project":       projectName,
-			"total":         len(cases),
-			"expected_hash": expectedGlobalHash,
-			"actual_hash":   actualHash,
-			"result":        status,
-			"run_id":        runID,
-		}
-		if failReason != "" {
-			resultMsg["message"] = failReason
-		}
-		b, _ := json.Marshal(resultMsg)
-		broadcastInfo(h, string(b))
-
-		if webhookURL != "" {
-			actualURL := webhookURL
-			enabled := true
-			if h.testStore != nil {
-				wh, err := h.testStore.GetWebhook(ctx, webhookURL)
-				if err == nil {
-					actualURL = wh.URL
-					enabled = wh.Enabled
-				}
-			}
-			if enabled && actualURL != "" {
-				go func(url string) {
-					if err := sendResultWebhook(url, fileName, projectName, actualHash, status, runID); err != nil {
-						log.Printf("failed to send result webhook: %v", err)
-					}
-				}(actualURL)
-			}
-		}
-
-		log.Printf("--- Finished: %s [%s] --- Project: %s, Hash: %s, Run: %d", fileName, status, projectName, actualHash, runID)
-
-		// If the context was canceled, don't do more repeats
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-	}
-}
-
-func checkTestFailure(h *WsHub, fileName, projectName string) string {
-	var failMsg string
-	done := make(chan struct{})
-	h.internalCmd <- func() {
-		if h.trainSession != nil {
-			failMsg = h.trainSession.failMsg
-			h.trainSession.finish() // ensure session is closed even if stopped
-			h.trainSession = nil
-		}
-		close(done)
-	}
-	<-done
-
-	if failMsg == "" {
-		broadcastInfo(h, fmt.Sprintf(`{"status":"stopped","token":"testfile","file":%q,"project":%q}`, fileName, projectName))
-	}
-	return failMsg
-}
-
 func parseTestfile(content string, accounts []SIPAccount) (cases []testCase, expectedHash string, includeScript string, repeatCount int, ignoredEvents []string, acceptedEvents []string, webhookURL string, err error) {
 	repeatCount = 1
 	defines := make(map[string]string)
@@ -368,6 +70,10 @@ func parseTestfile(content string, accounts []SIPAccount) (cases []testCase, exp
 		}
 
 		lowerLine := strings.ToLower(line)
+		if lowerLine == "_hash" {
+			expectedHash = ""
+			continue
+		}
 		if strings.HasPrefix(lowerLine, "_hash ") || strings.HasPrefix(lowerLine, "hash:") {
 			if strings.HasPrefix(lowerLine, "_hash ") {
 				expectedHash = strings.TrimSpace(line[6:])
@@ -379,6 +85,10 @@ func parseTestfile(content string, accounts []SIPAccount) (cases []testCase, exp
 
 		if strings.HasPrefix(lowerLine, "_include ") {
 			includeScript = strings.TrimSpace(line[9:])
+			if !validArtifactName(includeScript) {
+				err = fmt.Errorf("line %d: include must be a script filename", lineNo)
+				return
+			}
 			continue
 		}
 
@@ -408,6 +118,9 @@ func parseTestfile(content string, accounts []SIPAccount) (cases []testCase, exp
 			parts := strings.Fields(line)
 			if len(parts) >= 3 {
 				defines[parts[1]] = strings.Join(parts[2:], " ")
+			} else {
+				err = fmt.Errorf("line %d: _define requires a name and value", lineNo)
+				return
 			}
 			continue
 		}
@@ -425,11 +138,19 @@ func parseTestfile(content string, accounts []SIPAccount) (cases []testCase, exp
 						// Skip this test file entirely
 						return nil, "", "", 0, nil, nil, "", nil
 					}
+					if r > 1000 {
+						return nil, "", "", 0, nil, nil, "", fmt.Errorf("line %d: at most 1000 repeats allowed", lineNo)
+					}
 					repeatCount = r
 					continue
 				}
 			}
-			continue
+			err = fmt.Errorf("line %d: invalid _run count", lineNo)
+			return
+		}
+		if strings.HasPrefix(line, "_") {
+			err = fmt.Errorf("line %d: unknown or incomplete directive", lineNo)
+			return
 		}
 
 		name := ""
@@ -441,14 +162,31 @@ func parseTestfile(content string, accounts []SIPAccount) (cases []testCase, exp
 			keys = append(keys, k)
 		}
 		sort.Slice(keys, func(i, j int) bool {
+			if len(keys[i]) == len(keys[j]) {
+				return keys[i] < keys[j]
+			}
 			return len(keys[i]) > len(keys[j])
 		})
 
+		var replacements []string
 		for _, k := range keys {
-			sequence = strings.ReplaceAll(sequence, k, defines[k])
+			replacements = append(replacements, k, defines[k])
 		}
+		sequence = strings.NewReplacer(replacements...).Replace(sequence)
 
 		sequence = resolveAccountsInSequence(sequence, accounts)
+		for _, part := range splitByPipe(sequence) {
+			part = strings.TrimSpace(part)
+			if isDuration(part) {
+				if d, e := time.ParseDuration(part); e != nil || d > time.Hour {
+					err = fmt.Errorf("line %d: invalid or excessive delay", lineNo)
+					return
+				}
+			} else if !isKnownCommand(part) {
+				err = fmt.Errorf("line %d: unknown command %q", lineNo, SanitizeString(part))
+				return
+			}
+		}
 
 		cases = append(cases, testCase{
 			lineNo:   lineNo,
@@ -458,90 +196,6 @@ func parseTestfile(content string, accounts []SIPAccount) (cases []testCase, exp
 		})
 	}
 	return cases, expectedHash, includeScript, repeatCount, ignoredEvents, acceptedEvents, webhookURL, sc.Err()
-}
-
-func processRecordings(ctx context.Context, store *TestStore, runID int64, dataDir string) {
-	// Find all agent-specific recorded_temp directories
-	pattern := filepath.Join(dataDir, "agents", "*", "recorded_temp")
-	dirs, err := filepath.Glob(pattern)
-	if err != nil {
-		log.Printf("failed to glob agent recording dirs: %v", err)
-		return
-	}
-
-	for _, recordsDir := range dirs {
-		files, err := os.ReadDir(recordsDir)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				log.Printf("failed to read records dir %s: %v", recordsDir, err)
-			}
-			continue
-		}
-
-		if len(files) == 0 {
-			continue
-		}
-
-		log.Printf("processing recordings in %s (found %d files)", recordsDir, len(files))
-		var wavLocationLoaded bool
-		var wavTestfileName, wavProjectName string
-		for _, f := range files {
-			if f.IsDir() {
-				continue
-			}
-
-			path := filepath.Join(recordsDir, f.Name())
-
-			// Skip and remove too small WAV files
-			info, err := f.Info()
-			if err != nil {
-				log.Printf("failed to stat recorded file %s: %v", f.Name(), err)
-				continue
-			}
-			if info.Size() < 128 {
-				log.Printf("skipping and removing too small recorded file: %s (%d bytes)", f.Name(), info.Size())
-				os.Remove(path)
-				continue
-			}
-
-			newName := strings.TrimPrefix(f.Name(), "dump-")
-			if strings.HasSuffix(newName, "-enc.wav") {
-				// Encoded WAVs are not kept, remove directly
-				if err := os.Remove(path); err != nil {
-					log.Printf("failed to remove encoded wav %s: %v", path, err)
-				}
-				continue
-			}
-
-			if store != nil {
-				if !wavLocationLoaded {
-					var err error
-					wavTestfileName, wavProjectName, err = store.getRunWavLocation(ctx, runID)
-					if err != nil {
-						log.Printf("failed to get wav location for %s: %v", newName, err)
-						_ = os.Remove(path)
-						continue
-					}
-					wavLocationLoaded = true
-				}
-				if err := store.MoveWavWithLocation(ctx, runID, wavTestfileName, wavProjectName, newName, path); err != nil {
-					log.Printf("failed to move wav %s to storage: %v", newName, err)
-					_ = os.Remove(path)
-					continue
-				}
-				log.Printf("captured and stored recording: %s", newName)
-			} else {
-				_ = os.Remove(path)
-			}
-		}
-
-		agentDir := filepath.Dir(recordsDir)
-		if err := os.RemoveAll(agentDir); err != nil {
-			log.Printf("failed to cleanup agent directory %s: %v", agentDir, err)
-		} else {
-			log.Printf("cleaned up agent directory: %s", agentDir)
-		}
-	}
 }
 
 func resolveAccountsInSequence(sequence string, accounts []SIPAccount) string {
@@ -629,30 +283,38 @@ func resolveAccountsInSequence(sequence string, accounts []SIPAccount) string {
 		}
 	}
 
-	// 3. Replace prefix account_name: (at start of command, or after a pipe)
-	for _, acc := range accounts {
-		fullSIPURI := acc.SIPURI + normalizeParam(acc.URIParams)
-		prefix := acc.Name + ":"
-		replacement := fullSIPURI + ":"
-		// Case 1: Start of sequence
-		if strings.HasPrefix(sequence, prefix) {
-			sequence = replacement + sequence[len(prefix):]
+	// Resolve complete command targets and the first URI argument only. Message
+	// bodies and overlapping account names must remain untouched.
+	parts = splitByPipe(sequence)
+	for i, part := range parts {
+		part = strings.TrimSpace(part)
+		for _, acc := range accounts {
+			if strings.HasPrefix(part, acc.Name+":") {
+				part = acc.SIPURI + normalizeParam(acc.URIParams) + part[len(acc.Name):]
+				break
+			}
 		}
-		// Case 2: After a pipe
-		sequence = strings.ReplaceAll(sequence, "|"+prefix, "|"+replacement)
-		// Case 3: After a pipe with space
-		sequence = strings.ReplaceAll(sequence, "| "+prefix, "| "+replacement)
+		fields := strings.Fields(part)
+		if len(fields) > 1 {
+			command := fields[0]
+			if n := strings.LastIndex(command, ":"); n >= 0 {
+				command = command[n+1:]
+			}
+			switch strings.ToLower(command) {
+			case "dial", "dialdir", "transfer", "atransferstart", "options", "uafind":
+				for _, acc := range accounts {
+					if fields[1] == acc.Name {
+						start := len(fields[0]) + strings.Index(part[len(fields[0]):], fields[1])
+						part = part[:start] + acc.SIPURI + normalizeParam(acc.URIParams) + part[start+len(fields[1]):]
+						break
+					}
+				}
+			}
+		}
+		parts[i] = part
 	}
-
-	// 4. Replace whole-word arguments in commands (like dial destination).
-	for _, acc := range accounts {
-		fullSIPURI := acc.SIPURI + normalizeParam(acc.URIParams)
-		sequence = strings.ReplaceAll(sequence, " "+acc.Name, " "+fullSIPURI)
-	}
-
-	return sequence
+	return strings.Join(parts, "|")
 }
-
 func normalizeParam(p string) string {
 	p = strings.TrimSpace(p)
 	if p == "" {

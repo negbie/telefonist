@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io"
+
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,14 +42,19 @@ type ProjectRow struct {
 
 // TestRunRow is a stored test run entry.
 type TestRunRow struct {
-	ID           int       `json:"id"`
-	TestfileName string    `json:"testfile_name"`
-	ProjectName  string    `json:"project_name"`
-	RunNumber    int       `json:"run_number"`
-	Hash         string    `json:"hash"`
-	Status       string    `json:"status"`
-	FlowEvents   string    `json:"flow_events,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID            int       `json:"id"`
+	TestfileName  string    `json:"testfile_name"`
+	ProjectName   string    `json:"project_name"`
+	RunNumber     int       `json:"run_number"`
+	Hash          string    `json:"hash"`
+	Status        string    `json:"status"`
+	FlowEvents    string    `json:"flow_events,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	FailureReason string    `json:"failure_reason,omitempty"`
+	Source        string    `json:"source,omitempty"`
+	Script        string    `json:"script,omitempty"`
+	BatchID       string    `json:"batch_id,omitempty"`
+	FinishedAt    string    `json:"finished_at,omitempty"`
 }
 
 // CronJobRow is a stored cron job entry.
@@ -86,6 +92,12 @@ func OpenTestStore(ctx context.Context, dataDir string) (*TestStore, error) {
 		dataDir = filepath.Dir(exe)
 	}
 	dbPath := filepath.Join(dataDir, "telefonist_tests.db")
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(dataDir, 0700); err != nil {
+		return nil, err
+	}
 
 	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
@@ -111,7 +123,15 @@ func OpenTestStore(ctx context.Context, dataDir string) (*TestStore, error) {
 		return nil, err
 	}
 
-	return &TestStore{db: db, dbPath: dbPath, wavDir: wavDir}, nil
+	if err := os.Chmod(dbPath, 0600); err != nil {
+		db.Close()
+		return nil, err
+	}
+	s := &TestStore{db: db, dbPath: dbPath, wavDir: wavDir}
+	if err := s.purgeArtifacts(ctx); err != nil {
+		log.Printf("pending artifact cleanup: %v", err)
+	}
+	return s, nil
 }
 
 // Close closes the underlying database.
@@ -309,11 +329,10 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );`); err != nil {
 		return fmt.Errorf("create app_settings table: %w", err)
 	}
-
-	return nil
+	return migrateRunDetails(ctx, db)
 }
 
-var testfileNameRE = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+var testfileNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 func validateTestfileName(name string) error {
 	name = strings.TrimSpace(name)
@@ -339,6 +358,12 @@ func validateProjectName(name string) error {
 
 // Save upserts a testfile by name and stores a new version if changed.
 func (s *TestStore) Save(ctx context.Context, name, projectName, content string) error {
+	return s.SaveExpected(ctx, name, projectName, content, nil)
+}
+
+var ErrSaveConflict = errors.New("file changed on server; reload and merge your unsaved edits")
+
+func (s *TestStore) SaveExpected(ctx context.Context, name, projectName, content string, expected *string) error {
 	if s == nil || s.db == nil {
 		return errors.New("test store is not initialized")
 	}
@@ -349,33 +374,48 @@ func (s *TestStore) Save(ctx context.Context, name, projectName, content string)
 		return err
 	}
 	projectName = strings.TrimSpace(projectName)
-	content = strings.TrimSpace(content)
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var revision string
+	err = tx.QueryRowContext(ctx, `SELECT updated_at FROM testfiles WHERE name=? AND project_name=?`, name, projectName).Scan(&revision)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if expected != nil && revision != *expected {
+		return ErrSaveConflict
+	}
+	nowTime := time.Now().UTC()
+	if previous, e := time.Parse(time.RFC3339Nano, revision); e == nil && !nowTime.After(previous) {
+		nowTime = previous.Add(time.Nanosecond)
+	}
+	now := nowTime.Format(time.RFC3339Nano)
 
 	// Check if content has changed from the latest version to prevent redundant entries
 	var lastContent string
-	err := s.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 SELECT content FROM testfile_versions
 WHERE name = ? AND project_name = ?
 ORDER BY id DESC LIMIT 1;
 `, name, projectName).Scan(&lastContent)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.Printf("failed to query last testfile version: %v", err)
+		return err
 	}
 
 	if err != nil || lastContent != content {
-		_, err = s.db.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 INSERT INTO testfile_versions(name, project_name, content, created_at)
 VALUES(?, ?, ?, ?);
 `, name, projectName, content, now)
 		if err != nil {
-			log.Printf("failed to save testfile version history: %v", err)
+			return err
 		}
 	}
 
 	// SQLite UPSERT.
-	_, err = s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO testfiles(name, project_name, content, created_at, updated_at)
 VALUES(?, ?, ?, ?, ?)
 ON CONFLICT(name, project_name) DO UPDATE SET
@@ -385,7 +425,7 @@ ON CONFLICT(name, project_name) DO UPDATE SET
 	if err != nil {
 		return fmt.Errorf("save testfile %q (project %q): %w", name, projectName, err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // Load returns the stored testfile row by name and project.
@@ -485,108 +525,6 @@ func (s *TestStore) DeleteVersion(ctx context.Context, id int64) error {
 }
 
 // Delete removes a stored testfile by name and project and its associated WAV files.
-func (s *TestStore) Delete(ctx context.Context, name, projectName string) error {
-	if s == nil || s.db == nil {
-		return errors.New("test store is not initialized")
-	}
-	if err := validateTestfileName(name); err != nil {
-		return err
-	}
-
-	pName := projectName
-	if pName == "" {
-		pName = "default"
-	}
-	testfileDir := filepath.Join(s.wavDir, pName, name)
-	if err := os.RemoveAll(testfileDir); err != nil {
-		log.Printf("failed to remove testfile wav directory %q: %v", testfileDir, err)
-	}
-
-	res, err := s.db.ExecContext(ctx, `DELETE FROM testfiles WHERE name = ? AND project_name = ?;`, name, projectName)
-	if err != nil {
-		return fmt.Errorf("delete testfile %q (project %q): %w", name, projectName, err)
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("testfile %q (project %q) not found", name, projectName)
-	}
-	return nil
-}
-
-// Rename renames an existing testfile and its associated WAV directory.
-func (s *TestStore) Rename(ctx context.Context, oldName, oldProject, newName, newProject string) error {
-	if s == nil || s.db == nil {
-		return errors.New("test store is not initialized")
-	}
-	if err := validateTestfileName(oldName); err != nil {
-		return err
-	}
-	if err := validateProjectName(oldProject); err != nil {
-		return err
-	}
-	if err := validateTestfileName(newName); err != nil {
-		return err
-	}
-	if err := validateProjectName(newProject); err != nil {
-		return err
-	}
-	if oldName == newName && oldProject == newProject {
-		return nil
-	}
-
-	// Rename folder on disk if it exists
-	oldP := oldProject
-	if oldP == "" {
-		oldP = "default"
-	}
-	newP := newProject
-	if newP == "" {
-		newP = "default"
-	}
-
-	oldDir := filepath.Join(s.wavDir, oldP, oldName)
-	newDir := filepath.Join(s.wavDir, newP, newName)
-
-	if _, err := os.Stat(oldDir); err == nil {
-		if err := os.MkdirAll(filepath.Dir(newDir), 0755); err == nil {
-			if err := os.Rename(oldDir, newDir); err != nil {
-				log.Printf("failed to rename wav directory %q -> %q: %v", oldDir, newDir, err)
-			}
-		}
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := s.db.ExecContext(ctx, `
-UPDATE testfiles
-SET name = ?, project_name = ?, updated_at = ?
-WHERE name = ? AND project_name = ?;
-`, newName, newProject, now, oldName, oldProject)
-	if err != nil {
-		return fmt.Errorf("rename testfile %q -> %q: %w", oldName, newName, err)
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("testfile %q (project %q) not found", oldName, oldProject)
-	}
-
-	// Also update file paths in testrun_wavs table if they moved
-	if oldDir != newDir {
-		if _, err := s.db.ExecContext(ctx, `
-			UPDATE testrun_wavs
-			SET file_path = REPLACE(file_path, ?, ?)
-			WHERE testrun_id IN (
-				SELECT id FROM testruns WHERE testfile_name = ? AND project_name = ?
-			);`,
-			filepath.Join(oldP, oldName),
-			filepath.Join(newP, newName),
-			newName, newProject); err != nil {
-			log.Printf("failed to update wav paths for renamed testfile %q (project %q) -> %q (project %q): %v", oldName, oldProject, newName, newProject, err)
-		}
-	}
-
-	return nil
-}
-
 // List returns all stored testfiles with metadata (no content, unless includeContent is true).
 func (s *TestStore) List(ctx context.Context, includeContent bool) ([]TestfileRow, error) {
 	if s == nil || s.db == nil {
@@ -1065,7 +1003,13 @@ VALUES(?, ?, ?, ?, ?, ?, ?);
 	}
 
 	// Prune old runs to prevent boundless database growth
-	if err := s.PruneRuns(ctx, 100); err != nil {
+	keep := 100
+	if value, err := s.GetSetting(ctx, "retention_runs"); err == nil {
+		if n, e := strconv.Atoi(value); e == nil && n > 0 {
+			keep = n
+		}
+	}
+	if err := s.PruneRuns(ctx, keep); err != nil {
 		log.Printf("failed to prune old runs after saving run %d for %q (project %q): %v", id, testfileName, projectName, err)
 	}
 
@@ -1094,10 +1038,15 @@ func (s *TestStore) MoveWavWithLocation(ctx context.Context, testrunID int64, te
 	if err != nil {
 		return err
 	}
-	if err := moveFile(srcPath, absPath); err != nil {
-		return fmt.Errorf("move wav file: %w", err)
+	// Copy first: metadata failure must never remove the only recording.
+	if err := copyArtifact(srcPath, absPath); err != nil {
+		return err
 	}
-	return s.recordWav(ctx, testrunID, filename, relPath)
+	if err := s.recordWav(ctx, testrunID, filename, relPath); err != nil {
+		_ = os.Remove(absPath)
+		return err
+	}
+	return os.Remove(srcPath)
 }
 
 // MoveWav moves a WAV file from srcPath to the testrun's persistent path.
@@ -1123,20 +1072,34 @@ func (s *TestStore) SaveWav(ctx context.Context, testrunID int64, filename strin
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(absPath, content, 0644); err != nil {
+	file, err := os.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(content)
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(absPath)
 		return fmt.Errorf("write wav file: %w", err)
 	}
-	return s.recordWav(ctx, testrunID, filename, relPath)
+	if err = s.recordWav(ctx, testrunID, filename, relPath); err != nil {
+		_ = os.Remove(absPath)
+	}
+	return err
 }
 
 func (s *TestStore) prepareWavPath(testrunID int64, testfileName, projectName, filename string) (string, string, error) {
-	pName := projectName
-	if pName == "" {
-		pName = "default"
+	if testrunID <= 0 || !validArtifactName(filename) {
+		return "", "", errors.New("invalid artifact identity")
 	}
-
-	relPath := filepath.Join(pName, testfileName, fmt.Sprintf("%d", testrunID), filename)
-	absPath := filepath.Join(s.wavDir, relPath)
+	relPath := filepath.Join("runs", fmt.Sprintf("%d", testrunID), filename)
+	absPath, err := s.artifactPath(relPath)
+	if err != nil {
+		return "", "", err
+	}
 
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
 		return "", "", fmt.Errorf("create wav directory: %w", err)
@@ -1154,35 +1117,6 @@ func (s *TestStore) recordWav(ctx context.Context, testrunID int64, filename, re
 		return fmt.Errorf("save wav path %q for testrun %d: %w", filename, testrunID, err)
 	}
 	return nil
-}
-
-// moveFile moves src to dst by attempting an atomic rename first,
-// falling back to streaming copy-and-remove across filesystem boundaries.
-func moveFile(src, dst string) error {
-	if err := os.Rename(src, dst); err == nil {
-		return nil
-	}
-
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	if err := out.Sync(); err != nil {
-		return err
-	}
-	_ = in.Close()
-	return os.Remove(src)
 }
 
 // WavRow represents a stored WAV metadata.
@@ -1252,7 +1186,8 @@ WHERE w.id = ?;
 		filename = testfileName + "_" + filename
 	}
 
-	return filename, filepath.Join(s.wavDir, relPath), nil
+	absPath, err = s.artifactPath(relPath)
+	return filename, absPath, err
 }
 
 // GetWav returns the content and filename of a stored WAV from the filesystem.
@@ -1281,7 +1216,7 @@ func (s *TestStore) ListRuns(ctx context.Context, testfileName, projectName stri
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, testfile_name, project_name, run_number, hash, status, created_at
+SELECT id, testfile_name, project_name, run_number, hash, status, created_at, failure_reason, finished_at, batch_id
 FROM testruns
 WHERE testfile_name = ? AND project_name = ?
 ORDER BY id ASC;
@@ -1295,7 +1230,7 @@ ORDER BY id ASC;
 	for rows.Next() {
 		var r TestRunRow
 		var created string
-		if err := rows.Scan(&r.ID, &r.TestfileName, &r.ProjectName, &r.RunNumber, &r.Hash, &r.Status, &created); err != nil {
+		if err := rows.Scan(&r.ID, &r.TestfileName, &r.ProjectName, &r.RunNumber, &r.Hash, &r.Status, &created, &r.FailureReason, &r.FinishedAt, &r.BatchID); err != nil {
 			return nil, fmt.Errorf("scan testrun row: %w", err)
 		}
 		if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
@@ -1316,7 +1251,7 @@ func (s *TestStore) ListAllRuns(ctx context.Context) ([]TestRunRow, error) {
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, testfile_name, project_name, run_number, hash, status, created_at
+SELECT id, testfile_name, project_name, run_number, hash, status, created_at, failure_reason, finished_at, batch_id
 FROM testruns
 ORDER BY id ASC;
 `)
@@ -1329,7 +1264,7 @@ ORDER BY id ASC;
 	for rows.Next() {
 		var r TestRunRow
 		var created string
-		if err := rows.Scan(&r.ID, &r.TestfileName, &r.ProjectName, &r.RunNumber, &r.Hash, &r.Status, &created); err != nil {
+		if err := rows.Scan(&r.ID, &r.TestfileName, &r.ProjectName, &r.RunNumber, &r.Hash, &r.Status, &created, &r.FailureReason, &r.FinishedAt, &r.BatchID); err != nil {
 			return nil, fmt.Errorf("scan testrun row: %w", err)
 		}
 		if r.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
@@ -1356,10 +1291,10 @@ func (s *TestStore) GetRun(ctx context.Context, id int) (TestRunRow, error) {
 	var created string
 
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, testfile_name, project_name, run_number, hash, status, flow_events, created_at
+SELECT id, testfile_name, project_name, run_number, hash, status, flow_events, created_at, failure_reason,source,script,batch_id,finished_at
 FROM testruns
 WHERE id = ?;
-`, id).Scan(&r.ID, &r.TestfileName, &r.ProjectName, &r.RunNumber, &r.Hash, &r.Status, &r.FlowEvents, &created)
+`, id).Scan(&r.ID, &r.TestfileName, &r.ProjectName, &r.RunNumber, &r.Hash, &r.Status, &r.FlowEvents, &created, &r.FailureReason, &r.Source, &r.Script, &r.BatchID, &r.FinishedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return TestRunRow{}, fmt.Errorf("testrun %d not found", id)
@@ -1374,68 +1309,6 @@ WHERE id = ?;
 }
 
 // DeleteRun removes a single stored testrun by its ID and its associated WAV files.
-func (s *TestStore) DeleteRun(ctx context.Context, id int) error {
-	if s == nil || s.db == nil {
-		return errors.New("test store is not initialized")
-	}
-	if id <= 0 {
-		return errors.New("invalid testrun ID")
-	}
-
-	// Lookup testfile and project name for path organization
-	var testfileName, projectName string
-	err := s.db.QueryRowContext(ctx, `SELECT testfile_name, project_name FROM testruns WHERE id = ?`, id).Scan(&testfileName, &projectName)
-	if err == nil {
-		pName := projectName
-		if pName == "" {
-			pName = "default"
-		}
-		// Delete WAV directory for this run.
-		runDir := filepath.Join(s.wavDir, pName, testfileName, fmt.Sprintf("%d", id))
-		if err := os.RemoveAll(runDir); err != nil {
-			log.Printf("failed to remove run wav directory %q: %v", runDir, err)
-		}
-	}
-
-	res, err := s.db.ExecContext(ctx, `DELETE FROM testruns WHERE id = ?;`, id)
-	if err != nil {
-		return fmt.Errorf("delete testrun %d: %w", id, err)
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("testrun %d not found", id)
-	}
-	return nil
-}
-
-// DeleteRunsByTestfile removes all stored testruns for a given testfile name and project, including WAV files.
-func (s *TestStore) DeleteRunsByTestfile(ctx context.Context, testfileName, projectName string) error {
-	if s == nil || s.db == nil {
-		return errors.New("test store is not initialized")
-	}
-	if err := validateTestfileName(testfileName); err != nil {
-		return err
-	}
-	if err := validateProjectName(projectName); err != nil {
-		return err
-	}
-
-	pName := projectName
-	if pName == "" {
-		pName = "default"
-	}
-	testfileDir := filepath.Join(s.wavDir, pName, testfileName)
-	if err := os.RemoveAll(testfileDir); err != nil {
-		log.Printf("failed to remove testfile wav directory %q: %v", testfileDir, err)
-	}
-
-	_, err := s.db.ExecContext(ctx, `DELETE FROM testruns WHERE testfile_name = ? AND project_name = ?;`, testfileName, projectName)
-	if err != nil {
-		return fmt.Errorf("delete testruns for %q (project %q): %w", testfileName, projectName, err)
-	}
-	return nil
-}
-
 // SaveProject upserts a project by name.
 func (s *TestStore) SaveProject(ctx context.Context, name string) error {
 	if s == nil || s.db == nil {
@@ -1487,95 +1360,17 @@ func (s *TestStore) DeleteProject(ctx context.Context, name string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE name = ?;`, name); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE testfile_versions SET project_name='' WHERE project_name=?`, name); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cronjobs WHERE project=?`, name); err != nil {
+		return err
+	}
 
 	return tx.Commit()
 }
 
 // RenameProject renames an entire project, including updating all its testfiles and testruns.
-func (s *TestStore) RenameProject(ctx context.Context, oldName, newName string) error {
-	if s == nil || s.db == nil {
-		return errors.New("test store is not initialized")
-	}
-	if err := validateProjectName(oldName); err != nil {
-		return err
-	}
-	if err := validateProjectName(newName); err != nil {
-		return err
-	}
-	if oldName == newName {
-		return nil
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-			log.Printf("failed to rollback project rename transaction for %q -> %q: %v", oldName, newName, err)
-		}
-	}()
-
-	// 1. Rename physical WAV folders
-	oldP := oldName
-	if oldP == "" {
-		oldP = "default"
-	}
-	newP := newName
-	if newP == "" {
-		newP = "default"
-	}
-
-	oldDir := filepath.Join(s.wavDir, oldP)
-	newDir := filepath.Join(s.wavDir, newP)
-
-	if _, err := os.Stat(oldDir); err == nil {
-		if err := os.MkdirAll(filepath.Dir(newDir), 0755); err == nil {
-			if err := os.Rename(oldDir, newDir); err != nil {
-				log.Printf("failed to rename project directory %q -> %q: %v", oldDir, newDir, err)
-			}
-		}
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-
-	// 2. Insert new project
-	if _, err := tx.ExecContext(ctx, `INSERT INTO projects(name, created_at) VALUES(?, ?) ON CONFLICT(name) DO NOTHING;`, newName, now); err != nil {
-		return err
-	}
-
-	// 3. Update testfiles
-	if _, err := tx.ExecContext(ctx, `UPDATE testfiles SET project_name = ?, updated_at = ? WHERE project_name = ?;`, newName, now, oldName); err != nil {
-		return err
-	}
-
-	// 4. Update testrun_wavs paths
-	if oldDir != newDir {
-		// e.g. replacing 'alpha/' with 'beta/' at the beginning of the file_path
-		prefixOld := oldP + string(filepath.Separator)
-		prefixNew := newP + string(filepath.Separator)
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE testrun_wavs
-			SET file_path = ? || SUBSTR(file_path, ?)
-			WHERE file_path LIKE ?;
-		`, prefixNew, len(prefixOld)+1, prefixOld+"%"); err != nil {
-			log.Printf("failed to update testrun wav file paths: %v", err)
-		}
-	}
-
-	// 5. Update testruns (done later to prevent FK cascade issues if any)
-	if _, err := tx.ExecContext(ctx, `UPDATE testruns SET project_name = ? WHERE project_name = ?;`, newName, oldName); err != nil {
-		return err
-	}
-
-	// 6. Delete old project entry
-	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE name = ?;`, oldName); err != nil {
-		return err
-	}
-
-	return tx.Commit()
-}
-
 // CloneProject creates a new project and copies all testfiles from the source project.
 func (s *TestStore) CloneProject(ctx context.Context, srcName, targetName string) error {
 	if s == nil || s.db == nil {
@@ -1749,16 +1544,3 @@ func (s *TestStore) Vacuum(ctx context.Context) error {
 }
 
 // PruneRuns removes old test runs, keeping only the most recent N runs.
-func (s *TestStore) PruneRuns(ctx context.Context, keep int) error {
-	if s == nil || s.db == nil {
-		return errors.New("test store is not initialized")
-	}
-	_, err := s.db.ExecContext(ctx, `
-		DELETE FROM testruns
-		WHERE id NOT IN (
-			SELECT id FROM testruns
-			ORDER BY created_at DESC
-			LIMIT ?
-		);`, keep)
-	return err
-}

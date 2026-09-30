@@ -1,4 +1,5 @@
 /* compare.css */
+#compare-note { margin: 0; padding: 6px 12px; font: 12px system-ui; color: #475569; }
 
 #compare-panel {
     flex: 1 1 auto;

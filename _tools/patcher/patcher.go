@@ -27,7 +27,7 @@ func main() {
 
 	for _, p := range patches {
 		if err := applyPatch(p); err != nil {
-			log.Printf("ERROR: apply patch for %s: %v", p.file, err)
+			log.Fatalf("ERROR: apply patch for %s: %v", p.file, err)
 		}
 	}
 }
@@ -108,13 +108,13 @@ func applyPatch(p patch) error {
 	}
 	content := string(contentBytes)
 
-	if strings.Contains(content, p.with) {
+	if !strings.Contains(content, p.replace) && p.with != "" && strings.Contains(content, p.with) {
 		log.Printf("File %s already contains the replacement content. Skipping.", p.file)
 		return nil
 	}
 
-	if !strings.Contains(content, p.replace) {
-		return fmt.Errorf("target content not found in %s", p.file)
+	if count := strings.Count(content, p.replace); count != 1 {
+		return fmt.Errorf("expected exactly one patch target in %s, found %d", p.file, count)
 	}
 
 	log.Printf("Patching %s...", p.file)

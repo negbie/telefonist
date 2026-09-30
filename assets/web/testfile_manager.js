@@ -33,6 +33,9 @@ export function initTestfileManager(deps) {
   const projectsDeleteEl = document.getElementById("projects-delete");
 
   const state = createStateManager();
+  window.addEventListener("beforeunload", event => {
+    if(state.getKeys().some(state.isDirty)) {event.preventDefault();event.returnValue="";}
+  });
   const api = API;
 
   let activeKey = "";
@@ -86,7 +89,6 @@ export function initTestfileManager(deps) {
 
   function requestLists(overrides = {}) {
     updateEnabledStates();
-    if (!wsIsOpen()) return Promise.resolve();
     const p1 = api.getProjects().then((j) => {
       if (j.status === "finished")
         populateProjectsSelect(j.items, overrides.project);
@@ -94,23 +96,30 @@ export function initTestfileManager(deps) {
     const p2 = api.getTestfiles().then((j) => {
       if (j.status === "finished") populateTestfileSelect(j.items);
     });
-    return Promise.all([p1, p2]);
+    return Promise.all([p1, p2]).catch((err) => {
+      console.warn("Failed to load testfiles or projects:", err);
+    });
   }
 
   // --- Actions ---
+  function reportError(error) {
+    alert("Request failed: " + error.message + ". Your unsaved edits have been kept.");
+  }
 
   const runAction = (promptMsg, apiCall, refresh = true, overrides = {}) => {
     let name = window.prompt(promptMsg.msg, promptMsg.initial);
     if (!name || (promptMsg.sanitize && !(name = sanitizeTestfileName(name)))) return;
     apiCall(name).then((j) => {
       if (j.status !== "finished") alert("Error: " + j.message);
-      else if (refresh) requestLists(overrides);
-    });
+      else if (refresh) requestLists(typeof overrides === "function" ? overrides(name) : overrides);
+    }).catch(reportError);
   };
 
   function handleNew() {
+    const project = projectSelectEl?.value;
+    if (!project) return alert("Please select a project first.");
     runAction({ msg: "Enter name for new testfile:", sanitize: true }, (name) => {
-      const project = projectSelectEl?.value || "", key = `${project}:${name}`;
+      const key = `${project}:${name}`;
       state.updateCache(key, { name, project, original: "", current: "" });
       setActiveKey(key);
       if (testfileInputEl) { testfileInputEl.value = ""; updateHighlights(); }
@@ -118,17 +127,26 @@ export function initTestfileManager(deps) {
     });
   }
 
-  function handleSave() {
+  async function handleSave() {
+    const savedKey = activeKey;
     const entry = activeKey && state.getEntry(activeKey);
     if (!entry || !testfileInputEl) return;
-    const content = safeText(testfileInputEl.value || "").trim();
-    api.saveTestfile(entry.name, entry.project, base64EncodeUTF8(content)).then((j) => {
+    const content = safeText(testfileInputEl.value || "");
+    try {
+      let revision = entry.revision;
+      if (revision === undefined) {
+        const stored = await api.getTestfile(entry.name, entry.project);
+        if (stored.status !== "finished" || base64DecodeUTF8(stored.content_b64).replace(/\r/g,"") !== entry.original.replace(/\r/g,""))
+          throw new Error("The server version differs from this draft; reload and merge before saving");
+        revision = stored.updated_at;
+      }
+      const j = await api.saveTestfile(entry.name, entry.project, base64EncodeUTF8(content), revision);
       if (j.status === "finished") {
-        state.updateCache(activeKey, { original: content });
+        state.updateCache(savedKey, { original: content, revision: j.revision });
         updateEnabledStates();
         updateCurrentOptionLabel();
       } else alert("Error: " + j.message);
-    });
+    } catch(error) { reportError(error); }
   }
 
   function handleRename() {
@@ -174,6 +192,9 @@ export function initTestfileManager(deps) {
   function handleRun() {
     if (!wsIsOpen()) return;
     const keys = getSelectedKeys();
+    if (keys.length === 0) {
+      return alert("Please select a testfile first.");
+    }
     if (keys.length > 1) {
       const args = keys.map(k => { const e = state.getEntry(k); return e ? `${e.project || "''"} ${e.name}` : ""; }).filter(Boolean).join(" ");
       socket.send(`testfiles run ${args}`);
@@ -197,20 +218,21 @@ export function initTestfileManager(deps) {
   if (testfilesRunEl) testfilesRunEl.onclick = handleRun;
   if (testfilesStopEl) testfilesStopEl.onclick = handleStop;
 
-  if (projectsNewEl) projectsNewEl.onclick = () => runAction({ msg: "New project name:" }, (name) => api.createProject(name), true, { project: name });
+  if (projectsNewEl) projectsNewEl.onclick = () => runAction({ msg: "New project name:" }, (name) => api.createProject(name), true, name => ({ project: name }));
   if (projectsRenameEl) projectsRenameEl.onclick = () => {
     const old = projectSelectEl?.value;
-    if (!old) return alert("Select project first.");
-    runAction({ msg: `Rename "${old}" to:`, initial: old }, (name) => api.renameProject(old, name), true, { project: name });
+    if (!old) return alert("Please select a project first.");
+    runAction({ msg: `Rename "${old}" to:`, initial: old }, (name) => api.renameProject(old, name), true, name => ({ project: name }));
   };
   if (projectsCloneEl) projectsCloneEl.onclick = () => {
     const src = projectSelectEl?.value;
-    if (!src) return alert("Select project first.");
-    runAction({ msg: `Clone "${src}" as:`, initial: src + "_copy" }, (name) => api.cloneProject(src, name), true, { project: name });
+    if (!src) return alert("Please select a project first.");
+    runAction({ msg: `Clone "${src}" as:`, initial: src + "_copy" }, (name) => api.cloneProject(src, name), true, name => ({ project: name }));
   };
   if (projectsDeleteEl) projectsDeleteEl.onclick = () => {
     const name = projectSelectEl?.value;
-    if (name && confirm(`Delete project "${name}"?`)) api.deleteProject(name).then(requestLists);
+    if (!name) return alert("Please select a project first.");
+    if (confirm(`Delete project "${name}"?`)) api.deleteProject(name).then(requestLists);
   };
 
   if (projectSelectEl) projectSelectEl.onchange = () => populateTestfileSelect(savedTestfiles);
@@ -225,7 +247,7 @@ export function initTestfileManager(deps) {
       api.getTestfile(entry.name, entry.project).then(j => {
         if (j.status === "finished") {
           const content = base64DecodeUTF8(j.content_b64).replace(/\r/g, ""), wasDirty = state.isDirty(key);
-          state.updateCache(key, { original: content, current: wasDirty ? undefined : content });
+          if (!wasDirty) state.updateCache(key, { original: content, current: content, revision: j.updated_at });
           if (key === activeKey && testfileInputEl && !wasDirty) { testfileInputEl.value = content; updateHighlights(); }
           syncSelectToActive(); updateEnabledStates();
         }
@@ -254,7 +276,7 @@ export function initTestfileManager(deps) {
     const opt = activeKey && Array.from(testfileSelectEl?.options || []).find(o => o.value === activeKey);
     if (opt) {
       let label = state.isDirty(activeKey) ? `${state.getEntry(activeKey).name} [unsaved]` : state.getEntry(activeKey).name;
-      opt.textContent = label.length > 30 ? label.substring(0, 30) + "..." : label;
+      opt.textContent = label;
     }
   }
 
@@ -290,7 +312,8 @@ export function initTestfileManager(deps) {
       groups[p].sort((a, b) => a.name.localeCompare(b.name)).forEach(e => {
         const k = `${e.project}:${e.name}`;
         let label = state.isDirty(k) ? e.name + " [unsaved]" : e.name;
-        const opt = new Option(label.length > 30 ? label.substring(0, 30) + "..." : label, k);
+        const opt = new Option(label, k);
+        opt.title = `${p || "Uncategorized"} / ${e.name}`;
         opt.selected = (k === activeKey); container.appendChild(opt);
       });
     });
@@ -301,21 +324,23 @@ export function initTestfileManager(deps) {
     updateEnabledStates();
   }
 
+  // Fetch testfiles and projects immediately over HTTP on module load:
+  requestLists();
+
   return {
     updateSaveEnabled: updateEnabledStates,
     requestTestfilesList: requestLists,
     getActiveKey: () => activeKey,
     handleTestfilesMessage: (j) => {
+      if (j.token === "runner") {
+        isTestRunning = !!j.state?.active;
+        updateEnabledStates();
+        return true;
+      }
       const isTF =
         j.token === "testfile" || j.token === "testfiles" || j.token === "test";
       if (!isTF && j.token !== "projects") return false;
 
-      if (j.token === "testfile" || j.token === "test") {
-        if (j.status === "running" || j.status === "progress")
-          isTestRunning = true;
-        else if (["finished", "stopped", "error"].indexOf(j.status) !== -1)
-          isTestRunning = false;
-      }
       updateEnabledStates();
 
       if (

@@ -75,20 +75,28 @@ func splitByPipe(input string) []string {
 	var parts []string
 	var current strings.Builder
 	inSecret := false
+	var quote byte
 
 	for i := 0; i < len(input); i++ {
 		// Case insensitive check for auth_pass=
-		if !inSecret && i+10 <= len(input) && strings.EqualFold(input[i:i+10], "auth_pass=") {
+		if !inSecret && i+9 <= len(input) && strings.EqualFold(input[i:i+9], "auth_pass=") {
 			inSecret = true
 		}
 
 		char := input[i]
+		if !inSecret && (char == '\'' || char == '"') && (i == 0 || input[i-1] != '\\') {
+			if quote == 0 {
+				quote = char
+			} else if quote == char {
+				quote = 0
+			}
+		}
 		// End secret on ; or whitespace
 		if inSecret && (char == ';' || char == ' ' || char == '\t' || char == '\n' || char == '\r') {
 			inSecret = false
 		}
 
-		if char == '|' && !inSecret {
+		if char == '|' && !inSecret && quote == 0 {
 			parts = append(parts, current.String())
 			current.Reset()
 		} else {
@@ -150,11 +158,11 @@ func parseChain(input string) []chainToken {
 
 // executeChain runs a sequence of chain tokens, executing commands via the
 // hub and sleeping for delays.
-func executeChain(ctx context.Context, h *WsHub, tokens []chainToken) {
+func executeChain(ctx context.Context, h *WsHub, tokens []chainToken) error {
 	for _, tok := range tokens {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		default:
 		}
 
@@ -162,10 +170,13 @@ func executeChain(ctx context.Context, h *WsHub, tokens []chainToken) {
 			select {
 			case <-time.After(tok.delay):
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			}
 		} else {
-			h.executeSmartCommand(tok.command)
+			if err := h.executeSmartCommand(ctx, tok.command); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }

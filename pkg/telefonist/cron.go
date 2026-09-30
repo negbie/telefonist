@@ -18,6 +18,8 @@ type CronManager struct {
 	jobQueue  chan CronJobRequest
 	ctx       context.Context
 	cancel    context.CancelFunc
+	pending   map[CronJobRequest]bool
+	done      chan struct{}
 }
 
 type CronJobRequest struct {
@@ -31,13 +33,15 @@ func NewCronManager(hub *WsHub, store *TestStore) *CronManager {
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
 	cm := &CronManager{
-		c:         cron.New(cron.WithParser(parser)),
+		c:         cron.New(cron.WithParser(parser), cron.WithLocation(time.UTC)),
 		hub:       hub,
 		testStore: store,
 		entryIDs:  make(map[int]cron.EntryID),
 		jobQueue:  make(chan CronJobRequest, 100),
 		ctx:       ctx,
 		cancel:    cancel,
+		pending:   make(map[CronJobRequest]bool),
+		done:      make(chan struct{}),
 	}
 
 	go cm.workerLoop()
@@ -53,7 +57,8 @@ func (cm *CronManager) Start() {
 // Stop halts the scheduler and workers.
 func (cm *CronManager) Stop() {
 	cm.cancel()
-	_ = cm.c.Stop()
+	<-cm.c.Stop().Done()
+	<-cm.done
 }
 
 // ReloadAll clears existing memory schedule and repopulates from DB.
@@ -79,13 +84,20 @@ func (cm *CronManager) ReloadAll() {
 		if !j.Active {
 			continue
 		}
-		
+
 		project := j.Project
 		testfile := j.Testfile
-		
+
 		id, err := cm.c.AddFunc(j.CronExpr, func() {
+			req := CronJobRequest{Project: project, Testfile: testfile}
+			cm.mu.Lock()
+			defer cm.mu.Unlock()
+			if cm.pending[req] {
+				return
+			}
 			select {
 			case cm.jobQueue <- CronJobRequest{Project: project, Testfile: testfile}:
+				cm.pending[req] = true
 				log.Printf("cron: queued job for Project: %q, Testfile: %q", project, testfile)
 			default:
 				log.Printf("cron: queue full, skipping active trigger for Project: %q, Testfile: %q", project, testfile)
@@ -102,12 +114,16 @@ func (cm *CronManager) ReloadAll() {
 
 // workerLoop executes queued runs synchronously, respecting the global inlineRunActive lock.
 func (cm *CronManager) workerLoop() {
+	defer close(cm.done)
 	for {
 		select {
 		case <-cm.ctx.Done():
 			return
 		case req := <-cm.jobQueue:
 			cm.executeJob(req)
+			cm.mu.Lock()
+			delete(cm.pending, req)
+			cm.mu.Unlock()
 		}
 	}
 }
@@ -164,6 +180,9 @@ func (cm *CronManager) executeJob(req CronJobRequest) {
 // waitForRunClear blocks until no test run is active, polling every 2 seconds.
 // Returns false if the context was cancelled.
 func (cm *CronManager) waitForRunClear() bool {
+	if cm.ctx.Err() != nil {
+		return false
+	}
 	if !cm.hub.inlineRunActive.Load() {
 		return true
 	}

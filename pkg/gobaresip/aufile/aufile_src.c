@@ -73,7 +73,10 @@ static int reopen_file(struct ausrc_st *st)
 	if (err)
 		return err;
 
-	return read_file(st);
+	if (fprm.fmt != st->fmt || fprm.srate != st->prm.srate ||
+	    fprm.channels != st->prm.ch)
+		return EINVAL;
+	return 0;
 }
 
 
@@ -100,16 +103,21 @@ static int src_thread(void *arg)
 		auframe_init(&af, AUFMT_S16LE, sampv, st->sampc,
 		             st->prm.srate, st->prm.ch);
 
+		if (aubuf_cur_size(st->aubuf) < st->sampc * sizeof(int16_t)) {
+			if (read_file(st))
+				break;
+			if (aubuf_cur_size(st->aubuf) == 0) {
+				if (reopen_file(st) || read_file(st) ||
+				    aubuf_cur_size(st->aubuf) == 0)
+					break;
+			}
+		}
 		aubuf_read_auframe(st->aubuf, &af);
 
 		st->rh(&af, st->arg);
 
 		ts += st->ptime;
 
-		if (aubuf_cur_size(st->aubuf) == 0) {
-			if (reopen_file(st))
-				break;
-		}
 
 	}
 
@@ -185,6 +193,7 @@ static int read_file(struct ausrc_st *st)
 		case AUFMT_PCMA:
 		case AUFMT_PCMU:
 			mb2 = mbuf_alloc(2 * n);
+			if (!mb2) { err = ENOMEM; break; }
 			for (i = 0; i < n; i++) {
 				err |= mbuf_write_u16(mb2,
 					   st->fmt == AUFMT_PCMA ?
@@ -204,9 +213,11 @@ static int read_file(struct ausrc_st *st)
 
 		if (err)
 			break;
+		/* Stream one frame's worth; never load the complete input WAV. */
+		if (aubuf_cur_size(st->aubuf) >= st->sampc * sizeof(int16_t))
+			break;
 	}
 
-	info("aufile: loaded %zu bytes\n", aubuf_cur_size(st->aubuf));
 	mem_deref(mb);
 	return err;
 }
@@ -265,6 +276,7 @@ int aufile_src_alloc(struct ausrc_st **stp, const struct ausrc *as,
 
 	st->fmt    = fprm.fmt;
 	st->sampc  = prm->srate * prm->ch * st->ptime / 1000;
+	if (!st->sampc || st->sampc > 192000) { err = EINVAL; goto out; }
 
 	info("aufile: audio ptime=%u sampc=%zu\n", st->ptime, st->sampc);
 

@@ -1,153 +1,6 @@
 package gobaresip
 
-/*
-#cgo linux CFLAGS: -I${SRCDIR}/../..
-#cgo linux LDFLAGS: ${SRCDIR}/../../libbaresip/baresip/libbaresip.a
-#cgo linux LDFLAGS: ${SRCDIR}/../../libbaresip/re/libre.a
-#cgo linux LDFLAGS: ${SRCDIR}/../../libbaresip/rem/librem.a
-#cgo linux LDFLAGS: ${SRCDIR}/../../libbaresip/opus/libopus.a
-#cgo linux LDFLAGS: ${SRCDIR}/../../libbaresip/openssl/libssl.a
-#cgo linux LDFLAGS: ${SRCDIR}/../../libbaresip/openssl/libcrypto.a
-#cgo linux LDFLAGS: ${SRCDIR}/../../libbaresip/g722/libg722.a
-#cgo linux LDFLAGS: ${SRCDIR}/../../libbaresip/sndfile/libsndfile.a
-#cgo linux LDFLAGS: -ldl -lm
-
-#include <stdint.h>
-#include <stdlib.h>
-
-#define DEBUG_MODULE "gobaresip"
-#define DEBUG_LEVEL 4
-
-#include <libbaresip/re/include/re.h>
-#include <libbaresip/re/include/re_dbg.h>
-#include <libbaresip/rem/include/rem.h>
-#include <libbaresip/baresip/include/baresip.h>
-
-static struct tmr tmr_quit;
-
-static void signal_handler(int sig)
-{
-	static bool term = false;
-
-	if (term) {
-		module_app_unload();
-		mod_close();
-		exit(0);
-	}
-
-	term = true;
-
-	info("terminated by signal %d\n", sig);
-
-	ua_stop_all(false);
-}
-
-static void ua_exit_handler(void *arg)
-{
-	(void)arg;
-	debug("ua exited -- stopping main runloop\n");
-
-	//The main run-loop can be stopped now
-	re_cancel();
-}
-
-static inline void set_ua_exit_handler()
-{
-	uag_set_exit_handler(ua_exit_handler, NULL);
-}
-
-static inline void cancelQuitTimer(){
-	tmr_cancel(&tmr_quit);
-}
-
-static void my_dbg_handler(int level, const char *p, size_t len, void *arg)
-{
-	(void)arg;
-	extern void gobaresip_log_handler(int level, char *p, int len);
-	if (level <= DEBUG_LEVEL && len > 0) {
-		gobaresip_log_handler(level, (char *)p, (int)len);
-	}
-}
-
-static void my_log_handler(uint32_t level, const char *msg)
-{
-	extern void gobaresip_log_handler(int level, char *p, int len);
-	if (level <= DEBUG_LEVEL && msg) {
-		int len = strlen(msg);
-		gobaresip_log_handler((int)level, (char *)msg, len);
-	}
-}
-
-static struct log my_log;
-static inline void register_log_handlers() {
-	dbg_handler_set(my_dbg_handler, NULL);
-	my_log.h = my_log_handler;
-	log_register_handler(&my_log);
-}
-
-static void my_sip_trace_handler(bool tx, enum sip_transp tp,
-			      const struct sa *src, const struct sa *dst,
-			      const uint8_t *pkt, size_t len, void *arg)
-{
-	(void)arg;
-
-	char *str = NULL;
-	int err = re_sdprintf(&str,
-		  "%H|%s\n"
-		  "%s %J -> %J\n"
-		  "%b\n"
-		  ,
-		  fmt_timestamp, NULL,
-		  tx ? "TX" : "RX",
-		  sip_transp_name(tp), src, dst, pkt, len);
-
-	if (err == 0 && str) {
-		extern void gobaresip_sip_trace_handler(char *p, int len);
-		gobaresip_sip_trace_handler(str, strlen(str));
-	}
-	mem_deref(str);
-}
-
-static inline void enable_my_sip_trace(bool enable) {
-	if (enable) {
-		sip_set_trace_handler(uag_sip(), my_sip_trace_handler);
-	} else {
-		sip_set_trace_handler(uag_sip(), NULL);
-	}
-}
-
-static inline void set_log_debug(int enable) {
-	log_enable_debug(enable ? true : false);
-}
-
-static void my_ui_input(const char *str) {
-	cmd_process_long(baresip_commands(), str, strlen(str), NULL, NULL);
-}
-
-static int my_ui_output_handler(const char *str) {
-	extern void gobaresip_ui_output_handler(char *str);
-	gobaresip_ui_output_handler((char *)str);
-	return 0;
-}
-
-static struct ui my_ui = {
-	.le = {NULL, NULL, NULL},
-	.name = "gobaresip",
-	.outputh = my_ui_output_handler,
-};
-
-static inline void register_ui_handler() {
-	ui_register(baresip_uis(), &my_ui);
-}
-
-static inline int mainLoop(){
-	tmr_init(&tmr_quit);
-	return re_main(signal_handler);
-}
-*/
-import "C"
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -158,7 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/goccy/go-json"
 )
@@ -215,20 +67,30 @@ type Baresip struct {
 	reconnectBackoff time.Duration
 	writeMu          sync.Mutex // protects ctrlConn writes and reconnect updates
 	readWG           sync.WaitGroup
+	readDone         chan struct{}
 	closeOnce        sync.Once
 	closeCh          chan struct{}
 	msgMu            sync.RWMutex // protects msgChan sends against channel closure
 	remote           bool
 	baresipCtrlAddr  string
 	msgRecvHandler   func(Msg)
+	dropped          atomic.Uint64
+	requestID        atomic.Uint64
+	pendingMu        sync.Mutex
+	pending          map[string]chan ResponseMsg
+	nativeComplete   chan struct{}
+	proxyComplete    chan struct{}
 }
 
 var activeBaresipPtr atomic.Pointer[Baresip]
 
 func New(options ...func(*Baresip) error) (*Baresip, error) {
 	b := &Baresip{
-		msgChan: make(chan Msg, 10000),
-		closeCh: make(chan struct{}),
+		msgChan:        make(chan Msg, 128),
+		closeCh:        make(chan struct{}),
+		readDone:       make(chan struct{}),
+		nativeComplete: make(chan struct{}),
+		proxyComplete:  make(chan struct{}, 1),
 	}
 
 	if err := b.SetOption(options...); err != nil {
@@ -290,56 +152,14 @@ func SetAlias(alias string) func(*Baresip) error {
 	}
 }
 
-//export gobaresip_sip_trace_handler
-func gobaresip_sip_trace_handler(p *C.char, len C.int) {
-	b := activeBaresipPtr.Load()
-	if b != nil {
-		msg := C.GoStringN(p, len)
-		b.sendMsg(Msg{SIP: msg})
-	}
-}
-
-//export gobaresip_log_handler
-func gobaresip_log_handler(_ C.int, p *C.char, len C.int) {
-	b := activeBaresipPtr.Load()
-	if b != nil {
-		msg := C.GoStringN(p, len)
-		b.sendMsg(Msg{Log: msg})
-	}
-}
-
-// gobaresip_bevent_handler is no longer needed as we use ctrl_tcp JSON events
-
-//export gobaresip_ui_output_handler
-func gobaresip_ui_output_handler(str *C.char) {
-	b := activeBaresipPtr.Load()
-	if b == nil {
-		return
-	}
-	s := strings.TrimSpace(C.GoString(str))
-	if s == "" {
-		return
-	}
-
-	r := &ResponseMsg{
-		Response: true,
-		Ok:       true,
-		Data:     s,
-	}
-	rawJSON, err := json.Marshal(r)
-	if err != nil {
-		log.Printf("gobaresip: failed to marshal UI output response: %v", err)
-		return
-	}
-	r.RawJSON = rawJSON
-
-	b.sendMsg(Msg{Response: r})
-}
-
 // sendMsg safely delivers a message to msgChan without racing with Close().
 func (b *Baresip) sendMsg(m Msg) {
 	b.msgMu.RLock()
 	defer b.msgMu.RUnlock()
+	if len(m.SIP)+len(m.Log) > maxNetstringSize {
+		b.dropped.Add(1)
+		return
+	}
 	select {
 	case <-b.closeCh:
 		return
@@ -347,6 +167,7 @@ func (b *Baresip) sendMsg(m Msg) {
 		select {
 		case b.msgChan <- m:
 		default:
+			b.dropped.Add(1)
 		}
 	}
 }
@@ -370,7 +191,7 @@ func listenControl(addr string) (net.Listener, error) {
 
 func dialControl(addr string) (net.Conn, error) {
 	network, address := splitControlAddr(addr)
-	return net.Dial(network, address)
+	return net.DialTimeout(network, address, 2*time.Second)
 }
 
 func (b *Baresip) connectCtrl() error {
@@ -383,6 +204,9 @@ func (b *Baresip) connectCtrl() error {
 	r := newReader(conn)
 
 	b.writeMu.Lock()
+	if b.ctrlConn != nil {
+		_ = b.ctrlConn.Close()
+	}
 	b.ctrlConn = conn
 	b.ctrlStream = r
 	atomic.StoreUint32(&b.ctrlConnAlive, 1)
@@ -390,13 +214,9 @@ func (b *Baresip) connectCtrl() error {
 	return nil
 }
 
-var (
-	eventMarker    = []byte("\"event\":true")
-	responseMarker = []byte("\"response\":true")
-)
-
 func (b *Baresip) read() {
 	defer b.readWG.Done()
+	defer close(b.readDone)
 
 	for {
 		if atomic.LoadUint32(&b.ctrlConnAlive) == 0 {
@@ -416,8 +236,20 @@ func (b *Baresip) read() {
 			continue
 		}
 
-		// Single-pass dispatch: check event first, then response.
-		if bytes.Contains(msg, eventMarker) {
+		var envelope struct {
+			Event    bool `json:"event"`
+			Response bool `json:"response"`
+		}
+		if err := json.Unmarshal(msg, &envelope); err != nil {
+			raw := []byte(`{"event":true,"type":"TELEMETRY_LOSS","param":"malformed control JSON"}`)
+			select {
+			case b.msgChan <- Msg{Event: &EventMsg{Type: "TELEMETRY_LOSS", RawJSON: raw}}:
+			case <-b.closeCh:
+			case <-b.ctx.Done():
+			}
+			return
+		}
+		if envelope.Event {
 			var e EventMsg
 			e.RawJSON = msg
 
@@ -437,16 +269,20 @@ func (b *Baresip) read() {
 				return
 			case <-b.ctx.Done():
 				return
-			default:
-				log.Println("gobaresip: msgChan full, dropping event")
 			}
-		} else if bytes.Contains(msg, responseMarker) {
+		} else if envelope.Response {
 			var r ResponseMsg
 			if err := json.Unmarshal(msg, &r); err != nil {
 				log.Println(err, string(msg))
 				continue
 			}
 			r.RawJSON = msg
+			b.pendingMu.Lock()
+			if reply := b.pending[r.Token]; reply != nil {
+				reply <- r
+				delete(b.pending, r.Token)
+			}
+			b.pendingMu.Unlock()
 
 			if b.msgRecvHandler != nil {
 				b.msgRecvHandler(Msg{Response: &r})
@@ -459,8 +295,6 @@ func (b *Baresip) read() {
 				return
 			case <-b.ctx.Done():
 				return
-			default:
-				log.Println("gobaresip: msgChan full, dropping response")
 			}
 		}
 	}
@@ -511,6 +345,15 @@ func (b *Baresip) tryReconnect() bool {
 	}
 }
 
+func (b *Baresip) WaitReadDrain(ctx context.Context) error {
+	select {
+	case <-b.readDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (b *Baresip) Close() {
 	b.closeOnce.Do(func() {
 		close(b.closeCh)
@@ -541,123 +384,6 @@ func (b *Baresip) GetMsgChan() <-chan Msg {
 	return b.msgChan
 }
 
-// setup a baresip instance
-func (b *Baresip) setup() error {
-
-	ua := C.CString(b.userAgent)
-	defer C.free(unsafe.Pointer(ua))
-
-	C.sys_coredump_set(false)
-
-	err := C.libre_init()
-	if err != 0 {
-		log.Printf("libre init failed with error code %d\n", err)
-		return b.end(err)
-	}
-
-	C.re_thread_async_init(2)
-
-	C.log_enable_stdout(false)
-
-	if b.configPath != "" {
-		cp := C.CString(b.configPath)
-		defer C.free(unsafe.Pointer(cp))
-		C.conf_path_set(cp)
-	}
-
-	err = C.conf_configure()
-	if err != 0 {
-		log.Printf("baresip configure failed with error code %d\n", err)
-		return b.end(err)
-	}
-
-	// Top-level baresip struct init must be done AFTER configuration is complete.
-	err = C.baresip_init(C.conf_config())
-	if err != 0 {
-		log.Printf("baresip main init failed with error code %d\n", err)
-		return b.end(err)
-	}
-
-	if b.audioPath != "" {
-		ap := C.CString(b.audioPath)
-		defer C.free(unsafe.Pointer(ap))
-		C.play_set_path(C.baresip_player(), ap)
-	}
-
-	err = C.ua_init(ua, true, true, true)
-	if err != 0 {
-		log.Printf("baresip ua init failed with error code %d\n", err)
-		return b.end(err)
-	}
-
-	C.set_ua_exit_handler()
-
-	err = C.conf_modules()
-	if err != 0 {
-		log.Printf("baresip load modules failed with error code %d\n", err)
-		return b.end(err)
-	}
-
-	C.register_log_handlers()
-	C.log_enable_timestamps(true)
-	C.enable_my_sip_trace(true)
-
-	if b.remote {
-		if err := b.connectCtrl(); err != nil {
-			b.end(1)
-			return err
-		}
-	} else {
-		// In Multi-Process Agent mode, we use CGO UI handler for logs
-		// and the sip_trace_handler for SIP messages.
-		// These go to b.msgChan and are bridged in startProxy.
-		C.register_ui_handler()
-	}
-
-	return nil
-}
-
-// Run a baresip instance
-func (b *Baresip) Run() error {
-	if !b.remote {
-		if err := b.startProxy(); err != nil {
-			return err
-		}
-	}
-	b.readWG.Add(1)
-	go b.read()
-	return b.end(C.mainLoop())
-}
-
-func (b *Baresip) end(errCode C.int) error {
-	C.cancelQuitTimer()
-
-	if errCode != 0 {
-		C.ua_stop_all(true)
-	}
-
-	C.ua_close()
-	C.module_app_unload()
-	C.conf_close()
-
-	C.baresip_close()
-
-	// Modules must be unloaded after all application activity has stopped.
-	C.mod_close()
-
-	C.re_thread_async_close()
-
-	/* Check for open timers */
-	C.tmr_debug()
-
-	C.libre_close()
-
-	if errCode != 0 {
-		return fmt.Errorf("baresip exited with error code %d", errCode)
-	}
-	return nil
-}
-
 // startProxy starts a control server that acts as a bridge between the Master
 // and Baresip (CGO). It multiplexes events, logs, and SIP traces.
 func (b *Baresip) startProxy() error {
@@ -668,6 +394,13 @@ func (b *Baresip) startProxy() error {
 		return err
 	}
 	log.Printf("gobaresip: agent proxy listening on %s", b.ctrlAddr)
+	go func() {
+		select {
+		case <-b.closeCh:
+		case <-b.ctx.Done():
+		}
+		_ = l.Close()
+	}()
 
 	go func() {
 		defer func() {
@@ -686,13 +419,24 @@ func (b *Baresip) startProxy() error {
 				log.Printf("gobaresip: agent proxy accept failed: %v", err)
 				return
 			}
-			go b.handleProxyConn(conn)
+			// One master owns the telemetry stream; never split it across readers.
+			b.handleProxyConn(conn)
 		}
 	}()
 	return nil
 }
 
 func (b *Baresip) handleProxyConn(conn net.Conn) {
+	defer func() {
+		select {
+		case b.proxyComplete <- struct{}{}:
+		default:
+		}
+	}()
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	stop := func() { stopOnce.Do(func() { close(done); _ = conn.Close() }) }
+	defer stop()
 	defer func() {
 		if err := conn.Close(); err != nil {
 			log.Printf("gobaresip: proxy master connection close failed: %v", err)
@@ -702,7 +446,7 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 
 	// Connect to local Baresip's ctrl_tcp (Internal)
 	log.Printf("gobaresip: proxy connecting to local baresip at %s", b.baresipCtrlAddr)
-	localConn, err := net.Dial("tcp", b.baresipCtrlAddr)
+	localConn, err := net.DialTimeout("tcp", b.baresipCtrlAddr, 2*time.Second)
 	if err != nil {
 		log.Printf("gobaresip: proxy failed to connect to local baresip: %v", err)
 		return
@@ -718,6 +462,7 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 	writeToMaster := func(data []byte) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
+		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		netstring := fmt.Sprintf("%d:%s,", len(data), string(data))
 		if _, err := conn.Write([]byte(netstring)); err != nil {
 			log.Printf("gobaresip: proxy write to master failed: %v", err)
@@ -727,7 +472,9 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 	}
 
 	// 1. Forward Baresip (TCP) -> Master (Events/Responses)
+	localDone := make(chan struct{})
 	go func() {
+		defer close(localDone)
 		// We use a internal reader to read netstrings from local Baresip
 		rLocal := newReader(localConn)
 		for {
@@ -737,7 +484,7 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 			}
 			// Enrichment: add agent alias to every JSON event/response
 			var m map[string]interface{}
-			if err := json.Unmarshal(msg, &m); err == nil {
+			if err := json.Unmarshal(msg, &m); err == nil && m != nil {
 				m["_agent"] = b.alias
 				encoded, err := json.Marshal(m)
 				if err != nil {
@@ -754,9 +501,59 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 	}()
 
 	// 2. Forward msgChan (CGO) -> Master (SIP Traces/Logs)
+	sendCaptured := func(m Msg) error {
+		kind, param := "LOG", m.Log
+		if m.SIP != "" {
+			kind, param = "SIP", m.SIP
+		}
+		data, e := json.Marshal(map[string]any{"event": true, "type": kind, "param": param, "_agent": b.alias})
+		if e != nil {
+			return e
+		}
+		return writeToMaster(data)
+	}
+	reportLoss := func() error {
+		if count := b.dropped.Swap(0); count > 0 {
+			data, _ := json.Marshal(map[string]any{"event": true, "type": "TELEMETRY_LOSS", "_agent": b.alias, "param": fmt.Sprintf("%d native messages lost", count)})
+			return writeToMaster(data)
+		}
+		return nil
+	}
 	go func() {
+		defer stop()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
 		for {
 			select {
+			case <-b.nativeComplete:
+				select {
+				case <-localDone:
+				case <-done:
+					return
+				}
+				for {
+					select {
+					case m := <-b.msgChan:
+						if sendCaptured(m) != nil {
+							return
+						}
+					default:
+						if reportLoss() != nil {
+							return
+						}
+						_ = writeToMaster([]byte(`{"event":true,"type":"NATIVE_DONE"}`))
+						return
+					}
+				}
+			case <-done:
+				return
+			case <-ticker.C:
+				if count := b.dropped.Swap(0); count > 0 {
+					data, _ := json.Marshal(map[string]any{"event": true, "type": "TELEMETRY_LOSS", "_agent": b.alias, "param": fmt.Sprintf("%d native messages lost", count)})
+					if writeToMaster(data) != nil {
+						return
+					}
+				}
 			case m, ok := <-b.msgChan:
 				if !ok {
 					return
@@ -801,6 +598,7 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 
 	// 3. Forward Master -> Baresip (Commands)
 	go func() {
+		defer stop()
 		rMaster := newReader(conn)
 		for {
 			msg, err := rMaster.readNetstring()
@@ -818,20 +616,9 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 	}()
 
 	// Wait for connection to close or agent to stop
-	<-b.closeCh
-}
-
-// CmdDirect executes a command directly via baresip C API (for Agent mode)
-func (b *Baresip) CmdDirect(command, params, token string) error {
-	fullCmd := strings.TrimSpace(command)
-	if fullCmd == "" {
-		return nil
+	select {
+	case <-b.closeCh:
+	case <-b.ctx.Done():
+	case <-done:
 	}
-	if params != "" {
-		fullCmd += " " + params
-	}
-	cCmd := C.CString(fullCmd)
-	defer C.free(unsafe.Pointer(cCmd))
-	C.my_ui_input(cCmd)
-	return nil
 }

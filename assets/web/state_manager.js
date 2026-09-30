@@ -1,5 +1,19 @@
 export function createStateManager() {
-  var fileCache = {}; // "project:name" -> { name, project, original, current }
+  var fileCache = Object.create(null); // project:name -> editor snapshot
+  const storageKey = "telefonist:unsaved-drafts:v1";
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      const drafts = JSON.parse(sessionStorage.getItem(storageKey) || "{}");
+      for (const [key,value] of Object.entries(drafts)) {
+        if(value && typeof value.current === "string" && typeof value.original === "string") fileCache[key]=value;
+      }
+    }
+  } catch (_) { /* Storage can be unavailable in private browsing. */ }
+  function persistDrafts() {
+    try {
+      if(typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey,JSON.stringify(Object.fromEntries(getKeys().filter(isDirty).map(key=>[key,fileCache[key]]))));
+    } catch (_) { /* Keep in-memory edits even when browser storage is full. */ }
+  }
 
   function normalizeText(value) {
     return String(value || "").replace(/\r/g, "");
@@ -30,10 +44,12 @@ export function createStateManager() {
       fileCache[key] = {
         name: data.name,
         project: data.project,
+        revision: data.revision,
         original: data.original || "",
         current:
           data.current !== undefined ? data.current : data.original || "",
       };
+      persistDrafts();
       return;
     }
 
@@ -41,6 +57,8 @@ export function createStateManager() {
     if (data.current !== undefined) existing.current = data.current;
     if (data.name !== undefined) existing.name = data.name;
     if (data.project !== undefined) existing.project = data.project;
+    if (data.revision !== undefined) existing.revision = data.revision;
+    persistDrafts();
   }
 
   function pruneStale(serverKeys) {
@@ -61,7 +79,7 @@ export function createStateManager() {
 
   function deleteEntry(key) {
     if (!keyExists(key)) return false;
-    return delete fileCache[key];
+    const removed = delete fileCache[key]; persistDrafts(); return removed;
   }
 
   return {

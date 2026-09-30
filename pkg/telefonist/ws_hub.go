@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -87,6 +85,10 @@ type WsHub struct {
 
 	// CronManager reference for REST API
 	cronManager *CronManager
+	runner      *Runner
+	sequence    uint64
+	epoch       string
+	done        chan struct{}
 }
 
 type AgentMsg struct {
@@ -112,6 +114,16 @@ func (h *WsHub) broadcastToClients(msg []byte) {
 // recordAndBroadcast adds a message to the hub's recent history and then
 // broadcasts it to all connected clients. History is replayed to new clients.
 func (h *WsHub) recordAndBroadcast(msg []byte) {
+	var value map[string]any
+	if json.Unmarshal(msg, &value) == nil {
+		h.sequence++
+		value["_seq"] = h.sequence
+		if h.epoch == "" {
+			h.epoch = fmt.Sprint(time.Now().UnixNano())
+		}
+		value["_epoch"] = h.epoch
+		msg, _ = json.Marshal(value)
+	}
 	h.history.Add(msg)
 	h.broadcastToClients(msg)
 }
@@ -134,9 +146,11 @@ func NewWsHub(dataDir string, maxCalls uint, rtpNet string, rtpPorts string, rtp
 		internalCmd: make(chan func(), 128),
 		DataDir:     dataDir,
 		history:     NewRingBuffer(3333),
+		done:        make(chan struct{}),
 	}
 	h.setActiveAgent("")
 	h.bm = NewBaresipManager(h, dataDir, maxCalls, rtpNet, rtpPorts, rtpTimeout, useAlsa, sipListen)
+	h.runner = newRunner(h)
 	return h
 }
 
@@ -187,24 +201,73 @@ func (h *WsHub) cancelBatch() {
 func (h *WsHub) ForwardAgentMsg(alias string, msg gobaresip.Msg) {
 	select {
 	case h.agentMsg <- AgentMsg{Alias: alias, Msg: msg}:
-	default:
-		log.Printf("hub: agentMsg chan full, dropping msg from %s", alias)
+	case <-h.ctx.Done():
 	}
 }
 
 // Stop shuts down the hub and all managed goroutines.
 func (h *WsHub) Stop() {
+	h.runner.Close()
 	h.cancel()
 }
 
 // Drain blocks until all currently queued agent messages are processed by Run.
 func (h *WsHub) Drain() {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = h.DrainContext(ctx)
+}
+
+func (h *WsHub) DrainContext(ctx context.Context) error {
 	done := make(chan struct{})
 	select {
 	case h.agentMsg <- AgentMsg{Sentinel: done}:
-		<-done
-	case <-time.After(3 * time.Second):
-		log.Println("hub: drain timeout")
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-h.ctx.Done():
+		return h.ctx.Err()
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-h.ctx.Done():
+		return h.ctx.Err()
+	}
+}
+
+func (h *WsHub) Do(ctx context.Context, f func()) error {
+	done := make(chan struct{})
+	var execution sync.Mutex
+	abandoned := false
+	select {
+	case h.internalCmd <- func() {
+		execution.Lock()
+		defer execution.Unlock()
+		defer close(done)
+		if !abandoned && ctx.Err() == nil && h.ctx.Err() == nil {
+			f()
+		}
+	}:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-h.ctx.Done():
+		return h.ctx.Err()
+	}
+	select {
+	case <-done:
+		return ctx.Err()
+	case <-ctx.Done():
+		execution.Lock()
+		abandoned = true
+		execution.Unlock()
+		return ctx.Err()
+	case <-h.ctx.Done():
+		execution.Lock()
+		abandoned = true
+		execution.Unlock()
+		return h.ctx.Err()
 	}
 }
 
@@ -238,6 +301,14 @@ func (h *WsHub) SetResponseHandler(handler func(gobaresip.ResponseMsg)) {
 }
 
 func (h *WsHub) Run() {
+	defer close(h.done)
+	go h.runner.manualLoop()
+	defer func() {
+		for c := range h.clients {
+			close(c.send)
+			delete(h.clients, c)
+		}
+	}()
 	for {
 		select {
 		case f := <-h.internalCmd:
@@ -248,6 +319,8 @@ func (h *WsHub) Run() {
 			// newline-delimited message format while reducing channel/frame overhead.
 			h.history.ReplayBatchesTo(client.send, 250, 512*1024)
 			h.clients[client] = true
+			state, _ := json.Marshal(map[string]any{"token": "runner", "state": h.runner.Snapshot()})
+			client.send <- state
 
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
@@ -256,9 +329,6 @@ func (h *WsHub) Run() {
 			}
 
 		case msg := <-h.broadcast:
-			if h.trainSession != nil {
-				h.trainSession.recordRaw(msg)
-			}
 			h.recordAndBroadcast(msg)
 
 		case <-h.ctx.Done():
@@ -275,24 +345,9 @@ func (h *WsHub) Run() {
 				handleTestfileInlineCommand(h, input)
 
 			case input == "test_stop":
-				h.cancelBatch()
-				h.cancelTest()
-				log.Println("test batch stopped by user, cleaning up...")
-				go func() {
-					h.chainMu.Lock()
-					defer h.chainMu.Unlock()
-					executeChain(h.ctx, h, parseChain("hangupall|1s|uadelall"))
-				}()
-
-			case isChained(input):
-				go func(in string) {
-					h.chainMu.Lock()
-					defer h.chainMu.Unlock()
-					executeChain(h.ctx, h, parseChain(in))
-				}(input)
-
+				h.runner.Stop()
 			default:
-				h.executeSmartCommand(input)
+				h.runner.Manual(input)
 			}
 
 		case am, ok := <-h.agentMsg:
@@ -303,173 +358,8 @@ func (h *WsHub) Run() {
 				close(am.Sentinel)
 				continue
 			}
-			m := am.Msg
-
-			switch {
-			case m.Event != nil:
-				e := *m.Event
-				if h.onEvent != nil {
-					h.onEvent(e)
-				}
-
-				if e.Type == "CALL_RTCP" || e.Type == "MODULE" || e.Type == "END_OF_FILE" {
-					continue
-				}
-
-				if e.Type == "LOG" {
-					if HasAuthPass(e.Param) {
-						continue
-					}
-					if h.ShouldFilterLog(e.Param) {
-						continue
-					}
-				}
-
-				// No automatic ringing state tracking needed anymore.
-
-				if h.trainSession != nil {
-					h.trainSession.recordEvent(e)
-					if h.trainSession.failMsg != "" {
-						h.cancelTest()
-					}
-				}
-
-				enriched, err := EnrichMessage(e.RawJSON, am.Alias, "")
-				if err != nil {
-					log.Printf("hub: failed to enrich event: %v", err)
-					continue
-				}
-				h.recordAndBroadcast(enriched)
-
-			case m.Response != nil:
-				r := *m.Response
-				r.Data = SanitizeString(r.Data)
-
-				if h.onResponse != nil {
-					h.onResponse(r)
-				}
-
-				mResp := map[string]interface{}{
-					"event":  true,
-					"type":   "RESPONSE",
-					"param":  r.Data,
-					"_agent": am.Alias,
-					"time":   FormatNow(),
-				}
-				enriched, _ := json.Marshal(mResp)
-				h.recordAndBroadcast(enriched)
-
-			case m.Log != "":
-				if HasAuthPass(m.Log) {
-					continue
-				}
-				if h.ShouldFilterLog(m.Log) {
-					continue
-				}
-				mLog := map[string]interface{}{
-					"event":  true,
-					"type":   "LOG",
-					"param":  m.Log,
-					"_agent": am.Alias,
-					"time":   FormatNow(),
-				}
-				msg, _ := json.Marshal(mLog)
-				if h.trainSession != nil {
-					h.trainSession.recordRaw(msg)
-				}
-				h.recordAndBroadcast(msg)
-
-			case m.SIP != "":
-				mSIP := map[string]interface{}{
-					"event":  true,
-					"type":   "SIP",
-					"param":  m.SIP,
-					"_agent": am.Alias,
-					"time":   FormatNow(),
-				}
-				msg, _ := json.Marshal(mSIP)
-				if h.trainSession != nil {
-					h.trainSession.recordRaw(msg)
-				}
-				h.recordAndBroadcast(msg)
-			}
+			h.handleAgentMsg(am)
 		}
-	}
-}
-
-func (h *WsHub) executeSmartCommand(cmd string) {
-	// 1. Expand shortcuts first so they affect orchestration (like uanew)
-	// We use the absolute path for sounds to ensure it works regardless of agent target
-	soundsDir := filepath.Join(h.DataDir, "sounds")
-	cmd = ExpandShortcuts(cmd, soundsDir, "")
-
-	// 2. Resolve Target
-	target, cleanedCmd := h.bm.ResolveTarget(cmd, h.getActiveAgent())
-	cmd = cleanedCmd
-
-	parts := strings.Fields(cmd)
-	if len(parts) == 0 {
-		return
-	}
-	first := strings.ToLower(parts[0])
-
-	// 3. Handle orchestration commands
-	if first == "uafind" && len(parts) >= 2 {
-		h.setActiveAgent(parts[1])
-		return
-	}
-
-	if first == "uadelall" {
-		h.bm.CloseAll()
-		h.setActiveAgent("")
-		// Only cleanup on a full reset when no test is running
-		if !h.inlineRunActive.Load() {
-			h.CleanupOrphans()
-		}
-		return
-	}
-
-	if first == "uanew" && len(parts) >= 2 {
-		accountLine := strings.Join(parts[1:], " ")
-		alias := ExtractAlias(accountLine)
-
-		if alias != "" {
-			// Stop existing agent if it already exists to ensure fresh config for uanew
-			if _, ok := h.bm.GetAgent(alias); ok {
-				log.Printf("hub: agent %s already exists, stopping it first for uanew", alias)
-				h.bm.StopAgent(alias)
-			}
-			h.BroadcastCommandHint(cmd, alias)
-			log.Printf("hub: hatching new agent %s", alias)
-			if err := h.bm.SpawnAgent(h.ctx, alias, accountLine); err != nil {
-				log.Printf("hub: failed to spawn agent %s: %v", alias, err)
-				h.internalCmd <- func() {
-					if h.trainSession != nil {
-						h.trainSession.failMsg = fmt.Sprintf("failed to spawn agent %s: %v", alias, err)
-					}
-				}
-				h.cancelTest()
-			} else {
-				h.setActiveAgent(alias)
-			}
-		}
-		return
-	}
-
-	// Direct Routing: All orchestration relies on explicit agent targeting (activeAgent or prefix).
-
-	if a, ok := h.bm.GetAgent(target); ok {
-		// 4. Expand shortcuts ONLY on the cleaned command for this agent
-		// This second pass ensures agent-specific RECORDS_DIR is expanded if used
-		soundsDir := filepath.Join(h.DataDir, "sounds")
-		cmd = ExpandShortcuts(cmd, soundsDir, a.RecordingsDir)
-		h.BroadcastCommandHint(cmd, target)
-		if err := a.Baresip.CmdWs([]byte(cmd)); err != nil {
-			log.Printf("hub: error sending command to agent %s: %v", target, err)
-		}
-	} else {
-		h.BroadcastCommandHint(cmd, target)
-		log.Printf("hub: no active agent for command %q", cmd)
 	}
 }
 
@@ -485,26 +375,6 @@ func ExpandShortcuts(cmd string, soundsDir string, recordsDir string) string {
 	cmd = wavPattern.ReplaceAllString(cmd, ";audio_source=aufile,"+soundsDir+"/$1;audio_player=aufile,"+recordsDir)
 
 	return cmd
-}
-
-func (h *WsHub) CleanupOrphans() {
-	pattern := filepath.Join(h.DataDir, "agents", "*")
-	dirs, err := filepath.Glob(pattern)
-	if err != nil {
-		return
-	}
-
-	for _, dir := range dirs {
-		alias := filepath.Base(dir)
-		if _, ok := h.bm.GetAgent(alias); !ok {
-			// No active agent matches this directory, safe to delete
-			if err := os.RemoveAll(dir); err != nil {
-				log.Printf("hub: failed to cleanup orphan agent directory %s: %v", dir, err)
-			} else {
-				log.Printf("hub: cleaned up orphan agent directory %s", dir)
-			}
-		}
-	}
 }
 
 // BroadcastCommandHint sends a "hint" of an executed command to the Log and SIP views.
@@ -530,5 +400,8 @@ func (h *WsHub) BroadcastCommandHint(cmd string, agent string) {
 		"time":   FormatNow(),
 	}
 	msg, _ := json.Marshal(mCmd)
-	h.broadcast <- msg
+	select {
+	case h.broadcast <- msg:
+	case <-h.ctx.Done():
+	}
 }

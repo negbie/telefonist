@@ -1,3 +1,4 @@
+import { escapeHTML } from "./utils.js";
 import { EventBus } from "./event_bus.js";
 import { API } from "./api.js";
 
@@ -37,13 +38,13 @@ export function initCronManager() {
             const pData = await pRes.json();
             const tData = await tRes.json();
 
-            projectSelect.innerHTML = pData.items?.map(p => `<option value="${p.name}">${p.name}</option>`).join("") || "";
+            projectSelect.innerHTML = pData.items?.map(p => `<option value="${escapeHTML(p.name)}">${escapeHTML(p.name)}</option>`).join("") || "";
             
             const updateTestfiles = () => {
                 const proj = projectSelect.value;
                 const files = (tData.items || []).filter(t => t.project === proj);
                 testfileSelect.innerHTML = `<option value="">(all tests in project)</option>` + 
-                    files.map(f => `<option value="${f.name}">${f.name}</option>`).join("");
+                    files.map(f => `<option value="${escapeHTML(f.name)}">${escapeHTML(f.name)}</option>`).join("");
             };
 
             projectSelect.onchange = updateTestfiles;
@@ -63,9 +64,9 @@ export function initCronManager() {
             const toggleId = `cron-toggle-${j.id}`;
             tr.innerHTML = `
                 <td>${j.id}</td>
-                <td>${j.project}</td>
-                <td>${j.testfile ? j.testfile : '<em>(Project Run)</em>'}</td>
-                <td><code>${j.cron_expr}</code></td>
+                <td>${escapeHTML(j.project)}</td>
+                <td>${j.testfile ? escapeHTML(j.testfile) : '<em>(Project Run)</em>'}</td>
+                <td><code>${escapeHTML(j.cron_expr)}</code></td>
                 <td>
                     <input type="checkbox" id="${toggleId}" ${j.active ? 'checked' : ''}>
                 </td>
@@ -109,6 +110,18 @@ export function initCronManager() {
     cancelBtn.onclick = () => {
         modal.classList.remove("active");
     };
+
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.classList.remove("active");
+    };
+
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && modal.classList.contains("active")) {
+                modal.classList.remove("active");
+            }
+        });
+    }
 
     saveBtn.onclick = async () => {
         const body = {

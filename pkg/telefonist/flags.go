@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const Version = "0.8.6"
+var Version = "0.9.0"
 
 // AppFlags mirrors the CLI flags for the telefonist process.
 type AppFlags struct {
@@ -34,8 +34,8 @@ func ParseFlags() AppFlags {
 	var f AppFlags
 
 	flag.StringVar(&f.CtrlAddr, "ctrl_address", "127.0.0.1:4444", "Local control listen address")
-	flag.StringVar(&f.UIAddr, "ui_address", "0.0.0.0:8080", "UI listen address")
-	flag.StringVar(&f.UIAdminPassword, "ui_admin_password", "telefonist", "UI admin password")
+	flag.StringVar(&f.UIAddr, "ui_address", "127.0.0.1:8080", "UI listen address")
+	flag.StringVar(&f.UIAdminPassword, "ui_admin_password", "", "UI admin password (generated in data/credentials.json when omitted)")
 	flag.UintVar(&f.MaxCalls, "max_calls", 10, "Maximum number of incoming calls")
 	flag.StringVar(&f.RTPNet, "rtp_interface", "", "RTP interface like eth0")
 	flag.StringVar(&f.RTPPorts, "rtp_ports", "10000-11000", "RTP port range")

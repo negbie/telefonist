@@ -249,32 +249,3 @@ func TestParseChain(t *testing.T) {
 		})
 	}
 }
-
-func TestParseDuration(t *testing.T) {
-	tests := []struct {
-		input string
-		want  time.Duration
-		err   bool
-	}{
-		{"10s", 10 * time.Second, false},
-		{"500ms", 500 * time.Millisecond, false},
-		{"2m", 2 * time.Minute, false},
-		{"0s", 0, false},
-		{"1s", 1 * time.Second, false},
-		{"100ms", 100 * time.Millisecond, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got, err := time.ParseDuration(tt.input)
-			if (err != nil) != tt.err {
-				t.Errorf("time.ParseDuration(%q) error = %v, wantErr = %v", tt.input, err, tt.err)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("time.ParseDuration(%q) = %v, want %v", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-

@@ -27,13 +27,22 @@ func handleTestfilesCommand(h *WsHub, input string) {
 }
 
 func handleTestfilesRun(h *WsHub, rest string) {
+	if !h.runner.requestMu.TryLock() {
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "a run request is already loading"}))
+		return
+	}
+	epoch := h.runner.requestEpoch.Load()
+	go func() { defer h.runner.requestMu.Unlock(); loadTestfilesRun(h, rest, epoch) }()
+}
+
+func loadTestfilesRun(h *WsHub, rest string, epoch uint64) {
 	arg := strings.TrimSpace(rest)
 	if arg == "" {
 		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "usage: testfiles run <all | name1 name2 ...>"}))
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(h.ctx, 5*time.Second)
 	defer cancel()
 
 	var batch []TestfileData
@@ -68,5 +77,10 @@ func handleTestfilesRun(h *WsHub, rest string) {
 		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "no testfiles found to run"}))
 		return
 	}
-	runTestfilesBatch(h, batch)
+	if h.runner.requestEpoch.Load() != epoch || ctx.Err() != nil {
+		return
+	}
+	if !runTestfilesBatch(h, batch) {
+		broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfiles", "message": "runner is busy or shutting down"}))
+	}
 }

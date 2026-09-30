@@ -1,6 +1,12 @@
 export function computeLCSDiff(aItems, bItems) {
   var m = aItems.length,
     n = bItems.length;
+  // Bound both memory and CPU. Large unrelated captures are shown completely,
+  // without pretending an approximate alignment is an exact LCS.
+  if (m * n > 2000000) {
+    return aItems.map(itemA => ({ type: "a", text: itemA.display, itemA }))
+      .concat(bItems.map(itemB => ({ type: "b", text: itemB.display, itemB })));
+  }
   var dp = Array.from({ length: m + 1 }, function () {
     return new Uint32Array(n + 1);
   });
@@ -19,7 +25,7 @@ export function computeLCSDiff(aItems, bItems) {
     cj = n;
   while (ci > 0 || cj > 0) {
     if (ci > 0 && cj > 0 && aItems[ci - 1].compare === bItems[cj - 1].compare) {
-      result.unshift({
+      result.push({
         type: "common",
         text: aItems[ci - 1].display,
         textA: aItems[ci - 1].display,
@@ -30,12 +36,12 @@ export function computeLCSDiff(aItems, bItems) {
       ci--;
       cj--;
     } else if (cj > 0 && (ci === 0 || dp[ci][cj - 1] >= dp[ci - 1][cj])) {
-      result.unshift({ type: "b", text: bItems[cj - 1].display, itemB: bItems[cj - 1] });
+      result.push({ type: "b", text: bItems[cj - 1].display, itemB: bItems[cj - 1] });
       cj--;
     } else {
-      result.unshift({ type: "a", text: aItems[ci - 1].display, itemA: aItems[ci - 1] });
+      result.push({ type: "a", text: aItems[ci - 1].display, itemA: aItems[ci - 1] });
       ci--;
     }
   }
-  return result;
+  return result.reverse();
 }

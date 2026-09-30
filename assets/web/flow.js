@@ -22,10 +22,25 @@ function formatJSON(j) {
       .filter(Boolean);
   }
 
+  const ignoredDisplayKeys = new Set([
+    "event",
+    "time",
+    "timestamp",
+    "elapsed_ms",
+    "event_sequence",
+    "schema_version",
+    "run_id",
+    "_seq",
+    "_epoch",
+    "id",
+    "idx",
+    "RawJSON",
+  ]);
+
   var text = "";
   for (var key in j) {
     if (!Object.prototype.hasOwnProperty.call(j, key)) continue;
-    if (key === "event" || key === "time") continue; // Redundant in display
+    if (ignoredDisplayKeys.has(key)) continue; // Redundant or telemetry metadata in display
 
     var val = key === "data" && dataLines !== null ? dataLines : j[key];
     if (typeof val === "object") {

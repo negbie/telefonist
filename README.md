@@ -53,8 +53,8 @@ Run telefonist with its various configuration flags.
 ### CLI Flags
 
 - `-data_dir` - Directory for configuration files and runtime data (default: "data")
-- `-ui_address` - UI listen address (default: "0.0.0.0:8080")
-- `-ui_admin_password` - UI admin password (default: "telefonist")
+- `-ui_address` - UI listen address (default: "127.0.0.1:8080")
+- `-ui_admin_password` - UI admin password (generated in data_dir/credentials.json when omitted)
 - `-ui_api_key` - API Key for X-API-Key header (optional, defaults to a random 32-character string if empty)
 - `-sip_listen` - SIP listen address and base port for agents (default: "0.0.0.0:5060")
 - `-ctrl_address` - Local control listen address (default: "127.0.0.1:4444")
@@ -71,7 +71,7 @@ Run telefonist with its various configuration flags.
 
 Once started, open your browser to `http://localhost:8080` (or whatever ui_address you configured). You'll see:
 
-- A login prompt. Use telefonist as username and your configured ui_admin_password (default: telefonist)
+- A login prompt. Use admin as username and your configured ui_admin_password (or admin_password from data_dir/credentials.json)
 - A command input field to send commands to baresip
 - A search field to filter displayed events, SIP messages and logs
 - Real-time display of events and responses, SIP messages, audio events, etc.
@@ -79,6 +79,8 @@ Once started, open your browser to `http://localhost:8080` (or whatever ui_addre
 - A testfile compare browser to view past test runs (events and wav's) to compare them
 
 ## REST API
+
+For changed defaults, migration details, batch/JUnit APIs, and validation instructions, see [the 0.9 upgrade notes](docs/UPGRADE-0.9.md).
 
 Telefonist provides a password-protected REST API for triggering automated test runs from external scripts or CI/CD pipelines.
 
@@ -90,7 +92,7 @@ Runs all testfiles associated with a specific project in alphabetical order.
 - **Authentication**: Requires `X-API-Key` header with your configured `-ui_api_key`.
 
 > [!IMPORTANT]
-> If no `-ui_api_key` is provided at startup, Telefonist generates a random 32-character string and prints it to the console. You must use this string for API authentication.
+> If no `-ui_api_key` is provided at startup, Telefonist generates a key and stores it privately in data_dir/credentials.json. You must use this string for API authentication.
 
 **Example using `curl`**:
 
@@ -101,7 +103,7 @@ curl -X POST "http://localhost:8080/api/project/run?name=my_project" \
 ```
 
 **Responses**:
-- `200 OK`: Test run successfully started.
+- `202 Accepted`: Test batch accepted; the response includes batch_id.
 - `401 Unauthorized`: Missing or incorrect `X-API-Key`.
 - `404 Not Found`: Project not found or has no testfiles.
 - `409 Conflict`: Another test run is already active.
@@ -125,7 +127,7 @@ To prevent storing sensitive SIP credentials (like passwords) inside plaintext t
 You can manage accounts directly in the web UI using the **👤 Accounts** button on the sidebar:
 - **Alias**: A unique identifier for the account (e.g. `alice` or `ua1`).
 - **SIP URI**: The base SIP address of the user (e.g. `sip:alice@sip.domain.com` or `sip:+1234567890@sip.domain.com`).
-- **Password**: The SIP authentication password. This is securely stored in SQLite and completely masked/shielded from GET API calls to prevent credential extraction.
+- **Password**: The SIP authentication password. This is stored as plaintext in a private SQLite database and omitted from GET API responses. Protect the data directory and backups; database encryption is not provided.
 - **URI Parameters (uri-params)**: Semicolon-separated transport parameters that reside inside baresip's AOR brackets (e.g., `;transport=tls`).
 - **Address Parameters (addr-params)**: Semicolon-separated configuration parameters that reside outside baresip's AOR brackets (e.g., `;mediaenc=srtp-mand;input_wav=alice.wav`).
 

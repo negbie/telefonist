@@ -1,6 +1,32 @@
 /* style.css */
+body:not(.show-live) #top-row, body:not(.show-live) #resizer {display:none;}
+body:not(.show-live) #top-bar #form, body:not(.show-live) #top-bar > label, body:not(.show-live) #clear {display:none;}
+#bottom-row[data-bottom-mode="settings"] .controls-sidebar .sidebar-group:not(:first-child),
+#bottom-row[data-bottom-mode="settings"] .controls-sidebar .sidebar-separator,
+#bottom-row[data-bottom-mode="cron"] .controls-sidebar .sidebar-group:not(:first-child),
+#bottom-row[data-bottom-mode="cron"] .controls-sidebar .sidebar-separator {display:none;}
+body:not(.show-live) #bottom-row {flex:1; height:auto !important;}
+#layout #test-controls.expanded {width:380px;resize:horizontal;min-width:320px;max-width:50vw;}
+#layout #testfile-select option {white-space:normal;}
+
+#run-summary { padding: 10px 16px; background: #eaf2ff; color: #183b70; font: 600 14px system-ui; border-bottom: 1px solid #b8ccea; }
+#connection-state { font: 12px system-ui; padding: 4px 8px; }
+#live-warning { padding: 8px 16px; background: #fff1ce; color: #6b4000; }
+#layout:has([data-bottom-mode="settings"]) #top-row,
+#layout:has([data-bottom-mode="settings"]) #resizer { display:none; }
+#layout:has([data-bottom-mode="settings"]) #bottom-row { flex:1; height:auto !important; }
+#layout .controls-sidebar { width: 80px; min-width:80px; }
+#layout .controls-sidebar button { width:68px; min-height:34px; font-size:12px; font-family:var(--font-sans); }
+#layout #test-controls { min-width:80px; }
+#layout #testfile-input, #layout #testfile-highlights { font-size:13px; line-height:1.5; }
+#layout #testfile-select { font-size:13px; font-family:var(--font-sans); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #3b82f6; outline-offset:2px; }
+@media (max-width:900px) { #top-row { overflow-x:auto; } .col-pane { min-width:300px; } #top-bar { flex-wrap:wrap; } }
 
 :root {
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --primary-active: #1d4ed8;
     --font-sans:
         system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     --font-mono:
@@ -179,6 +205,52 @@ pre {
     padding: 4px 10px;
     gap: 12px;
     font-size: 12px;
+}
+
+#toggle-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    color: #374151;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+#toggle-live::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #9ca3af;
+    transition: all 0.2s ease;
+}
+
+#toggle-live:hover {
+    background: #f3f4f6;
+    border-color: #cbd5e1;
+    color: #111827;
+}
+
+body.show-live #toggle-live,
+#toggle-live[aria-pressed="true"] {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+
+body.show-live #toggle-live::before,
+#toggle-live[aria-pressed="true"]::before {
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
 }
 
 #top-row {

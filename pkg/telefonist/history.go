@@ -14,6 +14,7 @@ type RingBuffer struct {
 	limit  int
 	cursor int // points to the position for the next message
 	full   bool
+	bytes  int
 }
 
 // NewRingBuffer creates a new RingBuffer with the specified message limit.
@@ -35,11 +36,18 @@ func (r *RingBuffer) Add(msg []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.bytes -= len(r.data[r.cursor])
 	r.data[r.cursor] = msg
+	r.bytes += len(msg)
 	r.cursor++
 	if r.cursor >= r.limit {
 		r.cursor = 0
 		r.full = true
+	}
+	for i := 0; r.bytes > 32*1024*1024 && i < r.limit; i++ {
+		index := (r.cursor + i) % r.limit
+		r.bytes -= len(r.data[index])
+		r.data[index] = nil
 	}
 }
 
@@ -60,13 +68,25 @@ func (r *RingBuffer) Snapshot() [][]byte {
 	out := make([][]byte, 0, count)
 
 	if !r.full {
-		out = append(out, r.data[:r.cursor]...)
+		for _, msg := range r.data[:r.cursor] {
+			if msg != nil {
+				out = append(out, msg)
+			}
+		}
 		return out
 	}
 
 	// Buffer is full; replay [cursor:limit] then [0:cursor]
-	out = append(out, r.data[r.cursor:r.limit]...)
-	out = append(out, r.data[:r.cursor]...)
+	for _, msg := range r.data[r.cursor:r.limit] {
+		if msg != nil {
+			out = append(out, msg)
+		}
+	}
+	for _, msg := range r.data[:r.cursor] {
+		if msg != nil {
+			out = append(out, msg)
+		}
+	}
 	return out
 }
 

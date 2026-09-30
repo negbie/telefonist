@@ -81,9 +81,9 @@ func CreateConfig(dataDir string, maxCalls uint, rtpNet, rtpPorts string, rtpTim
 	c = regexp.MustCompile(`(?m)^snd_path\s+records`).ReplaceAllString(c, "snd_path                "+absRecordsDir)
 
 	if useAlsa {
-		c = regexp.MustCompile(`(?m)^#audio_player\s+alsa,default`).ReplaceAllString(c, "audio_player           alsa,default")
-		c = regexp.MustCompile(`(?m)^#audio_source\s+alsa,default`).ReplaceAllString(c, "audio_source           alsa,default")
-		c = regexp.MustCompile(`(?m)^#audio_alert\s+alsa,default`).ReplaceAllString(c, "audio_alert            alsa,default")
+		c = regexp.MustCompile(`(?m)^audio_player\s+aubridge,pseudo0`).ReplaceAllString(c, "audio_player           alsa,default")
+		c = regexp.MustCompile(`(?m)^audio_source\s+aubridge,pseudo0`).ReplaceAllString(c, "audio_source           alsa,default")
+		c = regexp.MustCompile(`(?m)^audio_alert\s+aubridge,pseudo0`).ReplaceAllString(c, "audio_alert            alsa,default")
 		c = regexp.MustCompile(`(?m)^#module\s+alsa\.so`).ReplaceAllString(c, "module                  alsa.so")
 	}
 
@@ -119,9 +119,9 @@ call_accept             no
 
 # Audio
 audio_path              sounds
-#audio_player           alsa,default
-#audio_source           alsa,default
-#audio_alert            alsa,default
+audio_player            aubridge,pseudo0
+audio_source            aubridge,pseudo0
+audio_alert             aubridge,pseudo0
 #ausrc_srate            48000
 #auplay_srate           48000
 #ausrc_channels         0
