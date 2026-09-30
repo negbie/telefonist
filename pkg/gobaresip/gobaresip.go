@@ -213,10 +213,11 @@ type Baresip struct {
 	ctx              context.Context
 	reconnect        bool
 	reconnectBackoff time.Duration
-	writeMu          sync.Mutex // protects ctrlConn writes
+	writeMu          sync.Mutex // protects ctrlConn writes and reconnect updates
 	readWG           sync.WaitGroup
 	closeOnce        sync.Once
 	closeCh          chan struct{}
+	msgMu            sync.RWMutex // protects msgChan sends against channel closure
 	remote           bool
 	baresipCtrlAddr  string
 	msgRecvHandler   func(Msg)
@@ -294,10 +295,7 @@ func gobaresip_sip_trace_handler(p *C.char, len C.int) {
 	b := activeBaresipPtr.Load()
 	if b != nil {
 		msg := C.GoStringN(p, len)
-		select {
-		case b.msgChan <- Msg{SIP: msg}:
-		default:
-		}
+		b.sendMsg(Msg{SIP: msg})
 	}
 }
 
@@ -306,10 +304,7 @@ func gobaresip_log_handler(_ C.int, p *C.char, len C.int) {
 	b := activeBaresipPtr.Load()
 	if b != nil {
 		msg := C.GoStringN(p, len)
-		select {
-		case b.msgChan <- Msg{Log: msg}:
-		default:
-		}
+		b.sendMsg(Msg{Log: msg})
 	}
 }
 
@@ -338,9 +333,21 @@ func gobaresip_ui_output_handler(str *C.char) {
 	}
 	r.RawJSON = rawJSON
 
+	b.sendMsg(Msg{Response: r})
+}
+
+// sendMsg safely delivers a message to msgChan without racing with Close().
+func (b *Baresip) sendMsg(m Msg) {
+	b.msgMu.RLock()
+	defer b.msgMu.RUnlock()
 	select {
-	case b.msgChan <- Msg{Response: r}:
+	case <-b.closeCh:
+		return
 	default:
+		select {
+		case b.msgChan <- m:
+		default:
+		}
 	}
 }
 
@@ -367,16 +374,19 @@ func dialControl(addr string) (net.Conn, error) {
 }
 
 func (b *Baresip) connectCtrl() error {
-	var err error
-	b.ctrlConn, err = dialControl(b.ctrlAddr)
+	conn, err := dialControl(b.ctrlAddr)
 	if err != nil {
 		atomic.StoreUint32(&b.ctrlConnAlive, 0)
 		return fmt.Errorf("%w: please make sure ctrl_tcp is enabled", err)
 	}
 
-	b.ctrlStream = newReader(b.ctrlConn)
+	r := newReader(conn)
 
+	b.writeMu.Lock()
+	b.ctrlConn = conn
+	b.ctrlStream = r
 	atomic.StoreUint32(&b.ctrlConnAlive, 1)
+	b.writeMu.Unlock()
 	return nil
 }
 
@@ -505,16 +515,24 @@ func (b *Baresip) Close() {
 	b.closeOnce.Do(func() {
 		close(b.closeCh)
 		atomic.StoreUint32(&b.ctrlConnAlive, 0)
-		if b.ctrlConn != nil {
-			if err := b.ctrlConn.Close(); err != nil {
+
+		b.writeMu.Lock()
+		conn := b.ctrlConn
+		b.ctrlConn = nil
+		b.writeMu.Unlock()
+
+		if conn != nil {
+			if err := conn.Close(); err != nil {
 				log.Printf("gobaresip: close ctrl connection failed: %v", err)
 			}
 		}
 
 		b.readWG.Wait()
 
-		close(b.msgChan)
 		activeBaresipPtr.Store(nil)
+		b.msgMu.Lock()
+		close(b.msgChan)
+		b.msgMu.Unlock()
 	})
 }
 
@@ -746,25 +764,27 @@ func (b *Baresip) handleProxyConn(conn net.Conn) {
 				var data []byte
 				switch {
 				case m.SIP != "":
-					data, err = json.Marshal(map[string]interface{}{
+					var marshalErr error
+					data, marshalErr = json.Marshal(map[string]interface{}{
 						"event":  true,
 						"type":   "SIP",
 						"param":  m.SIP,
 						"_agent": b.alias,
 					})
-					if err != nil {
-						log.Printf("gobaresip: proxy failed to marshal SIP message: %v", err)
+					if marshalErr != nil {
+						log.Printf("gobaresip: proxy failed to marshal SIP message: %v", marshalErr)
 						continue
 					}
 				case m.Log != "":
-					data, err = json.Marshal(map[string]interface{}{
+					var marshalErr error
+					data, marshalErr = json.Marshal(map[string]interface{}{
 						"event":  true,
 						"type":   "LOG",
 						"param":  m.Log,
 						"_agent": b.alias,
 					})
-					if err != nil {
-						log.Printf("gobaresip: proxy failed to marshal log message: %v", err)
+					if marshalErr != nil {
+						log.Printf("gobaresip: proxy failed to marshal log message: %v", marshalErr)
 						continue
 					}
 				}

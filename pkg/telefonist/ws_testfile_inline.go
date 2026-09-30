@@ -75,13 +75,11 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 		ctx, cancel := context.WithCancel(h.ctx)
 		defer cancel()
 
-		h.internalCmd <- func() {
-			h.batchCancel = cancel
-		}
+		h.setBatchCancel(cancel)
 		defer func() {
+			h.setBatchCancel(nil)
+			h.setTestCancel(nil)
 			h.internalCmd <- func() {
-				h.batchCancel = nil
-				h.testCancel = nil
 				if h.trainSession != nil {
 					h.trainSession.finish()
 					h.trainSession = nil
@@ -117,16 +115,12 @@ func runTestfilesBatch(h *WsHub, batch []TestfileData) bool {
 
 			// Create a per-test context that is also canceled if the batch is canceled
 			testCtx, testCancel := context.WithCancel(ctx)
-			h.internalCmd <- func() {
-				h.testCancel = testCancel
-			}
+			h.setTestCancel(testCancel)
 
 			runTestfileInternal(testCtx, h, tf.Name, tf.ProjectName, tf.Content)
 			testCancel() // Cleanup per-test context
 
-			h.internalCmd <- func() {
-				h.testCancel = nil
-			}
+			h.setTestCancel(nil)
 
 			// Small pause between tests for cleanup
 			select {

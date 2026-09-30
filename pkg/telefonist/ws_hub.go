@@ -44,7 +44,7 @@ type WsHub struct {
 	agentMsg chan AgentMsg
 
 	// activeAgent is the current target for commands (set by uafind)
-	activeAgent string
+	activeAgent atomic.Pointer[string]
 
 	// Callback handlers
 	onEvent    func(gobaresip.EventMsg)
@@ -60,6 +60,7 @@ type WsHub struct {
 	inlineRunActive atomic.Bool
 
 	// Cancellation for the current test run and batch
+	cancelMu    sync.Mutex
 	testCancel  context.CancelFunc
 	batchCancel context.CancelFunc
 
@@ -134,8 +135,53 @@ func NewWsHub(dataDir string, maxCalls uint, rtpNet string, rtpPorts string, rtp
 		DataDir:     dataDir,
 		history:     NewRingBuffer(3333),
 	}
+	h.setActiveAgent("")
 	h.bm = NewBaresipManager(h, dataDir, maxCalls, rtpNet, rtpPorts, rtpTimeout, useAlsa, sipListen)
 	return h
+}
+
+func (h *WsHub) getActiveAgent() string {
+	p := h.activeAgent.Load()
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func (h *WsHub) setActiveAgent(agent string) {
+	h.activeAgent.Store(&agent)
+}
+
+func (h *WsHub) setTestCancel(cancel context.CancelFunc) {
+	h.cancelMu.Lock()
+	h.testCancel = cancel
+	h.cancelMu.Unlock()
+}
+
+func (h *WsHub) cancelTest() {
+	h.cancelMu.Lock()
+	cancel := h.testCancel
+	h.testCancel = nil
+	h.cancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (h *WsHub) setBatchCancel(cancel context.CancelFunc) {
+	h.cancelMu.Lock()
+	h.batchCancel = cancel
+	h.cancelMu.Unlock()
+}
+
+func (h *WsHub) cancelBatch() {
+	h.cancelMu.Lock()
+	cancel := h.batchCancel
+	h.batchCancel = nil
+	h.cancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (h *WsHub) ForwardAgentMsg(alias string, msg gobaresip.Msg) {
@@ -229,20 +275,14 @@ func (h *WsHub) Run() {
 				handleTestfileInlineCommand(h, input)
 
 			case input == "test_stop":
-				if h.batchCancel != nil {
-					h.batchCancel()
-					h.batchCancel = nil
-					log.Println("test batch stopped by user, cleaning up...")
-				}
-				if h.testCancel != nil {
-					h.testCancel()
-					h.testCancel = nil
-					go func() {
-						h.chainMu.Lock()
-						defer h.chainMu.Unlock()
-						executeChain(h.ctx, h, parseChain("hangupall|1s|uadelall"))
-					}()
-				}
+				h.cancelBatch()
+				h.cancelTest()
+				log.Println("test batch stopped by user, cleaning up...")
+				go func() {
+					h.chainMu.Lock()
+					defer h.chainMu.Unlock()
+					executeChain(h.ctx, h, parseChain("hangupall|1s|uadelall"))
+				}()
 
 			case isChained(input):
 				go func(in string) {
@@ -289,8 +329,8 @@ func (h *WsHub) Run() {
 
 				if h.trainSession != nil {
 					h.trainSession.recordEvent(e)
-					if h.trainSession.failMsg != "" && h.testCancel != nil {
-						h.testCancel()
+					if h.trainSession.failMsg != "" {
+						h.cancelTest()
 					}
 				}
 
@@ -364,7 +404,7 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 	cmd = ExpandShortcuts(cmd, soundsDir, "")
 
 	// 2. Resolve Target
-	target, cleanedCmd := h.bm.ResolveTarget(cmd, h.activeAgent)
+	target, cleanedCmd := h.bm.ResolveTarget(cmd, h.getActiveAgent())
 	cmd = cleanedCmd
 
 	parts := strings.Fields(cmd)
@@ -375,13 +415,13 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 
 	// 3. Handle orchestration commands
 	if first == "uafind" && len(parts) >= 2 {
-		h.activeAgent = parts[1]
+		h.setActiveAgent(parts[1])
 		return
 	}
 
 	if first == "uadelall" {
 		h.bm.CloseAll()
-		h.activeAgent = ""
+		h.setActiveAgent("")
 		// Only cleanup on a full reset when no test is running
 		if !h.inlineRunActive.Load() {
 			h.CleanupOrphans()
@@ -408,11 +448,9 @@ func (h *WsHub) executeSmartCommand(cmd string) {
 						h.trainSession.failMsg = fmt.Sprintf("failed to spawn agent %s: %v", alias, err)
 					}
 				}
-				if h.testCancel != nil {
-					h.testCancel()
-				}
+				h.cancelTest()
 			} else {
-				h.activeAgent = alias
+				h.setActiveAgent(alias)
 			}
 		}
 		return
