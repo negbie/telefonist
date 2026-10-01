@@ -27,11 +27,24 @@ type apiResponse struct {
 // storeHandler is the signature for handlers that need a TestStore with a context.
 type storeHandler func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context)
 
+func isChangingIdentity(r *http.Request) bool {
+	if r.URL.Path == "/api/maintenance" {
+		return true
+	}
+	if r.URL.Path == "/api/testfile/rename" || r.URL.Path == "/api/projects/rename" {
+		return true
+	}
+	if r.Method == http.MethodDelete && (r.URL.Path == "/api/testfile" || r.URL.Path == "/api/projects") {
+		return true
+	}
+	return false
+}
+
 // withStore wraps a handler to check testStore availability and create a 5s timeout context.
 func withStore(hub *WsHub, fn storeHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && hub.runner != nil && hub.runner.Snapshot().Active && (strings.HasPrefix(r.URL.Path, "/api/testfile") || strings.HasPrefix(r.URL.Path, "/api/projects") || r.URL.Path == "/api/maintenance") {
-			http.Error(w, "stop the active run before changing test identities", http.StatusConflict)
+		if r.Method != http.MethodGet && hub.runner != nil && hub.runner.Snapshot().Active && isChangingIdentity(r) {
+			jsonResponse(w, http.StatusConflict, apiResponse{Status: "error", Message: "stop the active run before changing test identities"})
 			return
 		}
 		if hub.testStore == nil {

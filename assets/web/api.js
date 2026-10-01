@@ -107,6 +107,17 @@ export const API = {
       target_name: targetName,
     });
   },
+  getTestfileVersions(name, project, signal) {
+    return request(
+      "/api/testfile/versions" + toQueryString({ name, project }),
+      signal ? { signal } : undefined,
+    );
+  },
+  deleteTestfileVersion(id) {
+    return request("/api/testfile/versions" + toQueryString({ id }), {
+      method: "DELETE",
+    });
+  },
 
   logout() {
     return fetch("/api/logout", { method: "POST" }).then(function () {

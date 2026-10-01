@@ -1,6 +1,7 @@
 import { escapeHTML, base64DecodeUTF8 } from "./utils.js";
 import { computeLCSDiff } from "./diff.js";
 import { EventBus } from "./event_bus.js";
+import { API as api } from "./api.js";
 
 function diffTexts(textA, textB) {
   const linesA = textA.split("\n").map((l) => ({ compare: l, display: l }));
@@ -53,8 +54,7 @@ export function initHistoryManager(deps) {
     selectedVersionContent = "";
 
     activeFetchController = new AbortController();
-    fetch(`/api/testfile/versions?name=${encodeURIComponent(name)}&project=${encodeURIComponent(project)}`, { signal: activeFetchController.signal })
-      .then((r) => r.json())
+    api.getTestfileVersions(name, project, activeFetchController.signal)
       .then((j) => {
         if (j.status !== "finished") {
           if (versionsList) versionsList.innerHTML = `<div class='history-empty'>Error: ${escapeHTML(j.message || "Failed to load versions")}</div>`;
@@ -87,16 +87,15 @@ export function initHistoryManager(deps) {
           delBtn.onclick = (e) => {
             e.stopPropagation();
             if (!confirm("Are you sure you want to delete this version entry from history?")) return;
-            fetch(`/api/testfile/versions?id=${v.id}`, { method: "DELETE" })
-              .then((r) => r.json())
+            api.deleteTestfileVersion(v.id)
               .then((res) => {
                 if (res.status === "finished") {
                   loadVersions(currentTestfileName, currentProjectName);
                 } else {
-                  alert("Error deleting version: " + res.message);
+                  alert("Error deleting version: " + (res.message || "Failed to delete"));
                 }
               })
-              .catch((err) => alert("Network error: " + err.message));
+              .catch((err) => alert("Error: " + err.message));
           };
 
           item.appendChild(delBtn);

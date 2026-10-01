@@ -9,6 +9,7 @@ import {
   analyzeSipEvents,
   generateSipLadderHTML,
 } from "../../assets/web/sip_renderer.js";
+import { API } from "../../assets/web/api.js";
 
 test("refresh preserves unsaved drafts while pruning deleted clean files", () => {
   const state = createStateManager();
@@ -183,5 +184,29 @@ test("generateSipLadderHTML renders CSeq badge, retransmit count, and missing AC
   assert.match(html, /⚠️ Missing ACK/);
   assert.match(html, /has-missing-ack/);
   assert.match(html, /is-retransmit/);
+});
+
+test("API testfile version methods format URL and options correctly", async (t) => {
+  const calls = [];
+  const origFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = origFetch;
+  });
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    return {
+      status: 200,
+      ok: true,
+      text: async () => JSON.stringify({ status: "finished" }),
+    };
+  };
+
+  await API.getTestfileVersions("call", "lab");
+  assert.equal(calls[0].url, "/api/testfile/versions?name=call&project=lab");
+  assert.equal(calls[0].opts, undefined);
+
+  await API.deleteTestfileVersion(42);
+  assert.equal(calls[1].url, "/api/testfile/versions?id=42");
+  assert.equal(calls[1].opts.method, "DELETE");
 });
 
