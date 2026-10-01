@@ -1,6 +1,0 @@
-/* Webhooks Manager Styles (integrated with settings.css) */
-#webhooks-panel {
-    display: none;
-    flex: 1;
-    flex-direction: column;
-}

@@ -4,6 +4,11 @@ import { createStateManager } from "../../assets/web/state_manager.js";
 import { computeLCSDiff } from "../../assets/web/diff.js";
 import { createSocketHandler } from "../../assets/web/socket_handler.js";
 import { ignoredEvtTypes } from "../../assets/web/compare_window.js";
+import {
+  getSipMessageInfo,
+  analyzeSipEvents,
+  generateSipLadderHTML,
+} from "../../assets/web/sip_renderer.js";
 
 test("refresh preserves unsaved drafts while pruning deleted clean files", () => {
   const state = createStateManager();
@@ -88,3 +93,95 @@ test("flow compare view excludes internal and lifecycle event types (MODULE, RES
   assert.equal(ignoredEvtTypes.has("call_closed"), false);
   assert.equal(ignoredEvtTypes.has("audio_report"), false);
 });
+
+test("SIP ladder parser extracts CSeq, Call-ID, method and status", () => {
+  const invite = [
+    "# 12:00:01.000 | TX",
+    "SIP 10.0.0.1:5060 -> 10.0.0.2:5060",
+    "INVITE sip:alice@example.com SIP/2.0",
+    "Call-ID: test-call-id-1",
+    "CSeq: 42 INVITE",
+  ].join("\n");
+  const info = getSipMessageInfo(invite);
+  assert.equal(info.method, "INVITE");
+  assert.equal(info.cseqNumber, 42);
+  assert.equal(info.cseqMethod, "INVITE");
+  assert.equal(info.callId, "test-call-id-1");
+  assert.equal(info.isResponse, false);
+
+  const ok = [
+    "# 12:00:01.050 | RX",
+    "SIP 10.0.0.2:5060 -> 10.0.0.1:5060",
+    "SIP/2.0 200 OK",
+    "Call-ID: test-call-id-1",
+    "CSeq: 42 INVITE",
+  ].join("\n");
+  const okInfo = getSipMessageInfo(ok);
+  assert.equal(okInfo.isResponse, true);
+  assert.equal(okInfo.statusCode, 200);
+  assert.equal(okInfo.statusText, "OK");
+  assert.equal(okInfo.cseqNumber, 42);
+  assert.equal(okInfo.cseqMethod, "INVITE");
+});
+
+test("analyzeSipEvents detects missing ACKs and counts retransmissions", () => {
+  const evtInvite = {
+    type: "SIP",
+    param: "# 12:00:01.000 | TX\nSIP 10.0.0.1:5060 -> 10.0.0.2:5060\nINVITE sip:alice@example.com SIP/2.0\nCall-ID: c1\nCSeq: 100 INVITE",
+  };
+  const evt200Ok1 = {
+    type: "SIP",
+    param: "# 12:00:01.050 | RX\nSIP 10.0.0.2:5060 -> 10.0.0.1:5060\nSIP/2.0 200 OK\nCall-ID: c1\nCSeq: 100 INVITE",
+  };
+  const evt200OkRetransmit = {
+    type: "SIP",
+    param: "# 12:00:01.550 | RX\nSIP 10.0.0.2:5060 -> 10.0.0.1:5060\nSIP/2.0 200 OK\nCall-ID: c1\nCSeq: 100 INVITE",
+  };
+
+  // Without ACK: 200 OK has missingAck = true, retransmission has retransmitCount = 1
+  const analysisNoAck = analyzeSipEvents([evtInvite, evt200Ok1, evt200OkRetransmit]);
+  assert.equal(analysisNoAck[0].cseqNumber, 100);
+  assert.equal(analysisNoAck[0].missingAck, false);
+  assert.equal(analysisNoAck[1].cseqNumber, 100);
+  assert.equal(analysisNoAck[1].missingAck, true);
+  assert.equal(analysisNoAck[1].retransmitCount, 0);
+  assert.equal(analysisNoAck[2].missingAck, true);
+  assert.equal(analysisNoAck[2].retransmitCount, 1);
+
+  // With matching ACK: 200 OK has missingAck = false
+  const evtAck = {
+    type: "SIP",
+    param: "# 12:00:01.060 | TX\nSIP 10.0.0.1:5060 -> 10.0.0.2:5060\nACK sip:alice@example.com SIP/2.0\nCall-ID: c1\nCSeq: 100 ACK",
+  };
+  const analysisWithAck = analyzeSipEvents([evtInvite, evt200Ok1, evtAck]);
+  assert.equal(analysisWithAck[1].missingAck, false);
+
+  // Non-INVITE (e.g. BYE 200 OK) should not expect an ACK
+  const evtByeOk = {
+    type: "SIP",
+    param: "# 12:00:02.000 | RX\nSIP 10.0.0.2:5060 -> 10.0.0.1:5060\nSIP/2.0 200 OK\nCall-ID: c1\nCSeq: 101 BYE",
+  };
+  const analysisBye = analyzeSipEvents([evtByeOk]);
+  assert.equal(analysisBye[0].missingAck, false);
+});
+
+test("generateSipLadderHTML renders CSeq badge, retransmit count, and missing ACK pill", () => {
+  const evt = {
+    type: "SIP",
+    param: "# 12:00:01.050 | RX\nSIP 10.0.0.2:5060 -> 10.0.0.1:5060\nSIP/2.0 200 OK\nCall-ID: c1\nCSeq: 100 INVITE",
+  };
+  const html = generateSipLadderHTML(evt, 5, {
+    cseqNumber: 100,
+    retransmitCount: 2,
+    missingAck: true,
+  });
+  assert.match(html, /sip-cseq-badge/);
+  assert.match(html, /CSeq 100/);
+  assert.match(html, /sip-badge-retransmit/);
+  assert.match(html, /🔄 Retransmit #2/);
+  assert.match(html, /sip-badge-missing-ack/);
+  assert.match(html, /⚠️ Missing ACK/);
+  assert.match(html, /has-missing-ack/);
+  assert.match(html, /is-retransmit/);
+});
+

@@ -112,8 +112,7 @@ export function syntaxHighlight(inputEl, highlightsEl) {
       if (nameMatch) {
         if (nameMatch[1])
           html += '<span class="hl-space">' + nameMatch[1] + "</span>";
-        html +=
-          '<span class="hl-name">' + highlightVars(nameMatch[2]) + "</span>";
+        html += highlightVars(nameMatch[2]);
         rem = nameMatch[3] || "";
       }
 

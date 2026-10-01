@@ -15,7 +15,7 @@
 .sip-ladder-header {
     display: flex;
     align-items: center;
-    padding: 10px;
+    padding: 12px 10px;
     cursor: pointer;
     background: #f8fafc;
     border-radius: 6px;
@@ -39,7 +39,7 @@
     align-items: center;
     justify-content: center;
     position: relative;
-    padding: 0 0px;
+    padding: 0;
     min-width: 0;
 }
 
@@ -100,14 +100,72 @@
     font-weight: bold;
     font-size: 10px;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
 }
 
 .sip-method-top {
-    top: -18px;
+    top: -20px;
 }
 
 .sip-method-bottom {
-    bottom: -18px;
+    bottom: -20px;
+}
+
+/* Option A: CSeq Badges and Status Pills */
+.sip-cseq-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #475569;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    line-height: 1.2;
+    letter-spacing: 0.2px;
+}
+
+.sip-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 600;
+    border-radius: 3px;
+    line-height: 1.2;
+}
+
+.sip-badge-retransmit {
+    color: #c2410c;
+    background: #ffedd5;
+    border: 1px solid #fed7aa;
+}
+
+.sip-badge-missing-ack {
+    color: #b91c1c;
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    animation: sip-pulse-warn 2s infinite ease-in-out;
+}
+
+@keyframes sip-pulse-warn {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.75; }
+}
+
+.sip-ladder-row.has-missing-ack {
+    border-left: 3px solid #ef4444;
+    background: #fffafa;
+}
+
+.sip-ladder-row.is-retransmit {
+    border-left: 3px solid #f97316;
+}
+
+.sip-ladder-row.has-missing-ack.is-retransmit {
+    border-left: 3px solid #dc2626;
 }
 
 .sip-details {
@@ -139,4 +197,34 @@
 
 .sip-ladder-row.selected .sip-ladder-header {
     background: #eff6ff;
+}
+
+/* SIP Action Buttons */
+.sip-actions {
+    display: inline-flex;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.btn-sip {
+    padding: 1px 6px;
+    font-size: 9px;
+    border-radius: 3px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.2s;
+    line-height: 1;
+    height: 16px;
+}
+
+.btn-sip:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.btn-sip.compare-active {
+    background: #3b82f6;
+    color: white;
+    border-color: #2563eb;
 }

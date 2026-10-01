@@ -1,11 +1,12 @@
 package telefonist
 
 import (
-	"encoding/json"
+	"log"
 	"regexp"
 	"strings"
 	"time"
 )
+
 
 var sanitizeRegexp = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
@@ -25,21 +26,31 @@ func FormatNow() string {
 	return time.Now().Format(DefaultTimeFormat)
 }
 
-// EnrichMessage injects standard metadata (agent, time, type) into raw JSON messages.
-func EnrichMessage(raw []byte, agent, msgType string) ([]byte, error) {
-	m := make(map[string]interface{})
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &m); err != nil {
-			return nil, err
-		}
+// scanTime parses a time string stored in RFC3339Nano format.
+// On parse failure it logs a warning and returns time.Time{}.
+func scanTime(raw, label string) time.Time {
+	t, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		log.Printf("failed to parse %s %q: %v", label, raw, err)
 	}
-	m["_agent"] = agent
-	m["time"] = FormatNow()
-	if msgType != "" {
-		m["type"] = msgType
-		m["event"] = true
+	return t.Local()
+}
+
+// NormalizeParamString normalizes a semicolon-delimited SIP parameter string.
+// It ensures a leading semicolon, collapses doubles, and trims trailing cruft.
+func NormalizeParamString(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
 	}
-	return json.Marshal(m)
+	for strings.Contains(p, ";;") {
+		p = strings.ReplaceAll(p, ";;", ";")
+	}
+	if !strings.HasPrefix(p, ";") {
+		p = ";" + p
+	}
+	p = strings.TrimRight(p, "; ")
+	return p
 }
 
 // ExtractAlias pulls the local alias part out of a SIP AoR or URI string.
@@ -60,7 +71,6 @@ func ExtractAlias(s string) string {
 }
 
 var authPassRegexp = regexp.MustCompile(`(?i)(auth_pass=)([^; \r\n\t"\\]*)`)
-var authPassKeywordRegexp = regexp.MustCompile(`(?i)auth_pass`)
 
 // HasAuthPass checks case-insensitively whether s contains "auth_pass" without regex allocations.
 func HasAuthPass(s string) bool {

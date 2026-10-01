@@ -85,9 +85,10 @@ func splitByPipe(input string) []string {
 
 		char := input[i]
 		if !inSecret && (char == '\'' || char == '"') && (i == 0 || input[i-1] != '\\') {
-			if quote == 0 {
+			switch quote {
+			case 0:
 				quote = char
-			} else if quote == char {
+			case char:
 				quote = 0
 			}
 		}

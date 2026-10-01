@@ -168,34 +168,16 @@ if (initHistoryManager) {
 
 const btnModeTests = document.getElementById("btn-mode-tests");
 const btnModeCompare = document.getElementById("btn-mode-compare");
+const btnModeGit = document.getElementById("btn-mode-git");
 const btnModeCron = document.getElementById("btn-mode-cron");
 const btnModeSettings = document.getElementById("btn-mode-settings");
 
-const syncCompareWithActiveTestfile = () => {
-  const key = tfManager?.getActiveKey?.() || "";
-  const [project, name] = key ? key.split(":") : ["", ""];
-  EventBus.emit("testfile:changed", name, project);
-};
-
 const switchSettingsSubPanel = (target) => {
-  const accountsPanel = document.getElementById("accounts-panel");
-  const webhooksPanel = document.getElementById("webhooks-panel");
-  const logFilterPanel = document.getElementById("log-filter-panel");
-
-  if (accountsPanel) accountsPanel.style.display = "none";
-  if (webhooksPanel) webhooksPanel.style.display = "none";
-  if (logFilterPanel) logFilterPanel.style.display = "none";
-
-  if (target === "accounts") {
-    if (accountsPanel) accountsPanel.style.display = "flex";
-    EventBus.emit("accounts:opened");
-  } else if (target === "webhooks") {
-    if (webhooksPanel) webhooksPanel.style.display = "flex";
-    EventBus.emit("webhooks:opened");
-  } else if (target === "log-filter") {
-    if (logFilterPanel) logFilterPanel.style.display = "flex";
-    EventBus.emit("log-filter:opened");
+  const panelName = target || "accounts";
+  if (bottomRow) {
+    bottomRow.setAttribute("data-settings-panel", panelName);
   }
+  EventBus.emit(`${panelName}:opened`);
 };
 
 const setBottomMode = (mode) => {
@@ -205,37 +187,17 @@ const setBottomMode = (mode) => {
 
   if (btnModeTests) btnModeTests.classList.toggle("active", mode === "tests");
   if (btnModeCompare) btnModeCompare.classList.toggle("active", mode === "compare");
+  if (btnModeGit) btnModeGit.classList.toggle("active", mode === "git");
   if (btnModeCron) btnModeCron.classList.toggle("active", mode === "cron");
   if (btnModeSettings) btnModeSettings.classList.toggle("active", mode === "settings");
 
-  const settingsNavPane = document.getElementById("settings-nav-pane");
-  const testfileActionsPane = document.getElementById("testfile-actions-pane");
-
   if (mode === "settings") {
-    if (settingsNavPane) settingsNavPane.style.display = "flex";
-    if (testfileActionsPane) testfileActionsPane.style.display = "none";
-    
     const activeItem = document.querySelector(".settings-tree-item.active");
-    if (activeItem) {
-      switchSettingsSubPanel(activeItem.getAttribute("data-target"));
-    } else {
-      switchSettingsSubPanel("accounts");
-    }
-  } else {
-    if (settingsNavPane) settingsNavPane.style.display = "none";
-    if (testfileActionsPane) testfileActionsPane.style.display = "flex";
-
-    const accountsPanel = document.getElementById("accounts-panel");
-    const webhooksPanel = document.getElementById("webhooks-panel");
-    const logFilterPanel = document.getElementById("log-filter-panel");
-    if (accountsPanel) accountsPanel.style.display = "none";
-    if (webhooksPanel) webhooksPanel.style.display = "none";
-    if (logFilterPanel) logFilterPanel.style.display = "none";
-  }
-
-  if (mode === "compare") {
-    syncCompareWithActiveTestfile();
+    switchSettingsSubPanel(activeItem ? activeItem.getAttribute("data-target") : "accounts");
+  } else if (mode === "compare") {
     EventBus.emit("compare:opened");
+  } else if (mode === "git") {
+    EventBus.emit("history:opened");
   } else if (mode === "cron") {
     EventBus.emit("cron:opened");
   }
@@ -243,6 +205,7 @@ const setBottomMode = (mode) => {
 
 if (btnModeTests) btnModeTests.onclick = () => setBottomMode("tests");
 if (btnModeCompare) btnModeCompare.onclick = () => setBottomMode("compare");
+if (btnModeGit) btnModeGit.onclick = () => setBottomMode("git");
 if (btnModeCron) btnModeCron.onclick = () => setBottomMode("cron");
 if (btnModeSettings) btnModeSettings.onclick = () => setBottomMode("settings");
 
@@ -291,6 +254,51 @@ document.getElementById("toggle-live").onclick = event => {
   const visible = document.body.classList.toggle("show-live");
   event.currentTarget.setAttribute("aria-pressed", String(visible));
 };
+let lastRunSummary = null;
+let isRunnerActive = false;
+
+function formatReason(msg) {
+  if (!msg) return "";
+  return msg.replace(/command rejected:\s*/i, "").trim();
+}
+
+function updateRunSummaryUI(state) {
+  const el = document.getElementById("run-summary");
+  if (!el) return;
+  if (state?.active) {
+    const batchPart = (state.file_total > 1 && state.file_index) ? `[${state.file_index}/${state.file_total}] ` : "";
+    const repeatPart = (state.repeats > 1 && state.repeat) ? ` (${state.repeat}/${state.repeats})` : "";
+    const prevPart = state.prev_result ? ` ─── Prev: ${state.prev_result}` : "";
+    const nextPart = state.next_file ? ` ─── Next: ${state.next_file}` : "";
+
+    el.textContent = `${batchPart}Running ${state.project || "Uncategorized"} / ${state.file || "Preparing"}${repeatPart} · step ${state.step || 0} of ${state.total || 0} · Run ${state.run_id || "pending"}${prevPart}${nextPart}`;
+    el.className = "running";
+    if (state.prev_result) {
+      el.title = `Previous: ${state.prev_result}`;
+    } else {
+      el.removeAttribute("title");
+    }
+  } else if (lastRunSummary) {
+    const s = lastRunSummary;
+    const isError = s.result === "ERROR";
+    const reasonText = formatReason(s.message);
+    const reasonPart = reasonText ? `, Reason: ${reasonText}` : "";
+    const hashPart = (!isError && s.hash) ? `, Hash: ${s.hash}` : "";
+    const runPart = s.run_id ? `, Run: ${s.run_id}` : "";
+    el.textContent = `${s.file} [${s.result}] ─── Project: ${s.project}${reasonPart}${hashPart}${runPart}`;
+    el.className = (s.result || "").toLowerCase();
+    if (s.message) {
+      el.title = `Reason: ${s.message}`;
+    } else {
+      el.removeAttribute("title");
+    }
+  } else {
+    el.textContent = "No active run";
+    el.className = "";
+    el.removeAttribute("title");
+  }
+}
+
 socket = createSocketHandler(wsURL(), {
   onOpen: () => {
     document.getElementById("connection-state").textContent = "Connected";
@@ -310,11 +318,24 @@ socket = createSocketHandler(wsURL(), {
     warning.hidden = false; warning.textContent = message;
   },
   onMessage: (j) => {
+    if ((j.token === "testfile" || j.token === "test") && j.status === "finished" && (j.result || j.actual_hash || j.run_id)) {
+      lastRunSummary = {
+        file: j.file || j.name || "",
+        project: j.project || "",
+        result: (j.result || "FINISHED").toUpperCase(),
+        hash: j.actual_hash || j.hash || "",
+        run_id: j.run_id || "",
+        message: j.message || j.failure_reason || "",
+      };
+      if (!isRunnerActive) {
+        updateRunSummaryUI({ active: false });
+      }
+    }
+
     if (j.token === "runner") {
       const state = j.state || {};
-      document.getElementById("run-summary").textContent = state.active
-        ? `Running ${state.project || "Uncategorized"} / ${state.file || "Preparing"} · step ${state.step || 0} of ${state.total || 0} · Run ${state.run_id || "pending"}`
-        : "No active run";
+      isRunnerActive = !!state.active;
+      updateRunSummaryUI(state);
     }
     EventBus.emit("ws:message", j);
 
@@ -326,10 +347,6 @@ socket = createSocketHandler(wsURL(), {
       j.token === "testfiles" || j.token === "projects";
 
     if (tfManager?.handleTestfilesMessage(j)) {
-      if (j.token === "testfiles" && j.name) {
-        EventBus.emit("testfile:changed", j.name, j.project);
-      }
-
       if (isTestfileOrProjectToken) return;
 
       // Keep test lifecycle/status events visible in flow.

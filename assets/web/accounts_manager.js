@@ -1,6 +1,6 @@
 import { EventBus } from "./event_bus.js";
 import { API } from "./api.js";
-import { escapeHTML } from "./utils.js";
+import { escapeHTML, initModal } from "./utils.js";
 
 export function initAccountsManager() {
     const refreshBtn = document.getElementById("accounts-refresh");
@@ -10,7 +10,6 @@ export function initAccountsManager() {
     const modal = document.getElementById("accounts-modal");
     const modalTitle = document.getElementById("accounts-modal-title");
     const saveBtn = document.getElementById("accounts-save");
-    const cancelBtn = document.getElementById("accounts-cancel");
 
     const nameInput = document.getElementById("accounts-name");
     const sipUriInput = document.getElementById("accounts-sip-uri");
@@ -18,6 +17,8 @@ export function initAccountsManager() {
     const clearPassword = document.getElementById("accounts-clear-password");
     const uriParamsInput = document.getElementById("accounts-uri-params");
     const addrParamsInput = document.getElementById("accounts-addr-params");
+
+    const { open: openModal, close: closeModal } = initModal(modal);
 
     let items = [];
     let editingName = null;
@@ -62,7 +63,7 @@ export function initAccountsManager() {
                 clearPassword.checked = false;
                 uriParamsInput.value = acc.uri_params || "";
                 addrParamsInput.value = acc.addr_params || "";
-                modal.classList.add("active");
+                openModal();
             };
 
             tr.querySelector(".accounts-del").onclick = async () => {
@@ -91,24 +92,8 @@ export function initAccountsManager() {
         clearPassword.checked = false;
         uriParamsInput.value = "";
         addrParamsInput.value = "";
-        modal.classList.add("active");
+        openModal();
     };
-
-    cancelBtn.onclick = () => {
-        modal.classList.remove("active");
-    };
-
-    modal.onclick = (e) => {
-        if (e.target === modal) modal.classList.remove("active");
-    };
-
-    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-        window.addEventListener("keydown", (e) => {
-            if (e.key === "Escape" && modal.classList.contains("active")) {
-                modal.classList.remove("active");
-            }
-        });
-    }
 
     const normalizeParamString = (p) => {
         p = p.trim();
@@ -151,7 +136,7 @@ export function initAccountsManager() {
             });
             if (!res.ok) throw new Error(await res.text());
 
-            modal.classList.remove("active");
+            closeModal();
             loadAccounts();
         } catch (e) {
             alert("Failed saving SIP account: " + e.message);

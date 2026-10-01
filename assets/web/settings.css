@@ -42,10 +42,12 @@
     border-color: #3b82f6;
 }
 
-/* Common Settings Panels */
+/* Common Settings & Cron Panels */
+#cron-panel,
 #accounts-panel,
 #webhooks-panel,
 #log-filter-panel {
+    display: none;
     flex: 1;
     flex-direction: column;
     padding: 20px;
@@ -57,6 +59,7 @@
 
 /* Common Settings Subpanel Header */
 .settings-subpanel-header,
+.cron-header,
 .accounts-header,
 .webhooks-header,
 .log-filter-header {
@@ -67,6 +70,7 @@
 }
 
 .settings-subpanel-header h2,
+.cron-header h2,
 .accounts-header h2,
 .webhooks-header h2,
 .log-filter-header h2 {
@@ -77,6 +81,7 @@
 }
 
 .settings-subpanel-header .header-actions,
+.cron-header > div,
 .accounts-header > div,
 .webhooks-header > div,
 .log-filter-header > div {
@@ -88,6 +93,7 @@
 /* Header Buttons */
 .settings-btn-secondary,
 .settings-btn-primary,
+.cron-header button,
 .accounts-header button,
 .webhooks-header button,
 .log-filter-header button {
@@ -106,6 +112,7 @@
 }
 
 .settings-btn-secondary,
+#cron-refresh,
 #accounts-refresh,
 #webhooks-refresh,
 #log-filter-refresh {
@@ -116,6 +123,7 @@
 }
 
 .settings-btn-secondary:hover,
+#cron-refresh:hover,
 #accounts-refresh:hover,
 #webhooks-refresh:hover,
 #log-filter-refresh:hover {
@@ -125,6 +133,7 @@
 }
 
 .settings-btn-primary,
+#cron-new,
 #accounts-new,
 #webhooks-new,
 #log-filter-save {
@@ -135,6 +144,7 @@
 }
 
 .settings-btn-primary:hover,
+#cron-new:hover,
 #accounts-new:hover,
 #webhooks-new:hover,
 #log-filter-save:hover {
@@ -143,15 +153,17 @@
 }
 
 .settings-btn-primary:active,
+#cron-new:active,
 #accounts-new:active,
 #webhooks-new:active,
 #log-filter-save:active {
-    background: #1d4ed8;
-    border-color: #1d4ed8;
+    background: #2563eb;
+    border-color: #2563eb;
 }
 
 /* Data Tables */
 .settings-data-table,
+.cron-table,
 .accounts-table,
 .webhooks-table {
     width: 100%;
@@ -165,6 +177,7 @@
 }
 
 .settings-data-table th, .settings-data-table td,
+.cron-table th, .cron-table td,
 .accounts-table th, .accounts-table td,
 .webhooks-table th, .webhooks-table td {
     padding: 9px 12px;
@@ -178,12 +191,14 @@
 }
 
 .settings-data-table tbody tr:last-child td,
+.cron-table tbody tr:last-child td,
 .accounts-table tbody tr:last-child td,
 .webhooks-table tbody tr:last-child td {
     border-bottom: none;
 }
 
 .settings-data-table th,
+.cron-table th,
 .accounts-table th,
 .webhooks-table th {
     background: #f8fafc;
@@ -195,12 +210,14 @@
 }
 
 .settings-data-table tbody tr:hover,
+.cron-table tbody tr:hover,
 .accounts-table tbody tr:hover,
 .webhooks-table tbody tr:hover {
     background: #f8fafc;
 }
 
 .settings-data-table td code,
+.cron-table td code,
 .accounts-table td code,
 .webhooks-table td code {
     display: block;
@@ -222,40 +239,60 @@
     font-size: 11px;
 }
 
+.cron-table th:first-child,
+.cron-table td:first-child {
+    width: 60px;
+}
+
+.cron-table th:nth-child(5),
+.cron-table td:nth-child(5) {
+    width: 80px;
+    text-align: center;
+}
+
 /* Actions Column */
+.col-actions,
 .settings-data-table th.col-actions,
-.accounts-table th:last-child,
-.webhooks-table th:last-child,
 .settings-data-table td.col-actions,
+.cron-table th:last-child,
+.cron-table td:last-child,
+.accounts-table th:last-child,
 .accounts-table td:last-child,
-.webhooks-table td:last-child,
-.accounts-actions,
-.webhooks-actions {
+.webhooks-table th:last-child,
+.webhooks-table td:last-child {
     width: 140px;
     min-width: 140px;
     text-align: right;
     white-space: nowrap;
 }
 
-.settings-data-table td.col-actions,
+td.col-actions,
+.cron-table td:last-child,
 .accounts-table td.accounts-actions,
 .webhooks-table td.webhooks-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
+    text-align: right;
+    white-space: nowrap;
     padding: 7px 12px;
-    overflow: visible;
+    vertical-align: middle;
+}
+
+td.col-actions button + button,
+.cron-table td:last-child button + button,
+.accounts-table td.accounts-actions button + button,
+.webhooks-table td.webhooks-actions button + button {
+    margin-left: 6px;
 }
 
 /* Action Buttons */
 .btn-action-edit,
 .btn-action-del,
+.cron-del,
 .accounts-table button,
 .webhooks-table button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    vertical-align: middle;
     padding: 4px 10px;
     font-size: 12px;
     font-weight: 500;
@@ -292,6 +329,7 @@
 }
 
 .btn-action-del,
+.cron-del,
 .accounts-del,
 .webhooks-del {
     background: #fff5f5;
@@ -301,6 +339,7 @@
 }
 
 .btn-action-del:hover,
+.cron-del:hover,
 .accounts-del:hover,
 .webhooks-del:hover {
     background: #fee2e2;
@@ -309,6 +348,7 @@
 }
 
 .btn-action-del:active,
+.cron-del:active,
 .accounts-del:active,
 .webhooks-del:active {
     background: #ef4444;
@@ -338,137 +378,13 @@
     border: 1px solid #fecaca;
 }
 
-/* Modals */
-.modal {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 23, 42, 0.45);
-    backdrop-filter: blur(2px);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-}
-
-.modal.active {
-    display: flex;
-}
-
-.modal-content {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    padding: 24px;
-    border-radius: 10px;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    width: 440px;
-    max-width: 90vw;
-    box-sizing: border-box;
-}
-
-.modal-content h3 {
-    margin: 0 0 16px 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text);
-}
-
-.modal-row {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 14px;
-}
-
-.modal-row label {
-    margin-bottom: 5px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #374151;
-}
-
-.modal-row input[type="text"],
-.modal-row input[type="password"],
-.modal-row select {
-    padding: 7px 10px;
-    background: #fff;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    color: var(--text);
-    font-size: 13px;
-    font-family: inherit;
-    box-sizing: border-box;
-    transition: border-color 0.15s ease;
-}
-
-.modal-row input:focus,
-.modal-row select:focus {
-    border-color: #3b82f6;
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-.modal-row small {
-    margin-top: 4px;
-    color: var(--muted);
-    font-size: 11px;
-}
-
-.modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 20px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
-}
-
-.modal-actions button {
-    padding: 6px 16px;
-    font-size: 12px;
-    font-weight: 500;
-    font-family: var(--font-sans);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-#accounts-save,
-#webhooks-save {
-    background: #3b82f6;
-    color: #ffffff;
-    border: 1px solid #3b82f6;
-}
-
-#accounts-save:hover,
-#webhooks-save:hover {
-    background: #2563eb;
-    border-color: #2563eb;
-}
-
-#accounts-save:active,
-#webhooks-save:active {
-    background: #1d4ed8;
-    border-color: #1d4ed8;
-}
-
-#accounts-cancel,
-#webhooks-cancel {
-    background: #ffffff;
-    color: #374151;
-    border: 1px solid #d1d5db;
-}
-
-#accounts-cancel:hover,
-#webhooks-cancel:hover {
-    background: #f9fafb;
-    border-color: #9ca3af;
-}
-
 /* Log Filter */
 .log-filter-card {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-width: 820px;
+    width: 100%;
+    box-sizing: border-box;
     padding: 16px;
     background: var(--panel);
     border: 1px solid var(--border);
@@ -481,6 +397,8 @@
 
 #log-filter-input {
     min-height: 180px;
+    width: 100%;
+    box-sizing: border-box;
     padding: 10px;
     resize: vertical;
     background: #fff;

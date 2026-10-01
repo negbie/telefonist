@@ -1,35 +1,65 @@
-#history-modal.modal {
+#history-panel {
     display: none;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: var(--panel);
-    border: 1px solid var(--border);
-    padding: 20px;
-    border-radius: var(--radius);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 1000;
-    width: 90%;
-    max-width: 1000px;
-    height: 80%;
-    max-height: 600px;
+    flex: 1 1 auto;
+    flex-direction: column;
+    padding: 14px 20px;
+    background-color: var(--bg);
+    overflow: hidden;
+    color: var(--text);
+    min-width: 0;
+    gap: 12px;
     box-sizing: border-box;
 }
 
-#history-modal.active {
+.history-header {
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 32px;
+}
+
+.history-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
 }
 
 .history-layout {
     display: flex;
     flex-direction: row;
-    height: 100%;
+    flex: 1 1 auto;
     overflow: hidden;
+    gap: 15px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    height: 100%;
+    min-height: 0;
+}
+
+.history-sidebar {
+    flex: 0 0 250px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    background: var(--panel);
+    padding: 5px;
+}
+
+.history-diff-container {
+    flex: 1 1 auto;
+    overflow: auto;
+    background: #fff;
+    padding: 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
 }
 
 .history-version-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     padding: 8px 12px;
     cursor: pointer;
     border-bottom: 1px solid var(--border);
@@ -46,8 +76,25 @@
 }
 
 .history-version-item.selected {
-    background: #3b82f6 !important;
+    background: var(--primary) !important;
     color: #fff !important;
+}
+
+.history-del-btn {
+    border: none;
+    background: none;
+    color: #dc2626;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 10px;
+    font-size: 12px;
+    transition: background 0.15s ease;
+}
+
+.history-del-btn:hover {
+    background: #fee2e2;
 }
 
 .diff-line {
@@ -77,4 +124,8 @@
     text-align: center;
     color: var(--muted);
     font-style: italic;
+}
+
+#history-restore {
+    display: none;
 }

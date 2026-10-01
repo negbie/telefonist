@@ -1,9 +1,9 @@
 /* compare.css */
-#compare-note { margin: 0; padding: 6px 12px; font: 12px system-ui; color: #475569; }
+#compare-note { margin: 0; padding: 6px 12px; font-size: 12px; font-family: var(--font-sans); color: #475569; }
 
 #compare-panel {
+    display: none;
     flex: 1 1 auto;
-    display: flex;
     flex-direction: column;
     overflow: hidden;
     border-left: 2px solid #ccc;
@@ -145,9 +145,9 @@
 
 /* Diff button active state */
 #compare-diff.active {
-    background: #1d4ed8;
+    background: #3b82f6;
     color: #fff;
-    border-color: #1d4ed8;
+    border-color: #3b82f6;
     font-weight: 600;
 }
 

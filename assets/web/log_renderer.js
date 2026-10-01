@@ -39,9 +39,14 @@ export const renderLogEvent = (j, elements, getOptions) => {
     let label = `${prefix}${phase}${safeText(name)}${suffix} ───`;
     if (type === "finished" && token === "testfile") {
       if (project) label += ` Project: ${safeText(project)}`;
-      if (hash) label += `, Hash: ${safeText(hash)}`;
+      const cleanMsg = message ? safeText(message.replace(/command rejected:\s*/i, "").trim()) : "";
+      if (result === "ERROR") {
+        if (cleanMsg) label += `, Reason: ${cleanMsg}`;
+      } else {
+        if (cleanMsg) label += `, Reason: ${cleanMsg}`;
+        if (hash) label += `, Hash: ${safeText(hash)}`;
+      }
       if (runId) label += `, Run: ${safeText(runId)}`;
-      if (message) label += ` - Reason: ${safeText(message)}`;
     }
     return label;
   };
@@ -58,7 +63,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
     const sep = document.createElement("div");
     sep.className =
       "run-separator " +
-      (isStart ? "start" : j.result === "FAIL" ? "end-fail" : "end-pass");
+      (isStart ? "start" : j.result === "PASS" ? "end-pass" : "end-fail");
     sep.setAttribute("data-token", j.token || "test");
 
     sep.textContent = runLabel(

@@ -315,17 +315,7 @@ func resolveAccountsInSequence(sequence string, accounts []SIPAccount) string {
 	}
 	return strings.Join(parts, "|")
 }
+// normalizeParam delegates to the shared NormalizeParamString helper.
 func normalizeParam(p string) string {
-	p = strings.TrimSpace(p)
-	if p == "" {
-		return ""
-	}
-	for strings.Contains(p, ";;") {
-		p = strings.ReplaceAll(p, ";;", ";")
-	}
-	if !strings.HasPrefix(p, ";") {
-		p = ";" + p
-	}
-	p = strings.TrimRight(p, "; ")
-	return p
+	return NormalizeParamString(p)
 }

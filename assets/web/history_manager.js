@@ -1,5 +1,6 @@
 import { escapeHTML, base64DecodeUTF8 } from "./utils.js";
 import { computeLCSDiff } from "./diff.js";
+import { EventBus } from "./event_bus.js";
 
 function diffTexts(textA, textB) {
   const linesA = textA.split("\n").map((l) => ({ compare: l, display: l }));
@@ -10,81 +11,78 @@ function diffTexts(textA, textB) {
 export function initHistoryManager(deps) {
   const { getActiveKey, testfileInputEl } = deps;
 
-  const modal = document.getElementById("history-modal");
-  const historyBtn = document.getElementById("testfiles-history");
   const versionsList = document.getElementById("history-versions-list");
   const diffView = document.getElementById("history-diff-view");
   const restoreBtn = document.getElementById("history-restore");
-  const closeBtn = document.getElementById("history-close");
+  const historyTitle = document.getElementById("history-title");
 
   let selectedVersionContent = "";
+  let currentTestfileName = "";
+  let currentProjectName = "";
 
-  if (!modal || !historyBtn) return;
+  const isGitModeActive = () => {
+    return document.getElementById("bottom-row")?.getAttribute("data-bottom-mode") === "git";
+  };
 
-  historyBtn.onclick = () => {
-    let activeKey = getActiveKey();
-    if (!activeKey) {
-      const select = document.getElementById("testfile-select");
-      if (select && select.value) {
-        activeKey = select.value;
-      }
+  let activeFetchController = null;
+  const loadVersions = (name, project) => {
+    currentTestfileName = name || "";
+    currentProjectName = project || "";
+
+    if (activeFetchController) {
+      activeFetchController.abort();
     }
-    if (!activeKey) {
-      alert("Please select a testfile first.");
+
+    if (!name) {
+      if (historyTitle) historyTitle.textContent = "Git Version History";
+      if (versionsList) versionsList.innerHTML = "<div class='history-empty'>Select a testfile from the left list to view Git history.</div>";
+      if (diffView) diffView.innerHTML = "<div class='history-empty'>No testfile selected.</div>";
+      if (restoreBtn) restoreBtn.style.display = "none";
+      selectedVersionContent = "";
       return;
     }
 
-    const separatorIndex = activeKey.indexOf(":");
-    const project = activeKey.substring(0, separatorIndex);
-    const name = activeKey.substring(separatorIndex + 1);
+    if (historyTitle) {
+      const projLabel = project ? `${project} / ` : "";
+      historyTitle.textContent = `Git Version History – ${projLabel}${name}`;
+    }
 
-    // Open modal
-    modal.classList.add("active");
-    versionsList.innerHTML = "<div class='history-empty'>Loading versions...</div>";
-    diffView.innerHTML = "<div class='history-empty'>Select a version from the left list to compare and view changes.</div>";
-    restoreBtn.style.display = "none";
+    if (versionsList) versionsList.innerHTML = "<div class='history-empty'>Loading versions...</div>";
+    if (diffView) diffView.innerHTML = "<div class='history-empty'>Select a version from the left list to view changes.</div>";
+    if (restoreBtn) restoreBtn.style.display = "none";
     selectedVersionContent = "";
 
-    fetch(`/api/testfile/versions?name=${encodeURIComponent(name)}&project=${encodeURIComponent(project)}`)
+    activeFetchController = new AbortController();
+    fetch(`/api/testfile/versions?name=${encodeURIComponent(name)}&project=${encodeURIComponent(project)}`, { signal: activeFetchController.signal })
       .then((r) => r.json())
       .then((j) => {
         if (j.status !== "finished") {
-          versionsList.innerHTML = `<div class='history-empty'>Error: ${escapeHTML(j.message || "Failed to load versions")}</div>`;
+          if (versionsList) versionsList.innerHTML = `<div class='history-empty'>Error: ${escapeHTML(j.message || "Failed to load versions")}</div>`;
           return;
         }
 
         const versions = j.versions || [];
         if (versions.length === 0) {
-          versionsList.innerHTML = "<div class='history-empty'>No previous saved versions found.</div>";
+          if (versionsList) versionsList.innerHTML = "<div class='history-empty'>No previous saved versions found for this testfile.</div>";
           return;
         }
 
-        versionsList.innerHTML = "";
+        if (versionsList) versionsList.innerHTML = "";
         versions.forEach((v, index) => {
           const item = document.createElement("div");
           item.className = "history-version-item";
-          item.style.display = "flex";
-          item.style.justifyContent = "space-between";
-          item.style.alignItems = "center";
-          
+
           const textSpan = document.createElement("span");
           const date = new Date(v.created_at);
           const timeStr = date.toLocaleString();
           textSpan.textContent = `Version ${versions.length - index} (${timeStr})`;
           item.appendChild(textSpan);
 
-          const delBtn = document.createElement("span");
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "history-del-btn";
           delBtn.textContent = "✕";
-          delBtn.style.color = "#991b1b";
-          delBtn.style.fontWeight = "bold";
-          delBtn.style.cursor = "pointer";
-          delBtn.style.padding = "2px 6px";
-          delBtn.style.borderRadius = "4px";
-          delBtn.style.marginLeft = "10px";
           delBtn.title = "Delete this version entry";
-
-          delBtn.onmouseover = () => delBtn.style.background = "#fee2e2";
-          delBtn.onmouseout = () => delBtn.style.background = "none";
 
           delBtn.onclick = (e) => {
             e.stopPropagation();
@@ -93,7 +91,7 @@ export function initHistoryManager(deps) {
               .then((r) => r.json())
               .then((res) => {
                 if (res.status === "finished") {
-                  historyBtn.click(); // reload list
+                  loadVersions(currentTestfileName, currentProjectName);
                 } else {
                   alert("Error deleting version: " + res.message);
                 }
@@ -102,61 +100,71 @@ export function initHistoryManager(deps) {
           };
 
           item.appendChild(delBtn);
-          
+
           item.onclick = () => {
-            // Select version
             document.querySelectorAll(".history-version-item").forEach((el) => el.classList.remove("selected"));
             item.classList.add("selected");
 
             const versionText = base64DecodeUTF8(v.content_b64);
             const currentText = testfileInputEl ? testfileInputEl.value : "";
-            
+
             // Diff: versionText (textA) vs currentText (textB)
             const diff = diffTexts(versionText, currentText);
 
-            diffView.innerHTML = diff.map((d) => {
-              if (d.type === "common") {
-                return `<div class="diff-line diff-line-common">  ${escapeHTML(d.text)}</div>`;
-              } else if (d.type === "a") {
-                return `<div class="diff-line diff-line-del">- ${escapeHTML(d.text)}</div>`;
-              } else {
-                return `<div class="diff-line diff-line-add">+ ${escapeHTML(d.text)}</div>`;
-              }
-            }).join("");
+            if (diffView) {
+              diffView.innerHTML = diff.map((d) => {
+                if (d.type === "common") {
+                  return `<div class="diff-line diff-line-common">  ${escapeHTML(d.text)}</div>`;
+                } else if (d.type === "a") {
+                  return `<div class="diff-line diff-line-del">- ${escapeHTML(d.text)}</div>`;
+                } else {
+                  return `<div class="diff-line diff-line-add">+ ${escapeHTML(d.text)}</div>`;
+                }
+              }).join("");
+            }
 
             selectedVersionContent = versionText;
-            restoreBtn.style.display = "inline-block";
+            if (restoreBtn) restoreBtn.style.display = "inline-block";
           };
 
-          versionsList.appendChild(item);
+          if (versionsList) versionsList.appendChild(item);
         });
       })
       .catch((err) => {
-        versionsList.innerHTML = `<div class='history-empty'>Network error: ${escapeHTML(err.message)}</div>`;
+        if (versionsList) versionsList.innerHTML = `<div class='history-empty'>Network error: ${escapeHTML(err.message)}</div>`;
       });
   };
 
-  const closeModal = () => {
-    modal.classList.remove("active");
-  };
+  EventBus.on("testfile:changed", (name, project) => {
+    currentTestfileName = name || "";
+    currentProjectName = project || "";
+    if (isGitModeActive()) {
+      loadVersions(name, project);
+    }
+  });
 
-  if (closeBtn) closeBtn.onclick = closeModal;
-
-  // Close modal when clicking outside content area
-  modal.onclick = (e) => {
-    if (e.target === modal) closeModal();
-  };
+  EventBus.on("history:opened", () => {
+    let activeKey = getActiveKey ? getActiveKey() : "";
+    if (!activeKey) {
+      const select = document.getElementById("testfile-select");
+      if (select && select.value) {
+        activeKey = select.value;
+      }
+    }
+    const [project, name] = activeKey ? activeKey.split(":") : ["", ""];
+    loadVersions(name, project);
+  });
 
   if (restoreBtn) {
     restoreBtn.onclick = () => {
       if (!selectedVersionContent) return;
       if (!confirm("Are you sure you want to restore the selected version? Unsaved changes in the editor will be overwritten.")) return;
-      
+
       if (testfileInputEl) {
         testfileInputEl.value = selectedVersionContent;
         testfileInputEl.dispatchEvent(new Event("input"));
       }
-      closeModal();
+      alert("Selected version restored to editor.");
     };
   }
 }

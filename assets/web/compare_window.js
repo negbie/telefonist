@@ -2,6 +2,7 @@ import { EventBus } from "./event_bus.js";
 import { safeText, escapeHTML, base64DecodeUTF8 } from "./utils.js";
 import { computeLCSDiff } from "./diff.js";
 import {
+  analyzeSipEvents,
   generateSipLadderHTML,
   getSipDiffKey,
   getSipMessageInfo,
@@ -150,14 +151,18 @@ export function initCompareWindow(deps) {
   const structuralSkeleton = text => String(text || "").replace(/\r\n/g, "\n").trim();
 
   const parseEvents = (text) => {
-    return (text || "").split(/\n\n+/).map(s => s.trim()).filter(Boolean).map(line => {
+    const rawEvents = (text || "").split(/\n\n+/).map(s => s.trim()).filter(Boolean).map(line => {
       try { return JSON.parse(line); } catch (e) { return null; }
     }).filter(Boolean).filter(j => {
       const type = (j.type || j.token || "").toLowerCase();
       if (activeMode === "sip") return type === "sip";
       if (activeMode === "log") return type === "log";
       return activeMode !== "evt" || !ignoredEvtTypes.has(type);
-    }).map((j, idx) => {
+    });
+
+    const sipMetas = activeMode === "sip" ? analyzeSipEvents(rawEvents) : [];
+
+    return rawEvents.map((j, idx) => {
       const { time, timestamp, elapsed_ms, event_sequence, _seq, _epoch, id, RawJSON, run_id, idx: _, ...rest } = j;
       if (activeMode === "sip") {
         const sipInfo = getSipMessageInfo(j.param || "");
@@ -165,7 +170,8 @@ export function initCompareWindow(deps) {
         const seq = idx + 1;
         const arrowKey = getSipDiffKey(j.param || "") || structuralSkeleton(raw);
         const compare = arrowKey;
-        const display = generateSipLadderHTML(j, seq);
+        const meta = sipMetas[idx] || {};
+        const display = generateSipLadderHTML(j, seq, meta);
         return {
           compare,
           contentCompare: structuralSkeleton(raw),
@@ -343,14 +349,16 @@ export function initCompareWindow(deps) {
     lastRunsJSON = currentJSON;
 
     const prevValues = selects.map((s) => s.value);
+    const runs = [...(items || [])].sort((a, b) => a.id - b.id);
     selects.forEach((sel) => {
       sel.innerHTML = '<option value="">(select run)</option>';
-      (items || []).forEach((r) => {
+      runs.forEach((r) => {
         const opt = document.createElement("option");
         opt.value = String(r.id);
         const ts = r.created_at ? new Date(r.created_at).toLocaleString() : "";
         const fileLabel = r.testfile_name ? `${r.testfile_name} / ` : "";
         opt.textContent = `${fileLabel}#${r.id} run ${r.run_number} [${r.status}] ${ts}`;
+        if (r.failure_reason) opt.title = `Reason: ${r.failure_reason}`;
         sel.appendChild(opt);
       });
     });
@@ -475,23 +483,56 @@ export function initCompareWindow(deps) {
     return info;
   };
 
-  const refreshList = () => {
-    const { name, project } = getEffectiveTestfileAndProject();
-    let url = "/api/testruns";
-    if (name && name !== "all") {
-      url += `?name=${encodeURIComponent(name)}&project=${encodeURIComponent(project)}`;
+  let needsRefresh = false;
+  let refreshTimer = null;
+  let activeFetchController = null;
+
+  const isCompareVisible = () => {
+    return document.getElementById("bottom-row")?.getAttribute("data-bottom-mode") === "compare";
+  };
+
+  const refreshList = (force = false) => {
+    if (!force && !isCompareVisible()) {
+      needsRefresh = true;
+      return;
     }
-    fetch(url)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.status === "finished") populateSelects(j.items || []);
-      });
+    needsRefresh = false;
+
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
+
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      const { name, project } = getEffectiveTestfileAndProject();
+      if (!name || name === "all") return;
+
+      if (activeFetchController) {
+        activeFetchController.abort();
+      }
+      activeFetchController = new AbortController();
+
+      const url = `/api/testruns?name=${encodeURIComponent(name)}&project=${encodeURIComponent(project)}`;
+      fetch(url, { signal: activeFetchController.signal })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j.status === "finished") populateSelects(j.items || []);
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            // ignore network errors
+          }
+        })
+        .finally(() => {
+          activeFetchController = null;
+        });
+    }, 50);
   };
 
   if (deleteSelectedBtn) {
     deleteSelectedBtn.onclick = () => {
       const ids = [...new Set([selectA?.value, selectB?.value].filter(Boolean))];
-      if (!ids.length || !confirm("Delete selected run(s)?")) return;
+      if (!ids.length || !confirm("Delete selected run(s)? (Running tests will be kept)")) return;
       Promise.all(
         ids.map((id) =>
           fetch(`/api/testrun?id=${id}`, { method: "DELETE" }).then((r) =>
@@ -502,7 +543,7 @@ export function initCompareWindow(deps) {
         results.forEach(
           (j) => j.status !== "finished" && alert(`Error: ${j.message}`),
         );
-        refreshList();
+        refreshList(true);
       });
     };
   }
@@ -510,7 +551,7 @@ export function initCompareWindow(deps) {
   if (deleteAllBtn) {
     deleteAllBtn.onclick = () => {
       const { name, project } = getEffectiveTestfileAndProject();
-      if (!name || !confirm(`Delete ALL runs for "${name}"?`)) return;
+      if (!name || !confirm(`Delete all finished runs for "${name}"? (Running tests will not be deleted)`)) return;
       fetch(
         `/api/testruns?name=${encodeURIComponent(name)}&project=${encodeURIComponent(project)}`,
         { method: "DELETE" },
@@ -518,7 +559,7 @@ export function initCompareWindow(deps) {
         .then((r) => r.json())
         .then((j) => {
           if (j.status !== "finished") alert(`Error: ${j.message}`);
-          refreshList();
+          refreshList(true);
         });
     };
   }
@@ -529,24 +570,23 @@ export function initCompareWindow(deps) {
     refreshList();
   });
 
-  EventBus.on("ws:open", refreshList);
-  EventBus.on("compare:opened", refreshList);
+  EventBus.on("compare:opened", () => {
+    const { name, project } = getEffectiveTestfileAndProject();
+    currentTestfile = name;
+    currentProject = project || "";
+    refreshList(true);
+  });
 
   EventBus.on("ws:message", (j) => {
-    if (
-      (j.token === "testfile" && (j.status === "finished" || j.status === "running")) ||
-      (j.token === "runner")
-    ) {
-      refreshList();
-      return;
-    }
     if (j.token !== "testruns") return;
-    if (["save", "list", "delete"].includes(j.action)) {
+    if (["save", "start", "list", "delete"].includes(j.action)) {
       const { name, project } = getEffectiveTestfileAndProject();
+      const eventFile = j.testfile || j.file;
+      const eventProject = j.project;
       if (
         !name ||
         name === "all" ||
-        (j.testfile === name && j.project === project)
+        (eventFile === name && (!eventProject || eventProject === project))
       ) {
         refreshList();
       }
@@ -554,7 +594,7 @@ export function initCompareWindow(deps) {
         if (j.id !== undefined) {
           if (String(selectA?.value) === String(j.id)) clearSide("a");
           if (String(selectB?.value) === String(j.id)) clearSide("b");
-        } else if (j.testfile === name && j.project === project) {
+        } else if (eventFile === name && (!eventProject || eventProject === project)) {
           clearSide("a");
           clearSide("b");
         }

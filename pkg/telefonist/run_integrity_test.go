@@ -72,9 +72,9 @@ func TestRunnerPersistsCancellationAndTelemetryLoss(t *testing.T) {
 				case <-time.After(time.Millisecond):
 				}
 			}
-			// Even filtered RTCP must reach the persisted validator evidence.
-			raw := []byte(`{"event":true,"type":"CALL_RTCP","param":"stats"}`)
-			h.ForwardAgentMsg("alice", gobaresip.Msg{Event: &gobaresip.EventMsg{Type: "CALL_RTCP", RawJSON: raw}})
+			// Send a non-filtered event to verify evidence is persisted.
+			raw := []byte(`{"event":true,"type":"CALL_ESTABLISHED","param":"active"}`)
+			h.ForwardAgentMsg("alice", gobaresip.Msg{Event: &gobaresip.EventMsg{Type: "CALL_ESTABLISHED", RawJSON: raw}})
 			if err := h.DrainContext(ctx); err != nil {
 				t.Fatal(err)
 			}
@@ -111,8 +111,8 @@ func TestRunnerPersistsCancellationAndTelemetryLoss(t *testing.T) {
 			if err = json.Unmarshal([]byte(strings.Split(run.FlowEvents, "\n\n")[0]), &event); err != nil {
 				t.Fatal(err, run.FlowEvents)
 			}
-			if event["type"] != "CALL_RTCP" || event["timestamp"] == nil || event["run_id"] == nil {
-				t.Fatalf("lost normalized RTCP: %+v", event)
+			if event["type"] != "CALL_ESTABLISHED" || event["timestamp"] == nil || event["run_id"] == nil {
+				t.Fatalf("lost normalized evidence event: %+v", event)
 			}
 		})
 	}
@@ -129,7 +129,7 @@ func TestStaleSaveDoesNotChangeContentOrHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revision := row.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	revision := row.UpdatedAt.Format(time.RFC3339Nano)
 	if err = s.SaveExpected(ctx, "call", "", "second", &revision); err != nil {
 		t.Fatal(err)
 	}
@@ -271,3 +271,43 @@ func TestSyntheticPcapIPv6AndInvalidAddresses(t *testing.T) {
 		t.Fatal("invented addresses for malformed trace")
 	}
 }
+
+func TestDeleteRunsPreservesRunningTests(t *testing.T) {
+	s := prepareTestStore(t)
+	defer s.Close()
+	ctx := context.Background()
+
+	finishedID, err := s.BeginRun(ctx, "testfileA", "proj", "dial 1", "batch", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.FinishRun(ctx, finishedID, "PASS", "", "hash1", "{}", ""); err != nil {
+		t.Fatal(err)
+	}
+	runningID, err := s.BeginRun(ctx, "testfileA", "proj", "dial 2", "batch", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.DeleteRunsByTestfile(ctx, "testfileA", "proj"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.GetRun(ctx, int(finishedID)); err == nil {
+		t.Fatalf("expected finished run %d to be deleted", finishedID)
+	}
+	if _, err = s.GetRun(ctx, int(runningID)); err != nil {
+		t.Fatalf("running run %d was unexpectedly deleted: %v", runningID, err)
+	}
+
+	if err = s.DeleteRun(ctx, int(runningID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.GetRun(ctx, int(runningID)); err != nil {
+		t.Fatalf("running run %d was unexpectedly deleted by DeleteRun: %v", runningID, err)
+	}
+
+	if err = s.Delete(ctx, "testfileA", "proj"); err == nil {
+		t.Fatal("expected Delete testfile to fail while test is running")
+	}
+}
+

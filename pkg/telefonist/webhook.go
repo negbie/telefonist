@@ -1,7 +1,6 @@
 package telefonist
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -10,36 +9,6 @@ import (
 	"time"
 )
 
-func sendResultWebhook(webhookUrl string, fileName, projectName string, actualHash, result string, runID int64) error {
-	color := "008000" // Green for PASS
-	if result != "PASS" {
-		color = "FF0000" // Red for FAIL
-	}
-
-	msg := fmt.Sprintf("--- Finished: %s [%s] --- Project: %s, Hash: %s, Run: %d",
-		fileName, result, projectName, actualHash, runID)
-
-	// Use MessageCard format for Teams styling support
-	payload := map[string]interface{}{
-		"@type":      "MessageCard",
-		"@context":   "http://schema.org/extensions",
-		"themeColor": color,
-		"summary":    fmt.Sprintf("Test Run %s: %s", fileName, result),
-		"sections": []map[string]interface{}{
-			{
-				"activityTitle": fmt.Sprintf("Test Run: **%s**", fileName),
-				"text":          strings.ReplaceAll(msg, "\n", "  \n"), // Teams uses 2 spaces for newline in Markdown
-				"markdown":      true,
-			},
-		},
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	return postWebhook(webhookUrl, string(data))
-}
 
 var webhookClient = &http.Client{
 	Timeout: 5 * time.Second,

@@ -11,10 +11,7 @@
     <link rel="stylesheet" href="/compare.css" />
     <link rel="stylesheet" href="/controls.css" />
     <link rel="stylesheet" href="/highlight.css" />
-    <link rel="stylesheet" href="/cron.css" />
-    <link rel="stylesheet" href="/accounts.css" />
     <link rel="stylesheet" href="/settings.css" />
-    <link rel="stylesheet" href="/webhooks.css" />
     <link rel="stylesheet" href="/history.css" />
     <script type="module" src="/app.js"></script>
 
@@ -87,15 +84,15 @@
 
         <div id="resizer"></div>
 
-        <div id="bottom-row" data-bottom-mode="tests">
+        <div id="bottom-row" data-bottom-mode="tests" data-settings-panel="accounts">
             <div id="test-controls" class="expanded">
                 <div class="controls-sidebar">
                     <div class="sidebar-group">
                         <button type="button" id="btn-mode-tests" class="active" title="Tests Mode">Tests</button>
                         <button type="button" id="btn-mode-compare" title="Compare Mode">Results</button>
+                        <button type="button" id="btn-mode-git" title="Git Version History">Git</button>
                         <button type="button" id="btn-mode-cron" title="Cron Mode">Schedule</button>
                         <button type="button" id="btn-mode-settings" title="Settings Mode">Settings</button>
-                        <button type="button" id="testfiles-history" title="Git Version History">Git</button>
                     </div>
                     <div class="sidebar-separator"></div>
                     <div class="sidebar-group">
@@ -133,7 +130,7 @@
                         </select>
                     </div>
 
-                    <div class="settings-nav" id="settings-nav-pane" style="display: none;">
+                    <div class="settings-nav" id="settings-nav-pane">
 
                         <ul class="settings-tree">
                             <li class="settings-tree-item active" id="settings-nav-accounts" data-target="accounts">SIP
@@ -189,16 +186,31 @@
                 </div>
             </div>
 
+            <div id="history-panel">
+                <div class="settings-subpanel-header history-header">
+                    <h2 id="history-title">Git Version History</h2>
+                    <div class="header-actions">
+                        <button type="button" id="history-restore" class="settings-btn-primary" style="display: none;" title="Restore selected version to editor">Restore Selected Version</button>
+                    </div>
+                </div>
+                <div class="history-layout">
+                    <div class="history-sidebar" id="history-versions-list">
+                    </div>
+                    <div class="history-diff-container" id="history-diff-view">
+                    </div>
+                </div>
+            </div>
+
             <div id="cron-panel">
-                <div class="cron-header">
+                <div class="settings-subpanel-header cron-header">
                     <h2>Automated Test Scheduler</h2>
                     <div>
-                        <button type="button" id="cron-refresh" title="Refresh">↻ Refresh</button>
-                        <button type="button" id="cron-new" title="New Job">+ Add Job</button>
+                        <button type="button" id="cron-refresh" class="settings-btn-secondary" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="cron-new" class="settings-btn-primary" title="New Job">+ Add Job</button>
                     </div>
                 </div>
 
-                <table class="cron-table">
+                <table class="settings-data-table cron-table">
                     <thead>
                         <tr>
                             <th>Id</th>
@@ -230,8 +242,8 @@
                             <small>e.g. "0 * * * *" (every hour), "*/5 * * * *" (every 5 mins)</small>
                         </div>
                         <div class="modal-actions">
-                            <button type="button" id="cron-save">Save</button>
-                            <button type="button" id="cron-cancel">Cancel</button>
+                            <button type="button" id="cron-save" class="btn-save">Save</button>
+                            <button type="button" id="cron-cancel" class="btn-cancel">Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -306,7 +318,7 @@
                 </div>
             </div>
 
-            <div id="webhooks-panel" style="display: none;">
+            <div id="webhooks-panel">
                 <div class="settings-subpanel-header webhooks-header">
                     <h2>Webhooks</h2>
                     <div class="header-actions">
@@ -359,12 +371,12 @@
                 </div>
             </div>
 
-            <div id="log-filter-panel" style="display: none;">
-                <div class="log-filter-header">
+            <div id="log-filter-panel">
+                <div class="settings-subpanel-header log-filter-header">
                     <h2>Log Filter</h2>
-                    <div>
-                        <button type="button" id="log-filter-refresh" title="Refresh">↻ Refresh</button>
-                        <button type="button" id="log-filter-save" title="Save filters">Save</button>
+                    <div class="header-actions">
+                        <button type="button" id="log-filter-refresh" class="settings-btn-secondary" title="Refresh">↻ Refresh</button>
+                        <button type="button" id="log-filter-save" class="settings-btn-primary" title="Save filters">Save</button>
                     </div>
                 </div>
 
@@ -377,28 +389,6 @@
                         from live views and test recordings. Event and SIP messages are not affected.
                     </small>
                     <div id="log-filter-status" class="log-filter-status"></div>
-                </div>
-            </div>
-        </div>
-
-        <div id="history-modal" class="modal">
-            <div class="modal-content"
-                style="width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
-                <h3 style="margin-top: 0; margin-bottom: 10px;">Git Version History</h3>
-                <div class="history-layout"
-                    style="display: flex; flex: 1 1 auto; overflow: hidden; gap: 15px; border: 1px solid var(--border); border-radius: var(--radius); height: 0;">
-                    <div class="history-sidebar" id="history-versions-list"
-                        style="flex: 0 0 250px; overflow-y: auto; border-right: 1px solid var(--border); background: var(--panel); padding: 5px;">
-                        <!-- version items will go here -->
-                    </div>
-                    <div class="history-diff-container" id="history-diff-view"
-                        style="flex: 1 1 auto; overflow: auto; background: #fff; padding: 10px; font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-all;">
-                        <!-- diff lines will go here -->
-                    </div>
-                </div>
-                <div class="modal-actions" style="margin-top: 15px;">
-                    <button type="button" id="history-restore" style="display: none;">Restore Selected Version</button>
-                    <button type="button" id="history-close">Close</button>
                 </div>
             </div>
         </div>

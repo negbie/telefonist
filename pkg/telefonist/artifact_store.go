@@ -93,6 +93,10 @@ func (s *TestStore) Delete(ctx context.Context, name, project string) error {
 		return err
 	}
 	defer tx.Rollback()
+	var runningCount int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM testruns WHERE testfile_name=? AND project_name=? AND status IN ('RUNNING','QUEUED')`, name, project).Scan(&runningCount); err == nil && runningCount > 0 {
+		return errors.New("cannot delete testfile while a test is running")
+	}
 	if err = queueRunArtifacts(ctx, tx, "testfile_name=? AND project_name=?", name, project); err != nil {
 		return err
 	}
@@ -204,7 +208,7 @@ func (s *TestStore) DeleteRun(ctx context.Context, id int) error {
 	if id <= 0 {
 		return errors.New("invalid run ID")
 	}
-	return s.deleteRuns(ctx, "id=?", id)
+	return s.deleteRuns(ctx, "id=? AND status NOT IN ('RUNNING','QUEUED')", id)
 }
 func (s *TestStore) DeleteRunsByTestfile(ctx context.Context, name, project string) error {
 	if err := validateTestfileName(name); err != nil {
@@ -213,7 +217,7 @@ func (s *TestStore) DeleteRunsByTestfile(ctx context.Context, name, project stri
 	if err := validateProjectName(project); err != nil {
 		return err
 	}
-	return s.deleteRuns(ctx, "testfile_name=? AND project_name=?", name, project)
+	return s.deleteRuns(ctx, "testfile_name=? AND project_name=? AND status NOT IN ('RUNNING','QUEUED')", name, project)
 }
 
 func (s *TestStore) PruneRuns(ctx context.Context, keep int) error {

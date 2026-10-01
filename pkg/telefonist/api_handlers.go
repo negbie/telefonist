@@ -212,8 +212,8 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				"name":        row.Name,
 				"project":     row.ProjectName,
 				"content_b64": base64.StdEncoding.EncodeToString([]byte(row.Content)),
-				"created_at":  row.CreatedAt.UTC().Format(time.RFC3339Nano),
-				"updated_at":  row.UpdatedAt.UTC().Format(time.RFC3339Nano),
+				"created_at":  row.CreatedAt.Format(time.RFC3339Nano),
+				"updated_at":  row.UpdatedAt.Format(time.RFC3339Nano),
 			})
 
 		case http.MethodPost:
@@ -224,7 +224,8 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				Revision *string `json:"revision"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, "invalid request", http.StatusBadRequest)
+				log.Printf("api: failed to decode save testfile request: %v", err)
+				http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 				return
 			}
 
@@ -252,7 +253,7 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				http.Error(w, err.Error(), 500)
 				return
 			}
-			jsonResponse(w, http.StatusOK, map[string]any{"status": "finished", "message": "saved", "revision": row.UpdatedAt.UTC().Format(time.RFC3339Nano)})
+			jsonResponse(w, http.StatusOK, map[string]any{"status": "finished", "message": "saved", "revision": row.UpdatedAt.Format(time.RFC3339Nano)})
 
 		case http.MethodDelete:
 			name := r.URL.Query().Get("name")
@@ -336,7 +337,7 @@ func HandleAPITestfileVersions(hub *WsHub) http.HandlerFunc {
 			for i, v := range list {
 				versions[i] = versionItem{
 					ID:         v.ID,
-					CreatedAt:  v.CreatedAt.UTC().Format(time.RFC3339Nano),
+					CreatedAt:  v.CreatedAt.Format(time.RFC3339Nano),
 					ContentB64: base64.StdEncoding.EncodeToString([]byte(v.Content)),
 				}
 			}
@@ -482,7 +483,7 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 				"batch_id":        row.BatchID,
 				"finished_at":     row.FinishedAt,
 				"flow_events_b64": base64.StdEncoding.EncodeToString([]byte(row.FlowEvents)),
-				"created_at":      row.CreatedAt.UTC().Format(time.RFC3339Nano),
+				"created_at":      row.CreatedAt.Format(time.RFC3339Nano),
 			})
 
 		case http.MethodDelete:
@@ -490,6 +491,12 @@ func HandleAPITestrun(hub *WsHub) http.HandlerFunc {
 			id, err := strconv.Atoi(idStr)
 			if err != nil {
 				http.Error(w, "invalid id", http.StatusBadRequest)
+				return
+			}
+
+			row, err := store.GetRun(ctx, id)
+			if err == nil && (row.Status == "RUNNING" || row.Status == "QUEUED") {
+				jsonResponse(w, http.StatusConflict, apiResponse{Status: "error", Message: "cannot delete a running test"})
 				return
 			}
 

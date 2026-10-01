@@ -56,7 +56,7 @@ func (s *TestStore) BeginRun(ctx context.Context, name, project, source, batch s
 		return 0, err
 	}
 	defer tx.Rollback()
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	now := time.Now().Format(time.RFC3339Nano)
 	// Inline execution of a new file creates its identity, but never overwrites
 	// an existing saved script with the editor's unsaved content.
 	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO testfiles(name,project_name,content,created_at,updated_at) VALUES(?,?,?,?,?)`, name, project, SanitizeString(source), now, now); err != nil {
@@ -74,7 +74,7 @@ func (s *TestStore) BeginRun(ctx context.Context, name, project, source, batch s
 }
 
 func (s *TestStore) FinishRun(ctx context.Context, id int64, status, reason, hash, events, script string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE testruns SET status=?,failure_reason=?,hash=?,flow_events=?,script=?,finished_at=? WHERE id=?`, status, SanitizeString(reason), hash, events, script, time.Now().UTC().Format(time.RFC3339Nano), id)
+	_, err := s.db.ExecContext(ctx, `UPDATE testruns SET status=?,failure_reason=?,hash=?,flow_events=?,script=?,finished_at=? WHERE id=?`, status, SanitizeString(reason), hash, events, script, time.Now().Format(time.RFC3339Nano), id)
 	return err
 }
 

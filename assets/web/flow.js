@@ -113,6 +113,8 @@ function getSummaryFields(j) {
 }
 
 export function createSequentialFlowRenderer(flowEl, getOptions) {
+  var searchInput = typeof document !== "undefined" ? document.getElementById("search") : null;
+
   function setDetailsOpenState(detailsEl, open) {
     if (open) detailsEl.setAttribute("open", "open");
     else detailsEl.removeAttribute("open");
@@ -124,7 +126,7 @@ export function createSequentialFlowRenderer(flowEl, getOptions) {
     peerSpan.classList.remove("pass");
     peerSpan.classList.remove("fail");
     if (text.indexOf("PASS") === 0) peerSpan.classList.add("pass");
-    else if (text.indexOf("FAIL") === 0) peerSpan.classList.add("fail");
+    else if (text.indexOf("FAIL") === 0 || text.indexOf("ERROR") === 0 || text.indexOf("ABORTED") === 0) peerSpan.classList.add("fail");
   }
 
   function addEventCard(j) {
@@ -161,7 +163,6 @@ export function createSequentialFlowRenderer(flowEl, getOptions) {
     var jsonPre = ensureElement(eventDetails, "pre", "evt-json");
     jsonPre.textContent = formatJSON(j);
 
-    var searchInput = document.getElementById("search");
     if (searchInput && searchInput.value) {
       var filter = searchInput.value.toLowerCase();
       if (!eventDetails.textContent.toLowerCase().includes(filter)) {

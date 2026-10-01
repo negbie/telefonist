@@ -1,4 +1,4 @@
-import { escapeHTML } from "./utils.js";
+import { escapeHTML, initModal } from "./utils.js";
 import { EventBus } from "./event_bus.js";
 
 export function initWebhooksManager() {
@@ -9,11 +9,12 @@ export function initWebhooksManager() {
     const modal = document.getElementById("webhooks-modal");
     const modalTitle = document.getElementById("webhooks-modal-title");
     const saveBtn = document.getElementById("webhooks-save");
-    const cancelBtn = document.getElementById("webhooks-cancel");
 
     const aliasInput = document.getElementById("webhooks-alias");
     const urlInput = document.getElementById("webhooks-url");
     const enabledInput = document.getElementById("webhooks-enabled");
+
+    const { open: openModal, close: closeModal } = initModal(modal);
 
     let items = [];
     let editingAlias = null;
@@ -52,7 +53,7 @@ export function initWebhooksManager() {
                 aliasInput.value = wh.alias;
                 urlInput.value = wh.url;
                 enabledInput.checked = wh.enabled;
-                modal.classList.add("active");
+                openModal();
             };
 
             tr.querySelector(".webhooks-del").onclick = async () => {
@@ -77,24 +78,8 @@ export function initWebhooksManager() {
         aliasInput.value = "";
         urlInput.value = "";
         enabledInput.checked = true;
-        modal.classList.add("active");
+        openModal();
     };
-
-    cancelBtn.onclick = () => {
-        modal.classList.remove("active");
-    };
-
-    modal.onclick = (e) => {
-        if (e.target === modal) modal.classList.remove("active");
-    };
-
-    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-        window.addEventListener("keydown", (e) => {
-            if (e.key === "Escape" && modal.classList.contains("active")) {
-                modal.classList.remove("active");
-            }
-        });
-    }
 
     saveBtn.onclick = async () => {
         const body = {
@@ -123,7 +108,7 @@ export function initWebhooksManager() {
             });
             if (!res.ok) throw new Error(await res.text());
 
-            modal.classList.remove("active");
+            closeModal();
             loadWebhooks();
         } catch (e) {
             alert("Failed saving webhook: " + e.message);

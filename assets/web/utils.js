@@ -104,3 +104,33 @@ export function applyOnlyTestsFilterFromCheckbox(onlyTestsEl) {
 export function applyOnlyResultsFilterFromCheckbox(onlyResultsEl) {
   setBodyToggleAttribute(onlyResultsEl, "data-only-results");
 }
+
+export function initModal(modalEl) {
+  if (!modalEl) return { open: () => {}, close: () => {} };
+  const open = () => {
+    modalEl.classList.add("active");
+    const input = modalEl.querySelector("input:not([type=hidden]):not([disabled]), select, textarea");
+    if (input) input.focus();
+  };
+  const close = () => {
+    modalEl.classList.remove("active");
+  };
+
+  modalEl.onclick = (e) => {
+    if (e.target === modalEl) close();
+  };
+
+  const cancelBtn = modalEl.querySelector(".modal-cancel, button[id$='-cancel']");
+  if (cancelBtn) cancelBtn.onclick = close;
+
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modalEl.classList.contains("active")) {
+        close();
+      }
+    });
+  }
+
+  return { open, close };
+}
+

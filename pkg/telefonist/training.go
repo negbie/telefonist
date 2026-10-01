@@ -11,11 +11,6 @@ import (
 	gobaresip "github.com/negbie/telefonist/pkg/gobaresip"
 )
 
-var (
-	rawActionMarker  = []byte(`"action":`)
-	rawCmdTypeMarker = []byte(`"type":"CMD"`)
-)
-
 // OrderIndependentHash computes a hash by summing up the xxhash of each line individually.
 // This ensures that the exact order of events doesn't change the final hash, while being
 // much more precise than counting characters.
@@ -83,16 +78,6 @@ func newTrainSession(ignoredEvents []string, acceptedEvents []string) *TrainSess
 	}
 }
 
-// Must only be called from the hub's run loop.
-func (t *TrainSession) recordEvent(e gobaresip.EventMsg) {
-	if !t.active {
-		return
-	}
-
-	t.recordEvidence(e.RawJSON)
-	t.recordHashEvent(e)
-}
-
 // Evidence may contain timestamps and run metadata; it never feeds the hash.
 func (t *TrainSession) recordEvidence(raw []byte) {
 	if !t.active {
@@ -141,20 +126,6 @@ func (t *TrainSession) recordHashEvent(e gobaresip.EventMsg) {
 	t.outputBuf.WriteString("\n\n")
 }
 
-// Must only be called from the hub's run loop.
-func (t *TrainSession) recordRaw(msg []byte) {
-	if !t.active {
-		return
-	}
-	// Raw messages (like SIP/LOG) go ONLY to fullBuf to keep hash clean.
-	// We also skip action events and command hints to keep them out of the compare view/hash.
-	if bytes.Contains(msg, rawActionMarker) || bytes.Contains(msg, rawCmdTypeMarker) {
-		return
-	}
-	t.fullBuf.Write(msg)
-	t.fullBuf.WriteString("\n\n")
-}
-
 // finish ends the training session and returns the output hash for deterministic events.
 // Must only be called from the hub's run loop.
 func (t *TrainSession) finish() (outputHash string) {
@@ -175,15 +146,6 @@ func (t *TrainSession) finish() (outputHash string) {
 // GetFullOutput returns the complete, unfiltered session log.
 func (t *TrainSession) GetFullOutput() string {
 	return t.fullBuf.String()
-}
-
-// sessionIsActive reports whether the session is non-nil and active.
-// Must only be called from the hub's run loop.
-func sessionIsActive(session *TrainSession) bool {
-	if session == nil {
-		return false
-	}
-	return session.active
 }
 
 func hashOutput(s string) string {

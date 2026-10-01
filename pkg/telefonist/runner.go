@@ -16,15 +16,21 @@ import (
 )
 
 type RunState struct {
-	Active    bool      `json:"active"`
-	BatchID   string    `json:"batch_id"`
-	RunID     int64     `json:"run_id"`
-	File      string    `json:"file"`
-	Project   string    `json:"project"`
-	Step      int       `json:"step"`
-	Total     int       `json:"total"`
-	StartedAt time.Time `json:"started_at"`
-	Message   string    `json:"message,omitempty"`
+	Active     bool      `json:"active"`
+	BatchID    string    `json:"batch_id"`
+	RunID      int64     `json:"run_id"`
+	File       string    `json:"file"`
+	Project    string    `json:"project"`
+	Step       int       `json:"step"`
+	Total      int       `json:"total"`
+	StartedAt  time.Time `json:"started_at"`
+	Message    string    `json:"message,omitempty"`
+	FileIndex  int       `json:"file_index,omitempty"`
+	FileTotal  int       `json:"file_total,omitempty"`
+	Repeat     int       `json:"repeat,omitempty"`
+	Repeats    int       `json:"repeats,omitempty"`
+	NextFile   string    `json:"next_file,omitempty"`
+	PrevResult string    `json:"prev_result,omitempty"`
 }
 
 // Runner owns execution and admission independently of WebSocket clients.
@@ -100,7 +106,15 @@ func (r *Runner) StartWithID(batch []TestfileData) (string, bool) {
 		return "", false
 	}
 	ctx, cancel := context.WithTimeout(r.h.ctx, 30*time.Minute)
-	r.state = RunState{Active: true, BatchID: id, StartedAt: time.Now()}
+	r.state = RunState{
+		Active:    true,
+		BatchID:   id,
+		StartedAt: time.Now(),
+		FileTotal: len(batch),
+	}
+	if len(batch) > 1 {
+		r.state.NextFile = batch[1].Name
+	}
 	r.cancel = cancel
 	r.done = make(chan struct{})
 	done := r.done
@@ -122,11 +136,16 @@ func (r *Runner) StartWithID(batch []TestfileData) (string, bool) {
 		}()
 		r.h.chainMu.Lock()
 		defer r.h.chainMu.Unlock()
-		for _, tf := range batch {
+		var prevResult string
+		for i, tf := range batch {
 			if ctx.Err() != nil {
 				return
 			}
-			r.runFile(ctx, tf, id)
+			var nextFile string
+			if i+1 < len(batch) {
+				nextFile = batch[i+1].Name
+			}
+			prevResult = r.runFile(ctx, tf, id, i+1, len(batch), nextFile, prevResult)
 		}
 	}()
 	return id, true
@@ -171,7 +190,7 @@ func (r *Runner) manualLoop() {
 	}
 }
 
-func (r *Runner) runFile(ctx context.Context, tf TestfileData, batch string) {
+func (r *Runner) runFile(ctx context.Context, tf TestfileData, batch string, fileIndex, fileTotal int, nextFile, prevResult string) string {
 	h := r.h
 	var accounts []SIPAccount
 	var loadErr error
@@ -196,7 +215,7 @@ func (r *Runner) runFile(ctx context.Context, tf TestfileData, batch string) {
 	}
 	for rep := 1; rep <= repeats; rep++ {
 		if ctx.Err() != nil {
-			return
+			return prevResult
 		}
 		runCtx, cancel := context.WithCancel(ctx)
 		h.setTestCancel(cancel)
@@ -212,18 +231,42 @@ func (r *Runner) runFile(ctx context.Context, tf TestfileData, batch string) {
 		if err != nil {
 			cancel()
 			broadcastInfo(h, statusJSON(map[string]string{"status": "error", "token": "testfile", "message": "cannot create durable run: " + err.Error()}))
-			return
+			return prevResult
 		}
 		h.bm.CloseAll()
 		h.bm.SetRun(id)
+
+		next := nextFile
+		if rep < repeats {
+			if repeats > 1 {
+				next = fmt.Sprintf("%s (%d/%d)", tf.Name, rep+1, repeats)
+			} else {
+				next = tf.Name
+			}
+		}
+
 		r.mu.Lock()
 		r.state.RunID = id
 		r.state.File = tf.Name
 		r.state.Project = tf.ProjectName
 		r.state.Total = len(cases)
 		r.state.Step = 0
+		r.state.FileIndex = fileIndex
+		r.state.FileTotal = fileTotal
+		r.state.Repeat = rep
+		r.state.Repeats = repeats
+		r.state.NextFile = next
+		r.state.PrevResult = prevResult
 		r.mu.Unlock()
 		r.publish()
+		broadcastInfo(h, statusJSON(map[string]string{
+			"status":   "running",
+			"token":    "testruns",
+			"action":   "save",
+			"testfile": tf.Name,
+			"project":  tf.ProjectName,
+			"id":       strconv.FormatInt(id, 10),
+		}))
 		status, reason, hash, full, script := "UNVERIFIED", "", "", "", validator
 		if parseErr != nil {
 			status, reason = "ERROR", parseErr.Error()
@@ -324,6 +367,11 @@ func (r *Runner) runFile(ctx context.Context, tf TestfileData, batch string) {
 		b, _ := json.Marshal(result)
 		broadcastInfo(h, string(b))
 		broadcastInfo(h, statusJSON(map[string]string{"status": "finished", "token": "testruns", "action": "save", "testfile": tf.Name, "project": tf.ProjectName, "id": strconv.FormatInt(id, 10)}))
+		if repeats > 1 {
+			prevResult = fmt.Sprintf("%s #%d [%s] (%d/%d)", tf.Name, id, status, rep, repeats)
+		} else {
+			prevResult = fmt.Sprintf("%s #%d [%s]", tf.Name, id, status)
+		}
 		if webhook != "" {
 			url := webhook
 			if wh, e := h.testStore.GetWebhook(context.Background(), webhook); e == nil {
@@ -335,6 +383,7 @@ func (r *Runner) runFile(ctx context.Context, tf TestfileData, batch string) {
 			enqueueResultWebhook(h.testStore, url, tf.Name, tf.ProjectName, hash, status, id)
 		}
 	}
+	return prevResult
 }
 
 func processRecordings(ctx context.Context, store *TestStore, id int64, dataDir string) error {

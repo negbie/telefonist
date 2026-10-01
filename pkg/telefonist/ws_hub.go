@@ -57,10 +57,9 @@ type WsHub struct {
 	// Inline testfile run guard (prevents queueing)
 	inlineRunActive atomic.Bool
 
-	// Cancellation for the current test run and batch
-	cancelMu    sync.Mutex
-	testCancel  context.CancelFunc
-	batchCancel context.CancelFunc
+	// Cancellation for the current test run
+	cancelMu   sync.Mutex
+	testCancel context.CancelFunc
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -182,21 +181,6 @@ func (h *WsHub) cancelTest() {
 	}
 }
 
-func (h *WsHub) setBatchCancel(cancel context.CancelFunc) {
-	h.cancelMu.Lock()
-	h.batchCancel = cancel
-	h.cancelMu.Unlock()
-}
-
-func (h *WsHub) cancelBatch() {
-	h.cancelMu.Lock()
-	cancel := h.batchCancel
-	h.batchCancel = nil
-	h.cancelMu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-}
 
 func (h *WsHub) ForwardAgentMsg(alias string, msg gobaresip.Msg) {
 	select {

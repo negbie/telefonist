@@ -113,7 +113,9 @@ func TestTrainSessionFinishEmpty(t *testing.T) {
 	}
 }
 
-func TestTrainSessionRecordEvent(t *testing.T) {
+// Tests call recordHashEvent directly — this mirrors the production path
+// in telemetry.go where recordHashEvent is the entry point for hashing.
+func TestTrainSessionRecordHashEvent(t *testing.T) {
 	session := newTrainSession(nil, nil)
 
 	event := gobaresip.EventMsg{
@@ -121,17 +123,17 @@ func TestTrainSessionRecordEvent(t *testing.T) {
 		RawJSON: []byte(`{"event":true,"type":"CALL_ESTABLISHED","id":"123","contacturi":"sip:alice@127.0.0.1:5060","param":"active"}`),
 	}
 
-	session.recordEvent(event)
+	session.recordHashEvent(event)
 
 	output := session.outputBuf.String()
 	expected := `{"event":true,"type":"CALL_ESTABLISHED",,,}` + "\n\n"
 
 	if output != expected {
-		t.Errorf("recordEvent parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
+		t.Errorf("recordHashEvent parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
 	}
 }
 
-func TestTrainSessionRecordEventCustom(t *testing.T) {
+func TestTrainSessionRecordHashEventCustom(t *testing.T) {
 	session := newTrainSession(nil, nil)
 
 	event := gobaresip.EventMsg{
@@ -139,21 +141,21 @@ func TestTrainSessionRecordEventCustom(t *testing.T) {
 		RawJSON: []byte(`{"type":"CUSTOM","id":"ad46907a900c9882_xfer-1_pbx-1","foo":"bar"}`),
 	}
 
-	session.recordEvent(event)
+	session.recordHashEvent(event)
 
 	output := session.outputBuf.String()
 	expected := `{"type":"CUSTOM",,"foo":"bar"}` + "\n\n"
 
 	if output != expected {
-		t.Errorf("recordEvent parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
+		t.Errorf("recordHashEvent parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
 	}
 }
 
-func TestTrainSessionRecordEventInactive(t *testing.T) {
+func TestTrainSessionRecordHashEventInactive(t *testing.T) {
 	session := newTrainSession(nil, nil)
 	session.active = false
 
-	session.recordEvent(gobaresip.EventMsg{Type: "CALL_ESTABLISHED"})
+	session.recordHashEvent(gobaresip.EventMsg{Type: "CALL_ESTABLISHED"})
 
 	output := session.outputBuf.String()
 	if output != "" {
@@ -161,33 +163,27 @@ func TestTrainSessionRecordEventInactive(t *testing.T) {
 	}
 }
 
-func TestTrainSessionRecordEventRTCP(t *testing.T) {
-	session := newTrainSession(nil, nil)
-	session.recordEvent(gobaresip.EventMsg{Type: "CALL_RTCP"})
+// CALL_RTCP, MODULE, NATIVE_DONE filtering is now in telemetry.go (the
+// production dispatcher), so we test it via handleAgentMsg in
+// TestHubPreservesLegacyHashBeforeEnrichment above.
 
-	output := session.outputBuf.String()
-	if output != "" {
-		t.Errorf("RTCP event should not be recorded, got %q", output)
-	}
-}
-
-func TestTrainSessionRecordEventIgnored(t *testing.T) {
+func TestTrainSessionRecordHashEventIgnored(t *testing.T) {
 	session := newTrainSession([]string{"CALL_RESUME", "CALL_Hold"}, nil)
 
 	// Should record CALL_ESTABLISHED
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "CALL_ESTABLISHED",
 		RawJSON: []byte(`{"event":true,"type":"CALL_ESTABLISHED","id":"123","contacturi":"sip:alice@127.0.0.1:5060","param":"active"}`),
 	})
 
 	// Should NOT record CALL_RESUME
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "CALL_RESUME",
 		RawJSON: []byte(`{"event":true,"type":"CALL_RESUME","id":"456","contacturi":"sip:alice@127.0.0.1:5060","param":"active"}`),
 	})
 
 	// Should NOT record CALL_Hold (case insensitive ideally, but we passed exactly that)
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "cAlL_hOlD",
 		RawJSON: []byte(`{"event":true,"type":"cAlL_hOlD","id":"789","contacturi":"sip:alice@127.0.0.1:5060","param":"active"}`),
 	})
@@ -200,23 +196,23 @@ func TestTrainSessionRecordEventIgnored(t *testing.T) {
 	}
 }
 
-func TestTrainSessionRecordEventAccepted(t *testing.T) {
+func TestTrainSessionRecordHashEventAccepted(t *testing.T) {
 	session := newTrainSession(nil, []string{"CALL_ESTABLISHED", "CALL_HOLD"})
 
 	// Should record CALL_ESTABLISHED
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "CALL_ESTABLISHED",
 		RawJSON: []byte(`{"event":true,"type":"CALL_ESTABLISHED","id":"123","contacturi":"sip:alice@127.0.0.1:5060","param":"active"}`),
 	})
 
 	// Should NOT record CALL_MENC
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "CALL_MENC",
 		RawJSON: []byte(`{"event":true,"type":"CALL_MENC","id":"456","contacturi":"sip:alice@127.0.0.1:5060","param":"active"}`),
 	})
 
 	// Should record CALL_HOLD (case insensitive)
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "call_hold",
 		RawJSON: []byte(`{"event":true,"type":"call_hold","id":"789","contacturi":"sip:alice@127.0.0.1:5060","param":"active"}`),
 	})
@@ -230,10 +226,10 @@ func TestTrainSessionRecordEventAccepted(t *testing.T) {
 	}
 }
 
-func TestTrainSessionRecordEventRegisterFail(t *testing.T) {
+func TestTrainSessionRecordHashEventRegisterFail(t *testing.T) {
 	session := newTrainSession(nil, nil)
 
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "REGISTER_FAIL",
 		RawJSON: []byte(`{"event":true,"type":"REGISTER_FAIL","id":"123"}`),
 	})
@@ -243,12 +239,16 @@ func TestTrainSessionRecordEventRegisterFail(t *testing.T) {
 	}
 }
 
-func TestTrainSessionRecordEventExcludedTypes(t *testing.T) {
+func TestTrainSessionRecordHashEventExcludedTypes(t *testing.T) {
 	session := newTrainSession(nil, nil)
 
-	excludedTypes := []string{"SHUTDOWN", "UNREGISTERING", "EXIT", "CALL_RTCP", "SIP", "LOG"}
+	// These types are excluded from the hash by recordHashEvent.
+	// CALL_RTCP, MODULE, NATIVE_DONE are filtered earlier in telemetry.go
+	// and never reach recordHashEvent in production.
+	excludedTypes := []string{"SHUTDOWN", "UNREGISTERING", "EXIT", "SIP", "LOG"}
 	for _, et := range excludedTypes {
-		session.recordEvent(gobaresip.EventMsg{
+		session.recordEvidence([]byte(`{"event":true,"type":"` + et + `","id":"123"}`))
+		session.recordHashEvent(gobaresip.EventMsg{
 			Type:    et,
 			RawJSON: []byte(`{"event":true,"type":"` + et + `","id":"123"}`),
 		})
@@ -268,10 +268,10 @@ func TestTrainSessionRecordEventExcludedTypes(t *testing.T) {
 	}
 }
 
-func TestTrainSessionRecordEventContacturiAndParam(t *testing.T) {
+func TestTrainSessionRecordHashEventContacturiAndParam(t *testing.T) {
 	session := newTrainSession(nil, nil)
 
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "CALL_CLOSED",
 		RawJSON: []byte(`{"event":true,"type":"CALL_CLOSED","id":"abc","contacturi":"sip:alice@127.0.0.1:5060","param":"Connection reset"}`),
 	})
@@ -280,53 +280,53 @@ func TestTrainSessionRecordEventContacturiAndParam(t *testing.T) {
 	expected := `{"event":true,"type":"CALL_CLOSED",,,}` + "\n\n"
 
 	if output != expected {
-		t.Errorf("recordEvent parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
+		t.Errorf("recordHashEvent parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
 	}
 }
 
-func TestTrainSessionRecordEventAudioReportAndPresence(t *testing.T) {
+func TestTrainSessionRecordHashEventAudioReportAndPresence(t *testing.T) {
 	session := newTrainSession(nil, nil)
 
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "AUDIO_REPORT",
 		RawJSON: []byte(`{"event":true,"type":"AUDIO_REPORT","id":"123","contacturi":"sip:alice@127.0.0.1","param":"peeruri=sip:bob@biloxi.com;tx=true;"}`),
 	})
-	session.recordEvent(gobaresip.EventMsg{
+	session.recordHashEvent(gobaresip.EventMsg{
 		Type:    "PRESENCE",
 		RawJSON: []byte(`{"event":true,"type":"PRESENCE","id":"456","param":"firststate=open;"}`),
 	})
 
 	output := session.outputBuf.String()
-	expected := `{"event":true,"type":"AUDIO_REPORT",,,"param":"peeruri=sip:bob@biloxi.com;tx=true;"}` + "\n\n" +
+	expected := `{"event":true,"type":"AUDIO_REPORT",,,` + `"param":"peeruri=sip:bob@biloxi.com;tx=true;"}` + "\n\n" +
 		`{"event":true,"type":"PRESENCE",,"param":"firststate=open;"}` + "\n\n"
 
 	if output != expected {
-		t.Errorf("recordEvent for AUDIO_REPORT and PRESENCE parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
+		t.Errorf("recordHashEvent for AUDIO_REPORT and PRESENCE parsed incorrectly.\nExpected:\n%q\nGot:\n%q", expected, output)
 	}
 }
 
 func TestTrainSessionFinishDeterministicHash(t *testing.T) {
 	// Two runs with different dynamic contacturi, param, id, plus lifecycle events should produce identical hash
 	s1 := newTrainSession(nil, nil)
-	s1.recordEvent(gobaresip.EventMsg{
+	s1.recordHashEvent(gobaresip.EventMsg{
 		Type:    "CALL_CLOSED",
 		RawJSON: []byte(`{"event":true,"type":"CALL_CLOSED","id":"id1","contacturi":"sip:alice@10.0.0.1:1234","param":"normal"}`),
 	})
-	s1.recordEvent(gobaresip.EventMsg{
+	s1.recordHashEvent(gobaresip.EventMsg{
 		Type:    "SHUTDOWN",
 		RawJSON: []byte(`{"event":true,"type":"SHUTDOWN","id":"id2"}`),
 	})
 
 	s2 := newTrainSession(nil, nil)
-	s2.recordEvent(gobaresip.EventMsg{
+	s2.recordHashEvent(gobaresip.EventMsg{
 		Type:    "CALL_CLOSED",
 		RawJSON: []byte(`{"event":true,"type":"CALL_CLOSED","id":"id3","contacturi":"sip:alice@10.0.0.2:5678","param":"other"}`),
 	})
-	s2.recordEvent(gobaresip.EventMsg{
+	s2.recordHashEvent(gobaresip.EventMsg{
 		Type:    "UNREGISTERING",
 		RawJSON: []byte(`{"event":true,"type":"UNREGISTERING","id":"id4"}`),
 	})
-	s2.recordEvent(gobaresip.EventMsg{
+	s2.recordHashEvent(gobaresip.EventMsg{
 		Type:    "EXIT",
 		RawJSON: []byte(`{"event":true,"type":"EXIT","id":"id5"}`),
 	})
@@ -341,9 +341,9 @@ func TestTrainSessionFinishDeterministicHash(t *testing.T) {
 func TestTrainSessionFinishDifferentiatesAudioReportAndPresence(t *testing.T) {
 	// Different param in AUDIO_REPORT must produce different hashes
 	sAR1 := newTrainSession(nil, nil)
-	sAR1.recordEvent(gobaresip.EventMsg{Type: "AUDIO_REPORT", RawJSON: []byte(`{"event":true,"type":"AUDIO_REPORT","param":"tx=true;"}`)})
+	sAR1.recordHashEvent(gobaresip.EventMsg{Type: "AUDIO_REPORT", RawJSON: []byte(`{"event":true,"type":"AUDIO_REPORT","param":"tx=true;"}`)})
 	sAR2 := newTrainSession(nil, nil)
-	sAR2.recordEvent(gobaresip.EventMsg{Type: "AUDIO_REPORT", RawJSON: []byte(`{"event":true,"type":"AUDIO_REPORT","param":"tx=false;"}`)})
+	sAR2.recordHashEvent(gobaresip.EventMsg{Type: "AUDIO_REPORT", RawJSON: []byte(`{"event":true,"type":"AUDIO_REPORT","param":"tx=false;"}`)})
 
 	if sAR1.finish() == sAR2.finish() {
 		t.Errorf("AUDIO_REPORT with different param should produce different hashes")
@@ -351,9 +351,9 @@ func TestTrainSessionFinishDifferentiatesAudioReportAndPresence(t *testing.T) {
 
 	// Different param in PRESENCE must produce different hashes
 	sPres1 := newTrainSession(nil, nil)
-	sPres1.recordEvent(gobaresip.EventMsg{Type: "PRESENCE", RawJSON: []byte(`{"event":true,"type":"PRESENCE","param":"firststate=open;"}`)})
+	sPres1.recordHashEvent(gobaresip.EventMsg{Type: "PRESENCE", RawJSON: []byte(`{"event":true,"type":"PRESENCE","param":"firststate=open;"}`)})
 	sPres2 := newTrainSession(nil, nil)
-	sPres2.recordEvent(gobaresip.EventMsg{Type: "PRESENCE", RawJSON: []byte(`{"event":true,"type":"PRESENCE","param":"firststate=closed;"}`)})
+	sPres2.recordHashEvent(gobaresip.EventMsg{Type: "PRESENCE", RawJSON: []byte(`{"event":true,"type":"PRESENCE","param":"firststate=closed;"}`)})
 
 	if sPres1.finish() == sPres2.finish() {
 		t.Errorf("PRESENCE with different param should produce different hashes")

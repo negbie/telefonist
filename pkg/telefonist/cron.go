@@ -33,7 +33,7 @@ func NewCronManager(hub *WsHub, store *TestStore) *CronManager {
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
 	cm := &CronManager{
-		c:         cron.New(cron.WithParser(parser), cron.WithLocation(time.UTC)),
+		c:         cron.New(cron.WithParser(parser), cron.WithLocation(time.Local)),
 		hub:       hub,
 		testStore: store,
 		entryIDs:  make(map[int]cron.EntryID),

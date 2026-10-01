@@ -2,7 +2,6 @@ package telefonist
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -29,19 +28,9 @@ func SetupLogging(dataDir string) (*os.File, error) {
 	}
 
 	log.SetOutput(f)
-	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC | log.Lshortfile)
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
 	log.Printf("logging initialized: %s", logPath)
 
 	return f, nil
 }
 
-func CloseLogging(f *os.File) {
-	if f == nil {
-		return
-	}
-	if err := f.Close(); err != nil {
-		log.SetOutput(io.Discard)
-		return
-	}
-	log.SetOutput(io.Discard)
-}

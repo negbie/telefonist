@@ -25,7 +25,34 @@ package gobaresip
 #include <libbaresip/rem/include/rem.h>
 #include <libbaresip/baresip/include/baresip.h>
 
+// tmr_quit ensures that agent shutdown does not hang indefinitely when remote endpoints
+// fail to complete SIP transactions (e.g. un-ACKed 2xx re-INVITEs keeping RFC 3261 Timer H
+// active for 32 seconds). When teardown begins (BEVENT_SHUTDOWN or signal), this timer guarantees
+// that re_cancel() is triggered after 2.5s so baresip mainLoop returns to Go, allowing
+// nativeComplete to close, telemetry to flush, and NATIVE_DONE to reach the Master before the
+// master's 5s SIGKILL timeout.
 static struct tmr tmr_quit;
+
+static void tmr_quit_handler(void *arg)
+{
+	(void)arg;
+	info("ua stop timeout (2.5s) -- forcing exit to complete telemetry flush\n");
+	ua_stop_all(true);
+	re_cancel();
+}
+
+static void my_bevent_handler(enum bevent_ev ev, struct bevent *event, void *arg)
+{
+	(void)event;
+	(void)arg;
+
+	// When any UA enters teardown (via /quit, ua_stop_all, or uadelall), arm the shutdown timer.
+	if (ev == BEVENT_SHUTDOWN) {
+		if (!tmr_isrunning(&tmr_quit)) {
+			tmr_start(&tmr_quit, 2500, tmr_quit_handler, NULL);
+		}
+	}
+}
 
 static void signal_handler(int sig)
 {
@@ -41,6 +68,10 @@ static void signal_handler(int sig)
 
 	info("terminated by signal %d\n", sig);
 
+	if (!tmr_isrunning(&tmr_quit)) {
+		tmr_start(&tmr_quit, 2500, tmr_quit_handler, NULL);
+	}
+
 	ua_stop_all(false);
 }
 
@@ -49,6 +80,8 @@ static void ua_exit_handler(void *arg)
 	(void)arg;
 	debug("ua exited -- stopping main runloop\n");
 
+	tmr_cancel(&tmr_quit);
+
 	//The main run-loop can be stopped now
 	re_cancel();
 }
@@ -56,10 +89,12 @@ static void ua_exit_handler(void *arg)
 static inline void set_ua_exit_handler()
 {
 	uag_set_exit_handler(ua_exit_handler, NULL);
+	bevent_register(my_bevent_handler, NULL);
 }
 
 static inline void cancelQuitTimer(){
 	tmr_cancel(&tmr_quit);
+	bevent_unregister(my_bevent_handler);
 }
 
 static void my_dbg_handler(int level, const char *p, size_t len, void *arg)

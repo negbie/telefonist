@@ -36,23 +36,6 @@ func normalizeLogFilters(filters []string) []string {
 	return out
 }
 
-func logMessageMatchesFilters(message string, filters []string) bool {
-	if message == "" || len(filters) == 0 {
-		return false
-	}
-
-	message = strings.ToLower(message)
-	for _, filter := range filters {
-		filter = strings.TrimSpace(filter)
-		if filter == "" {
-			continue
-		}
-		if strings.Contains(message, strings.ToLower(filter)) {
-			return true
-		}
-	}
-	return false
-}
 
 func (h *WsHub) SetLogFilters(filters []string) {
 	if h == nil {

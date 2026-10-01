@@ -1,4 +1,4 @@
-import { escapeHTML } from "./utils.js";
+import { escapeHTML, initModal } from "./utils.js";
 import { EventBus } from "./event_bus.js";
 import { API } from "./api.js";
 
@@ -9,7 +9,7 @@ export function initCronManager() {
 
     const modal = document.getElementById("cron-modal");
     const saveBtn = document.getElementById("cron-save");
-    const cancelBtn = document.getElementById("cron-cancel");
+    const { open: openModal, close: closeModal } = initModal(modal);
     
     const projectSelect = document.getElementById("cron-project-select");
     const testfileSelect = document.getElementById("cron-testfile-select");
@@ -70,8 +70,8 @@ export function initCronManager() {
                 <td>
                     <input type="checkbox" id="${toggleId}" ${j.active ? 'checked' : ''}>
                 </td>
-                <td>
-                    <button type="button" class="cron-del" data-id="${j.id}">Delete</button>
+                <td class="col-actions">
+                    <button type="button" class="btn-action-del cron-del" data-id="${j.id}">Delete</button>
                 </td>
             `;
             listEl.appendChild(tr);
@@ -104,24 +104,8 @@ export function initCronManager() {
     
     newBtn.onclick = async () => {
         await loadProjectsAndFiles();
-        modal.classList.add("active");
+        openModal();
     };
-
-    cancelBtn.onclick = () => {
-        modal.classList.remove("active");
-    };
-
-    modal.onclick = (e) => {
-        if (e.target === modal) modal.classList.remove("active");
-    };
-
-    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-        window.addEventListener("keydown", (e) => {
-            if (e.key === "Escape" && modal.classList.contains("active")) {
-                modal.classList.remove("active");
-            }
-        });
-    }
 
     saveBtn.onclick = async () => {
         const body = {
@@ -142,7 +126,7 @@ export function initCronManager() {
             });
             if (!res.ok) throw new Error(await res.text());
             
-            modal.classList.remove("active");
+            closeModal();
             loadJobs();
         } catch (e) {
             alert("Failed saving cron job: " + e.message);

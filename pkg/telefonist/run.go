@@ -78,7 +78,6 @@ func newHTTPHandler(f AppFlags, hub *WsHub) http.Handler {
 	mux.HandleFunc("/api/maintenance", AuthMiddleware(HandleAPIDatabaseMaintenance(hub.testStore)))
 	mux.HandleFunc("/api/project/run", HandleAPIProjectRun(hub, f.UIAPIKey))
 	mux.HandleFunc("/api/runner", AuthMiddleware(HandleRunner(hub)))
-	mux.HandleFunc("/api/operations", AuthMiddleware(HandleOperations(hub)))
 	mux.HandleFunc("/api/batch", APIKeyOrSession(f.UIAPIKey, HandleBatch(hub)))
 	mux.HandleFunc("/api/batch/junit", APIKeyOrSession(f.UIAPIKey, HandleBatchJUnit(hub)))
 	mux.HandleFunc("/api/cron", AuthMiddleware(HandleAPICronJobs(hub)))

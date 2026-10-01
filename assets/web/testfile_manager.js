@@ -34,7 +34,7 @@ export function initTestfileManager(deps) {
 
   const state = createStateManager();
   window.addEventListener("beforeunload", event => {
-    if(state.getKeys().some(state.isDirty)) {event.preventDefault();event.returnValue="";}
+    if (state.getKeys().some(state.isDirty)) { event.preventDefault(); event.returnValue = ""; }
   });
   const api = API;
 
@@ -103,22 +103,27 @@ export function initTestfileManager(deps) {
 
   // --- Actions ---
   function reportError(error) {
-    alert("Request failed: " + error.message + ". Your unsaved edits have been kept.");
+    alert("Request failed: " + error.message);
   }
 
-  const runAction = (promptMsg, apiCall, refresh = true, overrides = {}) => {
-    let name = window.prompt(promptMsg.msg, promptMsg.initial);
-    if (!name || (promptMsg.sanitize && !(name = sanitizeTestfileName(name)))) return;
-    apiCall(name).then((j) => {
-      if (j.status !== "finished") alert("Error: " + j.message);
-      else if (refresh) requestLists(typeof overrides === "function" ? overrides(name) : overrides);
-    }).catch(reportError);
-  };
+  async function promptAction({ prompt, initial = "", sanitize = false }, fn) {
+    let name = window.prompt(prompt, initial);
+    if (!name) return;
+    name = sanitize ? sanitizeTestfileName(name) : safeText(name).trim();
+    if (!name) return;
+    try {
+      const res = await fn(name);
+      if (res && res.status !== "finished") alert("Error: " + res.message);
+      else await requestLists();
+    } catch (err) {
+      reportError(err);
+    }
+  }
 
   function handleNew() {
     const project = projectSelectEl?.value;
     if (!project) return alert("Please select a project first.");
-    runAction({ msg: "Enter name for new testfile:", sanitize: true }, (name) => {
+    promptAction({ prompt: "Enter name for new testfile:", sanitize: true }, async (name) => {
       const key = `${project}:${name}`;
       state.updateCache(key, { name, project, original: "", current: "" });
       setActiveKey(key);
@@ -127,16 +132,19 @@ export function initTestfileManager(deps) {
     });
   }
 
-  async function handleSave() {
+  async function handleSave(forceRevision = null) {
+    if (typeof forceRevision !== "string") {
+      forceRevision = null;
+    }
     const savedKey = activeKey;
     const entry = activeKey && state.getEntry(activeKey);
     if (!entry || !testfileInputEl) return;
     const content = safeText(testfileInputEl.value || "");
     try {
-      let revision = entry.revision;
+      let revision = forceRevision || entry.revision;
       if (revision === undefined) {
         const stored = await api.getTestfile(entry.name, entry.project);
-        if (stored.status !== "finished" || base64DecodeUTF8(stored.content_b64).replace(/\r/g,"") !== entry.original.replace(/\r/g,""))
+        if (stored.status !== "finished" || base64DecodeUTF8(stored.content_b64).replace(/\r/g, "") !== entry.original.replace(/\r/g, ""))
           throw new Error("The server version differs from this draft; reload and merge before saving");
         revision = stored.updated_at;
       }
@@ -146,47 +154,88 @@ export function initTestfileManager(deps) {
         updateEnabledStates();
         updateCurrentOptionLabel();
       } else alert("Error: " + j.message);
-    } catch(error) { reportError(error); }
+    } catch (error) {
+      const msg = error && error.message ? error.message : "";
+      if (msg.includes("file changed on server") || msg.includes("The server version differs")) {
+        if (confirm("Conflict: The file changed on the server.\n\nDo you want to OVERWRITE the server version with your current edits?")) {
+          try {
+            const j = await api.saveTestfile(entry.name, entry.project, base64EncodeUTF8(content), null);
+            if (j.status === "finished") {
+              state.updateCache(savedKey, { original: content, revision: j.revision });
+              updateEnabledStates();
+              updateCurrentOptionLabel();
+              return;
+            } else {
+              alert("Error: " + j.message);
+              return;
+            }
+          } catch (fetchErr) {
+            reportError(fetchErr);
+            return;
+          }
+        } else if (confirm("Do you want to DISCARD your local edits and reload the server version?")) {
+          try {
+            const stored = await api.getTestfile(entry.name, entry.project);
+            if (stored && stored.content_b64) {
+              const serverContent = base64DecodeUTF8(stored.content_b64).replace(/\r/g, "");
+              state.updateCache(savedKey, { original: serverContent, current: serverContent, revision: stored.updated_at });
+              testfileInputEl.value = serverContent;
+              updateHighlights();
+              updateEnabledStates();
+              updateCurrentOptionLabel();
+            }
+          } catch (fetchErr) {
+            reportError(fetchErr);
+          }
+          return;
+        }
+      }
+      reportError(error);
+    }
   }
 
   function handleRename() {
     const key = getSelectedKeys()[0], entry = key && state.getEntry(key);
     if (!entry) return;
-    runAction({ msg: `New name for "${entry.name}":`, initial: entry.name, sanitize: true }, (newName) =>
-      api.renameTestfile(entry.name, entry.project, newName, entry.project).then(j => {
-        if (j.status === "finished") {
-          const newKey = `${entry.project}:${newName}`;
-          state.updateCache(newKey, { ...entry, name: newName });
-          state.deleteEntry(key);
-          setActiveKey(newKey);
-        }
-        return j;
-      })
-    );
+    promptAction({ prompt: `New name for "${entry.name}":`, initial: entry.name, sanitize: true }, async (newName) => {
+      if (newName === entry.name) return;
+      const j = await api.renameTestfile(entry.name, entry.project, newName, entry.project);
+      if (j.status === "finished") {
+        const newKey = `${entry.project}:${newName}`;
+        state.updateCache(newKey, { ...entry, name: newName });
+        state.deleteEntry(key);
+        setActiveKey(newKey);
+      }
+      return j;
+    });
   }
 
   function handleClone() {
     const key = getSelectedKeys()[0], entry = key && state.getEntry(key);
     if (!entry) return;
-    runAction({ msg: `Clone "${entry.name}" as:`, initial: entry.name + "_copy", sanitize: true }, (newName) =>
-      api.cloneTestfile(entry.project, entry.name, newName).then(j => {
-        if (j.status === "finished") {
-          const newKey = `${entry.project}:${newName}`;
-          state.updateCache(newKey, { name: newName, project: entry.project, original: entry.original, current: entry.current });
-          setActiveKey(newKey);
-        }
-        return j;
-      })
-    );
+    promptAction({ prompt: `Clone "${entry.name}" as:`, initial: entry.name + "_copy", sanitize: true }, async (newName) => {
+      const j = await api.cloneTestfile(entry.project, entry.name, newName);
+      if (j.status === "finished") {
+        const newKey = `${entry.project}:${newName}`;
+        state.updateCache(newKey, { ...entry, name: newName, original: entry.original, current: entry.current });
+        setActiveKey(newKey);
+      }
+      return j;
+    });
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     const keys = getSelectedKeys();
     if (!keys.length || !confirm(`Delete ${keys.length} selected testfile(s)?`)) return;
-    Promise.all(keys.map(k => api.deleteTestfile(state.getEntry(k).name, state.getEntry(k).project).then(j => {
-      if (j.status === "finished") state.deleteEntry(k);
-      return j;
-    }))).then(() => { setActiveKey(""); if (testfileInputEl) testfileInputEl.value = ""; requestLists(); });
+    try {
+      await Promise.all(keys.map(k => {
+        const e = state.getEntry(k);
+        return e ? api.deleteTestfile(e.name, e.project).then(j => { if (j.status === "finished") state.deleteEntry(k); }) : null;
+      }));
+      setActiveKey("");
+      if (testfileInputEl) { testfileInputEl.value = ""; updateHighlights(); }
+      await requestLists();
+    } catch (err) { reportError(err); }
   }
 
   function handleRun() {
@@ -208,36 +257,84 @@ export function initTestfileManager(deps) {
 
   function handleStop() { wsIsOpen() && socket.send("test_stop"); }
 
+  const handleNewProject = () =>
+    promptAction({ prompt: "New project name:" }, name => api.createProject(name).then(() => requestLists({ project: name })));
+
+  const handleRenameProject = () => {
+    const old = projectSelectEl?.value;
+    if (!old) return alert("Please select a project first.");
+    promptAction({ prompt: `Rename "${old}" to:`, initial: old }, name => api.renameProject(old, name).then(() => requestLists({ project: name })));
+  };
+
+  const handleCloneProject = () => {
+    const src = projectSelectEl?.value;
+    if (!src) return alert("Please select a project first.");
+    promptAction({ prompt: `Clone "${src}" as:`, initial: src + "_copy" }, name => api.cloneProject(src, name).then(() => requestLists({ project: name })));
+  };
+
+  const handleDeleteProject = async () => {
+    const name = projectSelectEl?.value;
+    if (!name) return alert("Please select a project first.");
+    if (confirm(`Delete project "${name}"?`)) {
+      try {
+        await api.deleteProject(name);
+        await requestLists();
+      } catch (err) { reportError(err); }
+    }
+  };
+
   // --- DOM Listeners ---
 
   if (testfilesNewEl) testfilesNewEl.onclick = handleNew;
-  if (testfilesSaveEl) testfilesSaveEl.onclick = handleSave;
+  if (testfilesSaveEl) testfilesSaveEl.onclick = () => handleSave();
   if (testfilesRenameEl) testfilesRenameEl.onclick = handleRename;
   if (testfilesCloneEl) testfilesCloneEl.onclick = handleClone;
   if (testfilesDeleteEl) testfilesDeleteEl.onclick = handleDelete;
   if (testfilesRunEl) testfilesRunEl.onclick = handleRun;
   if (testfilesStopEl) testfilesStopEl.onclick = handleStop;
 
-  if (projectsNewEl) projectsNewEl.onclick = () => runAction({ msg: "New project name:" }, (name) => api.createProject(name), true, name => ({ project: name }));
-  if (projectsRenameEl) projectsRenameEl.onclick = () => {
-    const old = projectSelectEl?.value;
-    if (!old) return alert("Please select a project first.");
-    runAction({ msg: `Rename "${old}" to:`, initial: old }, (name) => api.renameProject(old, name), true, name => ({ project: name }));
-  };
-  if (projectsCloneEl) projectsCloneEl.onclick = () => {
-    const src = projectSelectEl?.value;
-    if (!src) return alert("Please select a project first.");
-    runAction({ msg: `Clone "${src}" as:`, initial: src + "_copy" }, (name) => api.cloneProject(src, name), true, name => ({ project: name }));
-  };
-  if (projectsDeleteEl) projectsDeleteEl.onclick = () => {
-    const name = projectSelectEl?.value;
-    if (!name) return alert("Please select a project first.");
-    if (confirm(`Delete project "${name}"?`)) api.deleteProject(name).then(requestLists);
-  };
+  if (projectsNewEl) projectsNewEl.onclick = handleNewProject;
+  if (projectsRenameEl) projectsRenameEl.onclick = handleRenameProject;
+  if (projectsCloneEl) projectsCloneEl.onclick = handleCloneProject;
+  if (projectsDeleteEl) projectsDeleteEl.onclick = handleDeleteProject;
 
   if (projectSelectEl) projectSelectEl.onchange = () => populateTestfileSelect(savedTestfiles);
 
   if (testfileSelectEl) {
+    let lastOptgroupToggleTime = 0;
+    const handleOptgroupClick = (target) => {
+      if (!target || target.tagName !== "OPTGROUP") return;
+      const now = Date.now();
+      if (now - lastOptgroupToggleTime < 200) return;
+      lastOptgroupToggleTime = now;
+
+      const options = Array.from(target.querySelectorAll("option"));
+      if (options.length === 0) return;
+      const allSelected = options.every((opt) => opt.selected);
+      options.forEach((opt) => {
+        opt.selected = !allSelected;
+      });
+
+      updateEnabledStates();
+      if (typeof testfileSelectEl.onchange === "function") {
+        testfileSelectEl.onchange();
+      }
+    };
+
+    testfileSelectEl.addEventListener("mousedown", (e) => {
+      if (e.target && e.target.tagName === "OPTGROUP") {
+        e.preventDefault();
+        handleOptgroupClick(e.target);
+      }
+    });
+
+    testfileSelectEl.addEventListener("touchstart", (e) => {
+      if (e.target && e.target.tagName === "OPTGROUP") {
+        e.preventDefault();
+        handleOptgroupClick(e.target);
+      }
+    }, { passive: false });
+
     testfileSelectEl.onchange = () => {
       const keys = getSelectedKeys(); updateEnabledStates();
       if (keys.length !== 1 || keys[0] === activeKey) return;
@@ -272,11 +369,69 @@ export function initTestfileManager(deps) {
 
   function updateHighlights() { if (typeof syntaxHighlight === "function") syntaxHighlight(testfileInputEl, testfileHighlightsEl); }
 
+  let measureCtx = null;
+  function adjustTestfileSelectWidth() {
+    if (!testfileSelectEl || typeof document === "undefined") return;
+    const options = Array.from(testfileSelectEl.options || []);
+    const optgroups = Array.from(testfileSelectEl.getElementsByTagName("optgroup"));
+
+    let fontSize = "13px";
+    let fontFamily = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+    if (typeof window !== "undefined" && window.getComputedStyle) {
+      try {
+        const computed = window.getComputedStyle(testfileSelectEl);
+        if (computed.fontSize) fontSize = computed.fontSize;
+        if (computed.fontFamily) fontFamily = computed.fontFamily;
+      } catch (_) { }
+    }
+
+    if (!measureCtx && typeof document.createElement === "function") {
+      try {
+        const canvas = document.createElement("canvas");
+        measureCtx = canvas.getContext ? canvas.getContext("2d") : null;
+      } catch (_) { }
+    }
+
+    let maxTextWidth = 0;
+    if (measureCtx) {
+      measureCtx.font = `${fontSize} ${fontFamily}`;
+      for (const opt of options) {
+        const text = opt.textContent || opt.label || "";
+        const w = measureCtx.measureText(text).width;
+        if (w > maxTextWidth) maxTextWidth = w;
+      }
+      for (const og of optgroups) {
+        const text = og.label || "";
+        const w = measureCtx.measureText(text).width;
+        if (w > maxTextWidth) maxTextWidth = w;
+      }
+    } else {
+      for (const opt of options) {
+        const len = (opt.textContent || opt.label || "").length;
+        if (len * 8 > maxTextWidth) maxTextWidth = len * 8;
+      }
+      for (const og of optgroups) {
+        const len = (og.label || "").length;
+        if (len * 8 > maxTextWidth) maxTextWidth = len * 8;
+      }
+    }
+
+    // Overhead: optgroup indent & option padding (~26px) + vertical scrollbar (~20px) + border/buffer (~18px) = 64px
+    const requiredSelectWidth = Math.max(240, Math.ceil(maxTextWidth + 64));
+    const expandedWidth = 80 + 64 + requiredSelectWidth;
+
+    const testControls = document.getElementById("test-controls");
+    if (testControls?.style) {
+      testControls.style.setProperty("--test-controls-width", `${expandedWidth}px`);
+    }
+  }
+
   function updateCurrentOptionLabel() {
     const opt = activeKey && Array.from(testfileSelectEl?.options || []).find(o => o.value === activeKey);
     if (opt) {
       let label = state.isDirty(activeKey) ? `${state.getEntry(activeKey).name} [unsaved]` : state.getEntry(activeKey).name;
       opt.textContent = label;
+      adjustTestfileSelectWidth();
     }
   }
 
@@ -303,26 +458,35 @@ export function initTestfileManager(deps) {
       if (!filter || e.project === filter) (groups[e.project || ""] = groups[e.project || ""] || []).push(e);
     });
 
+    if (filter && !groups[filter]) {
+      groups[filter] = [];
+    }
+
     Object.keys(groups).sort().forEach(p => {
-      let container = testfileSelectEl;
-      if (Object.keys(groups).length > 1) {
-        const group = document.createElement("optgroup"); group.label = p || "Uncategorized";
-        testfileSelectEl.appendChild(group); container = group;
-      }
+      const group = document.createElement("optgroup");
+      group.label = p || "Uncategorized";
+      testfileSelectEl.appendChild(group);
       groups[p].sort((a, b) => a.name.localeCompare(b.name)).forEach(e => {
         const k = `${e.project}:${e.name}`;
         let label = state.isDirty(k) ? e.name + " [unsaved]" : e.name;
         const opt = new Option(label, k);
         opt.title = `${p || "Uncategorized"} / ${e.name}`;
-        opt.selected = (k === activeKey); container.appendChild(opt);
+        opt.selected = (k === activeKey);
+        group.appendChild(opt);
       });
     });
 
     if (activeKey && filter && state.getEntry(activeKey)?.project !== filter) {
       setActiveKey(""); if (testfileInputEl) { testfileInputEl.value = ""; updateHighlights(); }
     }
+    adjustTestfileSelectWidth();
     updateEnabledStates();
   }
+
+  if (typeof document !== "undefined" && document.fonts?.ready) {
+    document.fonts.ready.then(adjustTestfileSelectWidth).catch(() => { });
+  }
+  adjustTestfileSelectWidth();
 
   // Fetch testfiles and projects immediately over HTTP on module load:
   requestLists();

@@ -27,24 +27,22 @@ endef
 
 SHELL := /bin/sh
 
-VERSION ?= 0.9.0
+VERSION ?= 0.9.11
 JOBS ?= 16
-TRANSFER_COMPAT ?= 0
 CC ?= gcc
 CXX ?= g++
 
 OPUS_VER ?= 1.6.1
 OPENSSL_VER ?= 3.0.13
-G722_VER ?= 4c2e79c5cbcb5ee12a97a16002a073ac83396480
-REM_REF ?= 746712d2e1b61c69655e1ecb142bfab421cc2d34
-RE_REF ?= ceefe9ff499aa1bcfb6255aff1737434dd385322
+G722_VER ?= master
 SNDFILE_VER ?= 1.2.2
-OPENSSL_SHA256 ?= 88525753f79d3bec27d2fa7c66aa0b92b3aa9498dafd93d7cfa4b3780cdae313
-OPUS_SHA256 ?= 6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1
-SNDFILE_SHA256 ?= 3799ca9924d3125038880367bf1468e53a1b7e3686a934f098b7e1d286cdb80e
 
-BARESIP_VER ?= 4.11.0
-BARESIP_REF ?= 3d30821f099925d24167f8a99e93ba4d1be98599
+BARESIP_VER ?= 4.12.0
+ifeq ($(BARESIP_VER),master)
+BARESIP_REF := master
+else
+BARESIP_REF := v$(BARESIP_VER)
+endif
 
 # Paths (all relative to this Makefile dir)
 ROOT_DIR := $(CURDIR)
@@ -219,7 +217,6 @@ stage_patches: $(BARESIP_DIR)
 	  echo "stage_patches: applying patches from patches.txt"; \
 	  go run _tools/patcher/patcher.go patches.txt; \
 	fi
-	@if [ "$(TRANSFER_COMPAT)" = "1" ]; then go run _tools/patcher/patcher.go patches-transfer-compat.txt; fi
 
 ###############################################################################
 # Custom audioreport module staging (copy into vendored baresip tree)
@@ -285,7 +282,6 @@ $(OPENSSL_TAR): | $(GIT_DIR)
 	@cd "$(GIT_DIR)" && wget "https://www.openssl.org/source/openssl-$(OPENSSL_VER).tar.gz"
 
 $(OPENSSL_SRC): $(OPENSSL_TAR)
-	@echo "$(OPENSSL_SHA256)  $(OPENSSL_TAR)" | sha256sum -c -
 	@cd "$(GIT_DIR)" && tar -xzf "openssl-$(OPENSSL_VER).tar.gz"
 
 # Build/install OpenSSL into OPENSSL_PREFIX
@@ -315,14 +311,13 @@ $(RE_DIR): $(GIT_DIR)/.baresip_ver_$(BARESIP_VER) | $(GIT_DIR)
 	@if [ ! -d "$(RE_DIR)" ]; then \
 		cd "$(GIT_DIR)" && git clone https://github.com/baresip/re.git; \
 	fi
-	@cd "$(RE_DIR)" && git fetch origin $(RE_REF) && git checkout --detach $(RE_REF)
+	@cd "$(RE_DIR)" && git fetch --tags origin && git checkout $(BARESIP_REF)
 	@if [ "$(BARESIP_REF)" = "master" ]; then \
 		cd "$(RE_DIR)" && git pull origin master; \
 	fi
 
 $(REM_DIR): | $(GIT_DIR)
 	@if [ ! -d "$(REM_DIR)" ]; then cd "$(GIT_DIR)" && git clone https://github.com/baresip/rem.git; fi
-	@cd "$(REM_DIR)" && git fetch origin $(REM_REF) && git checkout --detach $(REM_REF)
 
 $(RE_LIB): $(RE_DIR) $(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO) | $(GIT_DIR)
 	@set -eu; \
@@ -384,7 +379,6 @@ $(OPUS_TAR): | $(GIT_DIR)
 	@cd "$(GIT_DIR)" && wget "https://downloads.xiph.org/releases/opus/opus-$(OPUS_VER).tar.gz"
 
 $(OPUS_SRC): $(OPUS_TAR)
-	@echo "$(OPUS_SHA256)  $(OPUS_TAR)" | sha256sum -c -
 	@cd "$(GIT_DIR)" && tar -xzf "opus-$(OPUS_VER).tar.gz"
 
 $(OPUS_LIB): $(OPUS_SRC) | $(GIT_DIR)
@@ -401,7 +395,6 @@ $(OPUS_LIB): $(OPUS_SRC) | $(GIT_DIR)
 ###############################################################################
 $(G722_SRC): | $(GIT_DIR)
 	@if [ ! -d "$(G722_SRC)" ]; then cd "$(GIT_DIR)" && git clone https://github.com/sippy/libg722.git; fi
-	@cd "$(G722_SRC)" && git fetch origin $(G722_VER) && git checkout --detach $(G722_VER)
 
 $(G722_LIB): $(G722_SRC) | $(GIT_DIR)
 	@set -eu; \
@@ -420,7 +413,6 @@ $(SNDFILE_TAR): | $(GIT_DIR)
 	@cd "$(GIT_DIR)" && wget "https://github.com/libsndfile/libsndfile/releases/download/$(SNDFILE_VER)/libsndfile-$(SNDFILE_VER).tar.xz"
 
 $(SNDFILE_SRC): $(SNDFILE_TAR)
-	@echo "$(SNDFILE_SHA256)  $(SNDFILE_TAR)" | sha256sum -c -
 	@cd "$(GIT_DIR)" && tar -xJf "libsndfile-$(SNDFILE_VER).tar.xz"
 
 $(SNDFILE_LIB): $(SNDFILE_SRC) | $(GIT_DIR)
@@ -440,7 +432,7 @@ $(BARESIP_DIR): $(GIT_DIR)/.baresip_ver_$(BARESIP_VER) | $(GIT_DIR)
 	@if [ ! -d "$(BARESIP_DIR)" ]; then \
 		cd "$(GIT_DIR)" && git clone https://github.com/baresip/baresip.git; \
 	fi
-	@cd "$(BARESIP_DIR)" && git fetch origin $(BARESIP_REF) && git checkout --detach $(BARESIP_REF)
+	@cd "$(BARESIP_DIR)" && git fetch --tags origin && git checkout $(BARESIP_REF)
 	@if [ "$(BARESIP_REF)" = "master" ]; then \
 		cd "$(BARESIP_DIR)" && git pull origin master; \
 	fi
@@ -547,8 +539,3 @@ distclean:
 	@rm -f telefonist
 	@echo "Removed EVERYTHING in $(LIBBARESIP_DIR)"
 	@true
-
-.PHONY: test-native-bounds
-test-native-bounds: $(G722_LIB) stage_headers
-	$(CC) -fsanitize=address,undefined -ffunction-sections -fdata-sections -I$(STAGE_RE)/include -I$(STAGE_REM)/include -I$(STAGE_BARESIP)/include -I$(STAGE_G722) tests/native/g722_bounds.c $(G722_LIB) -Wl,--gc-sections -o /tmp/telefonist-g722-bounds
-	/tmp/telefonist-g722-bounds

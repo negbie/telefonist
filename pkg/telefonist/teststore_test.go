@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -149,10 +150,14 @@ func TestStore_LogFilters(t *testing.T) {
 		}
 	}
 
-	if !logMessageMatchesFilters(`{"type":"LOG","param":"noisy log line"}`, filters) {
+	lowerFilters := make([]string, len(filters))
+	for i, f := range filters {
+		lowerFilters[i] = strings.ToLower(f)
+	}
+	if !logPartMatchesLowerFilters(`{"type":"LOG","param":"noisy log line"}`, lowerFilters) {
 		t.Fatal("expected message to match log filter")
 	}
-	if logMessageMatchesFilters(`{"type":"LOG","param":"normal line"}`, filters) {
+	if logPartMatchesLowerFilters(`{"type":"LOG","param":"normal line"}`, lowerFilters) {
 		t.Fatal("did not expect unrelated message to match filters")
 	}
 }

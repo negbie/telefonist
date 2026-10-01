@@ -77,12 +77,15 @@ export const API = {
     return request("/api/testfile" + toQueryString({ name, project }));
   },
   saveTestfile(name, project, contentB64, revision) {
-    return requestJSON("/api/testfile", "POST", {
+    const payload = {
       name,
       project,
       content_b64: contentB64,
-      revision,
-    });
+    };
+    if (typeof revision === "string" && revision) {
+      payload.revision = revision;
+    }
+    return requestJSON("/api/testfile", "POST", payload);
   },
   deleteTestfile(name, project) {
     return request("/api/testfile" + toQueryString({ name, project }), {

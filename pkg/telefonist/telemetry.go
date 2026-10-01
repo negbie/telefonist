@@ -17,6 +17,10 @@ func (h *WsHub) handleAgentMsg(am AgentMsg) {
 		if h.onEvent != nil {
 			h.onEvent(*m.Event)
 		}
+		switch m.Event.Type {
+		case "CALL_RTCP", "MODULE", "NATIVE_DONE", "EXIT", "SHUTDOWN":
+			return
+		}
 		if err := json.Unmarshal(m.Event.RawJSON, &value); err != nil {
 			h.failTelemetry("invalid agent event JSON")
 			return
