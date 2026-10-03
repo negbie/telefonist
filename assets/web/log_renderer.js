@@ -1,5 +1,6 @@
 import { safeText } from "./utils.js";
 import { trimChildrenToMax, appendAndMaintain } from "./dom.js";
+import { shouldFilterLog } from "./log_filter_manager.js";
 
 let _lastRunId = null;
 
@@ -138,6 +139,7 @@ export const renderLogEvent = (j, elements, getOptions) => {
   }
 
   if (j.type === "LOG" && logViewEl) {
+    if (shouldFilterLog(j.param)) return true;
     const el = document.createElement("div");
     el.className = "log-row";
     el.textContent = j.param;

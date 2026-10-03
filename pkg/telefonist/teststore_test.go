@@ -118,6 +118,36 @@ func TestStore_DataIntegrity(t *testing.T) {
 	})
 }
 
+func TestStore_CloneProject(t *testing.T) {
+	ctx := context.Background()
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	if err := s.SaveProject(ctx, "source"); err != nil {
+		t.Fatalf("SaveProject failed: %v", err)
+	}
+	if err := s.Save(ctx, "first", "source", "first content"); err != nil {
+		t.Fatalf("Save first testfile failed: %v", err)
+	}
+	if err := s.Save(ctx, "second", "source", "second content"); err != nil {
+		t.Fatalf("Save second testfile failed: %v", err)
+	}
+
+	if err := s.CloneProject(ctx, "source", "source_copy"); err != nil {
+		t.Fatalf("CloneProject failed: %v", err)
+	}
+
+	for name, content := range map[string]string{"first": "first content", "second": "second content"} {
+		row, err := s.Load(ctx, name, "source_copy")
+		if err != nil {
+			t.Fatalf("Load cloned testfile %q failed: %v", name, err)
+		}
+		if row.Content != content {
+			t.Fatalf("cloned testfile %q content = %q, want %q", name, row.Content, content)
+		}
+	}
+}
+
 func TestStore_LogFilters(t *testing.T) {
 	ctx := context.Background()
 	s := prepareTestStore(t)
@@ -159,6 +189,9 @@ func TestStore_LogFilters(t *testing.T) {
 	}
 	if logPartMatchesLowerFilters(`{"type":"LOG","param":"normal line"}`, lowerFilters) {
 		t.Fatal("did not expect unrelated message to match filters")
+	}
+	if !logPartMatchesLowerFilters("11:27:21.387|sndfile: dumping encode", []string{"sndfile:"}) {
+		t.Fatal("expected module filter to match a timestamped sndfile log")
 	}
 }
 

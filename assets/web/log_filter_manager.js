@@ -1,5 +1,45 @@
 import { EventBus } from "./event_bus.js";
 
+let cachedFilters = [];
+let filtersLoaded = false;
+let pendingLoad = null;
+
+function normalizeFilters(filters) {
+  const seen = new Set();
+  return (filters || []).map(value => String(value).trim()).filter(value => {
+    const key = value.toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function setCachedFilters(filters) {
+  cachedFilters = normalizeFilters(filters);
+  filtersLoaded = true;
+  EventBus.emit("log-filter:changed", [...cachedFilters]);
+  return [...cachedFilters];
+}
+
+export function shouldFilterLog(value) {
+  const text = String(value || "").toLowerCase();
+  return Boolean(text) && cachedFilters.some(filter => text.includes(filter.toLowerCase()));
+}
+
+export function loadLogFilters(force = false) {
+  if (filtersLoaded && !force) return Promise.resolve([...cachedFilters]);
+  if (pendingLoad && !force) return pendingLoad;
+
+  pendingLoad = fetch("/api/settings/log-filter")
+    .then(async res => {
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      return setCachedFilters(data.filters || []);
+    })
+    .finally(() => { pendingLoad = null; });
+  return pendingLoad;
+}
+
 function splitFilters(value) {
   return (value || "")
     .split(/\r?\n/)
@@ -24,11 +64,9 @@ export function initLogFilterManager() {
   const loadFilters = async () => {
     setStatus("Loading…");
     try {
-      const res = await fetch("/api/settings/log-filter");
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      inputEl.value = (data.filters || []).join("\n");
-      setStatus(`${(data.filters || []).length} filter(s) loaded.`);
+      const filters = await loadLogFilters(true);
+      inputEl.value = filters.join("\n");
+      setStatus(`${filters.length} filter(s) loaded.`);
     } catch (err) {
       console.error("Failed to load log filters:", err);
       setStatus("Failed to load log filters: " + err.message, true);
@@ -46,8 +84,9 @@ export function initLogFilterManager() {
       });
       if (!res.ok) throw new Error(await res.text());
       await res.json();
-      inputEl.value = filters.join("\n");
-      setStatus(`${filters.length} filter(s) saved.`);
+      const savedFilters = setCachedFilters(filters);
+      inputEl.value = savedFilters.join("\n");
+      setStatus(`${savedFilters.length} filter(s) saved.`);
     } catch (err) {
       console.error("Failed to save log filters:", err);
       setStatus("Failed to save log filters: " + err.message, true);

@@ -41,6 +41,7 @@ export function initTestfileManager(deps) {
   let activeKey = "";
   let savedTestfiles = [];
   let isTestRunning = false;
+  let activeRunKey = "";
 
   const wsIsOpen = () => socket && socket.isOpen();
 
@@ -66,15 +67,15 @@ export function initTestfileManager(deps) {
       testfilesSaveEl.disabled = !wsIsOpen() || !activeKey || !isDirty;
 
     const keys = getSelectedKeys();
+    const includesActiveRun = !!activeRunKey && keys.includes(activeRunKey);
     if (testfilesRenameEl)
       testfilesRenameEl.disabled =
-        !wsIsOpen() || keys.length !== 1 || isTestRunning;
+        !wsIsOpen() || keys.length !== 1 || includesActiveRun;
     if (testfilesCloneEl)
-      testfilesCloneEl.disabled =
-        !wsIsOpen() || keys.length !== 1 || isTestRunning;
+      testfilesCloneEl.disabled = !wsIsOpen() || keys.length !== 1;
     if (testfilesDeleteEl)
       testfilesDeleteEl.disabled =
-        !wsIsOpen() || keys.length === 0 || isTestRunning;
+        !wsIsOpen() || keys.length === 0 || includesActiveRun;
     if (testfilesRunEl)
       testfilesRunEl.disabled = !wsIsOpen() || isTestRunning;
     if (testfilesStopEl)
@@ -106,15 +107,20 @@ export function initTestfileManager(deps) {
     alert("Request failed: " + error.message);
   }
 
-  async function promptAction({ prompt, initial = "", sanitize = false }, fn) {
+  async function promptAction({ prompt, initial = "", sanitize = false, afterSuccess = null }, fn) {
     let name = window.prompt(prompt, initial);
     if (!name) return;
     name = sanitize ? sanitizeTestfileName(name) : safeText(name).trim();
     if (!name) return;
     try {
       const res = await fn(name);
-      if (res && res.status !== "finished") alert("Error: " + res.message);
-      else await requestLists();
+      if (res && res.status !== "finished") {
+        alert("Error: " + (res.message || "Request failed"));
+      } else if (typeof afterSuccess === "function") {
+        await afterSuccess(name, res);
+      } else {
+        await requestLists();
+      }
     } catch (err) {
       reportError(err);
     }
@@ -257,19 +263,30 @@ export function initTestfileManager(deps) {
 
   function handleStop() { wsIsOpen() && socket.send("test_stop"); }
 
+  const selectProjectAfterSuccess = name => requestLists({ project: name });
+
   const handleNewProject = () =>
-    promptAction({ prompt: "New project name:" }, name => api.createProject(name).then(() => requestLists({ project: name })));
+    promptAction(
+      { prompt: "New project name:", sanitize: true, afterSuccess: selectProjectAfterSuccess },
+      name => api.createProject(name),
+    );
 
   const handleRenameProject = () => {
     const old = projectSelectEl?.value;
     if (!old) return alert("Please select a project first.");
-    promptAction({ prompt: `Rename "${old}" to:`, initial: old }, name => api.renameProject(old, name).then(() => requestLists({ project: name })));
+    promptAction(
+      { prompt: `Rename "${old}" to:`, initial: old, sanitize: true, afterSuccess: selectProjectAfterSuccess },
+      name => api.renameProject(old, name),
+    );
   };
 
   const handleCloneProject = () => {
     const src = projectSelectEl?.value;
     if (!src) return alert("Please select a project first.");
-    promptAction({ prompt: `Clone "${src}" as:`, initial: src + "_copy" }, name => api.cloneProject(src, name).then(() => requestLists({ project: name })));
+    promptAction(
+      { prompt: `Clone "${src}" as:`, initial: src + "_copy", sanitize: true, afterSuccess: selectProjectAfterSuccess },
+      name => api.cloneProject(src, name),
+    );
   };
 
   const handleDeleteProject = async () => {
@@ -497,7 +514,11 @@ export function initTestfileManager(deps) {
     getActiveKey: () => activeKey,
     handleTestfilesMessage: (j) => {
       if (j.token === "runner") {
-        isTestRunning = !!j.state?.active;
+        const runState = j.state || {};
+        isTestRunning = !!runState.active;
+        activeRunKey = isTestRunning
+          ? `${runState.project || ""}:${runState.file || ""}`
+          : "";
         updateEnabledStates();
         return true;
       }

@@ -1,9 +1,9 @@
 import { EventBus } from "./event_bus.js";
-import { safeText, escapeHTML, base64DecodeUTF8 } from "./utils.js";
-import { computeLCSDiff } from "./diff.js";
+import { escapeHTML, base64DecodeUTF8 } from "./utils.js";
+import { computeRunDiff } from "./diff.js";
+import { loadLogFilters, shouldFilterLog } from "./log_filter_manager.js";
 import {
   analyzeSipEvents,
-  generateSipLadderHTML,
   getSipDiffKey,
   getSipMessageInfo,
 } from "./sip_renderer.js";
@@ -29,6 +29,7 @@ export function initCompareWindow(deps) {
   const headerA = document.getElementById("compare-header-a");
   const headerB = document.getElementById("compare-header-b");
   const clearBtn = document.getElementById("compare-clear");
+  const swapBtn = document.getElementById("compare-swap");
   const deleteSelectedBtn = document.getElementById("compare-delete-selected");
   const diffBtn = document.getElementById("compare-diff");
   const evtBtn = document.getElementById("compare-evt");
@@ -73,11 +74,11 @@ export function initCompareWindow(deps) {
       isScrollLinked = !isScrollLinked;
       if (isScrollLinked) {
         linkBtn.classList.add("active");
-        linkBtn.textContent = "Scroll: Link";
+        linkBtn.textContent = "Linked scroll";
         handleScrollA();
       } else {
         linkBtn.classList.remove("active");
-        linkBtn.textContent = "Scroll: Unlink";
+        linkBtn.textContent = "Independent scroll";
       }
     };
   }
@@ -85,32 +86,27 @@ export function initCompareWindow(deps) {
   const comparePanel = document.getElementById("compare-panel");
   if (comparePanel) {
     comparePanel.addEventListener("click", (e) => {
+      // Recalculate row heights after an event or SIP detail is expanded.
+      setTimeout(() => schedulePairAlignment(), 0);
+
       const seq = e.target.closest(".evt-seq");
       if (!seq) return;
 
       e.preventDefault();
       e.stopPropagation();
 
-      const idx = seq.getAttribute("data-idx");
+      const sourceRow = seq.closest(".compare-pair-row");
+      const pair = sourceRow?.getAttribute("data-pair");
       const side = seq.closest("#compare-content-a") ? "a" : "b";
-      const targetSide = side === "a" ? "b" : "a";
-      const targetContent = document.getElementById(
-        `compare-content-${targetSide}`,
-      );
-
-      if (targetContent) {
-        const target = targetContent.querySelector(
-          `.evt-seq[data-idx="${idx}"]`,
-        );
-        if (target) {
-          target.scrollIntoView({ behavior: "smooth", block: "center" });
-          // Briefly highlight the target
-          const details = target.closest("details");
-          if (details) {
-            const originalBg = details.style.backgroundColor;
-            details.style.backgroundColor = "#fffee0";
-            setTimeout(() => (details.style.backgroundColor = originalBg), 1000);
-          }
+      const targetContent = side === "a" ? contentB : contentA;
+      const target = pair == null ? null : targetContent?.querySelector(`.compare-pair-row[data-pair="${pair}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (typeof target.animate === "function") {
+          target.animate(
+            [{ boxShadow: "0 0 0 2px #facc15" }, { boxShadow: "none" }],
+            { duration: 900 },
+          );
         }
       }
     });
@@ -122,33 +118,109 @@ export function initCompareWindow(deps) {
   let rawB = "";
   let wavsA = [];
   let wavsB = [];
+  // Show the complete flow by default; users can narrow it to differences.
   let diffMode = false;
   let activeMode = "evt"; // evt, sip, log, wav
 
-  const renderEventHTML = (j) => {
+  const envelopeFields = new Set([
+    "time", "timestamp", "elapsed_ms", "event_sequence", "schema_version",
+    "id", "RawJSON", "run_id", "idx", "_seq", "_epoch",
+  ]);
+
+  const stableStringify = value => {
+    if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+    if (value && typeof value === "object") {
+      return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+    }
+    return JSON.stringify(value);
+  };
+
+  const displayValue = value => typeof value === "object" ? stableStringify(value) : String(value);
+
+  const renderEventHTML = (j, changedFields = null) => {
     const type = (j.type || j.token || "EVENT").toUpperCase();
     const content = Object.entries(j)
       .sort(([a], [b]) => a.localeCompare(b))
-      .filter(([k, v]) => v != null && v !== "" && !["type", "token", "class", "event", "time", "timestamp", "elapsed_ms", "event_sequence", "schema_version", "id", "RawJSON", "run_id", "idx", "_seq", "_epoch"].includes(k))
+      .filter(([k, v]) => v != null && v !== "" && !envelopeFields.has(k) && !["type", "token", "class", "event"].includes(k))
       .map(([k, v]) => {
         const pk = k.charAt(0).toUpperCase() + k.slice(1);
-        return `<div class="json-row"><span class="json-key">${escapeHTML(pk)}</span>: <span class="json-value">${escapeHTML(String(v))}</span></div>`;
+        const changedClass = changedFields?.has(k) ? " is-field-changed" : "";
+        return `<div class="json-row${changedClass}"><span class="json-key">${escapeHTML(pk)}</span>: <span class="json-value">${escapeHTML(displayValue(v))}</span></div>`;
       })
       .join("");
 
     return `
 <details class="event list" open>
     <summary>
-        <span class="evt-seq" data-idx="${j.idx}" title="Sync other side">${j.idx + 1}</span>
+        <span class="evt-seq" data-idx="${j.idx}" title="Original position">${j.idx + 1}</span>
         <span class="evt-type">${escapeHTML(type)}</span>
     </summary>
     <div class="evt-content">${content}</div>
 </details>`.trim();
   };
 
-  // Preserve protocol values. Blanket removal of IPs, identifiers and headers
-  // hid real differences. Only normalize transport line endings here.
+  // Capture metadata should not make two otherwise equal records look different.
+  // Protocol values remain untouched so real header, address and identifier changes
+  // are still visible after matching has found the correct counterpart.
   const structuralSkeleton = text => String(text || "").replace(/\r\n/g, "\n").trim();
+  const normalizeLog = text => structuralSkeleton(text).split("\n").map(line => line
+    .replace(/^\s*\[?\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?\]?\s*(?:[-|]\s*)?/, "")
+    .replace(/^\s*\[?\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\]?\s*(?:[-|]\s*)?/, "")
+    .replace(/^\s*\[?\d{10}(?:\.\d+)?\]?\s*(?:[-|]\s*)?/, ""),
+  ).join("\n").trim();
+
+  const normalizedEvent = event => {
+    const clean = {};
+    Object.entries(event).forEach(([key, value]) => {
+      if (!envelopeFields.has(key)) clean[key] = typeof value === "string" ? structuralSkeleton(value) : value;
+    });
+    return clean;
+  };
+
+  const sipHost = endpoint => {
+    const value = String(endpoint || "Unknown").trim();
+    const bracketed = value.match(/^\[([^\]]+)\](?::\d+)?$/);
+    if (bracketed) return bracketed[1];
+    const hostAndPort = value.match(/^([^:]+):(\d+)$/);
+    return hostAndPort ? hostAndPort[1] : value;
+  };
+
+  const renderSipFlowHTML = (info, seq, meta, rawMessage) => {
+    const direction = info.direction === "RX" ? "RX" : "TX";
+    const srcHost = sipHost(info.src);
+    const dstHost = sipHost(info.dst);
+    const localHost = direction === "TX" ? srcHost : dstHost;
+    const remoteHost = direction === "TX" ? dstHost : srcHost;
+    const method = info.cseqMethod || info.method || "SIP";
+    const label = info.isResponse
+      ? `${info.statusCode}${info.statusText ? ` ${info.statusText}` : ""}`
+      : method;
+    const kind = info.isResponse ? `response to ${method}` : "request";
+    const notes = [
+      `${direction} · ${kind}`,
+      meta.retransmitCount > 0 ? `retransmit ${meta.retransmitCount}` : "",
+      meta.missingAck ? "missing ACK" : "",
+    ].filter(Boolean).join(" · ");
+    const statusClass = info.isResponse
+      ? (info.statusCode >= 200 && info.statusCode < 300 ? " is-success" : info.statusCode >= 300 ? " is-error" : " is-response")
+      : "";
+
+    return `
+      <details class="sip-flow-details">
+        <summary title="Expand full SIP message">
+          <div class="sip-flow-card">
+            <div class="sip-flow-host">${escapeHTML(localHost)}</div>
+            <div class="sip-flow-center">
+              <div class="sip-flow-title${statusClass}"><span>${seq}</span>${escapeHTML(label)}</div>
+              <div class="sip-flow-route">${direction === "TX" ? "⟶" : "⟵"}</div>
+              <div class="sip-flow-meta">${escapeHTML(notes)}</div>
+            </div>
+            <div class="sip-flow-host">${escapeHTML(remoteHost)}</div>
+          </div>
+        </summary>
+        <pre>${escapeHTML(rawMessage)}</pre>
+      </details>`;
+  };
 
   const parseEvents = (text) => {
     const rawEvents = (text || "").split(/\n\n+/).map(s => s.trim()).filter(Boolean).map(line => {
@@ -156,49 +228,154 @@ export function initCompareWindow(deps) {
     }).filter(Boolean).filter(j => {
       const type = (j.type || j.token || "").toLowerCase();
       if (activeMode === "sip") return type === "sip";
-      if (activeMode === "log") return type === "log";
+      if (activeMode === "log") return type === "log" && !shouldFilterLog(j.param);
       return activeMode !== "evt" || !ignoredEvtTypes.has(type);
     });
 
     const sipMetas = activeMode === "sip" ? analyzeSipEvents(rawEvents) : [];
 
     return rawEvents.map((j, idx) => {
-      const { time, timestamp, elapsed_ms, event_sequence, _seq, _epoch, id, RawJSON, run_id, idx: _, ...rest } = j;
       if (activeMode === "sip") {
         const sipInfo = getSipMessageInfo(j.param || "");
-        const raw = sipInfo.message || j.param || "";
         const seq = idx + 1;
-        const arrowKey = getSipDiffKey(j.param || "") || structuralSkeleton(raw);
-        const compare = arrowKey;
         const meta = sipMetas[idx] || {};
-        const display = generateSipLadderHTML(j, seq, meta);
+        const rawMessage = sipInfo.message || j.param || "";
+        const method = sipInfo.cseqMethod || sipInfo.method || getSipDiffKey(j.param || "") || "SIP";
+        const flow = {
+          direction: sipInfo.direction,
+          from: sipHost(sipInfo.src),
+          to: sipHost(sipInfo.dst),
+          kind: sipInfo.isResponse ? "response" : "request",
+          method,
+          status: sipInfo.statusCode || 0,
+          missingAck: Boolean(meta.missingAck),
+        };
+        const compare = stableStringify(flow);
         return {
           compare,
-          contentCompare: structuralSkeleton(raw),
-          display,
+          display: renderSipFlowHTML(sipInfo, seq, meta, rawMessage),
+          flow,
           idx,
-          label: `(${seq}) ${sipInfo.label || arrowKey}`,
-          raw,
+          matchKey: `sip:${flow.direction}:${flow.kind}:${flow.method}`,
+          matchThreshold: 0.55,
         };
       }
-      const compare = activeMode === "log" ? structuralSkeleton(j.param || "") : JSON.stringify({ ...rest, param: rest.param ? structuralSkeleton(rest.param) : undefined }, Object.keys(rest).sort());
+
       const display = renderEventHTML({ ...j, idx });
-      return { display, compare, idx };
+      if (activeMode === "log") {
+        const message = normalizeLog(j.param || "");
+        const agent = structuralSkeleton(j._agent || j.agent || "").toLowerCase();
+        const logger = message.match(/^([a-z0-9_.-]+)\s*:/i)?.[1]?.toLowerCase() || "";
+        return {
+          compare: stableStringify({ agent, message }),
+          display,
+          idx,
+          matchKey: `log:${agent}:${logger}`,
+          matchThreshold: 0.45,
+          event: j,
+        };
+      }
+
+      const clean = normalizedEvent(j);
+      const type = String(j.type || j.token || "event").toLowerCase();
+      const eventClass = String(j.class || j.event || "").toLowerCase();
+      return {
+        compare: stableStringify(clean),
+        display,
+        idx,
+        matchKey: `event:${type}:${eventClass}`,
+        matchThreshold: 0.34,
+        event: j,
+      };
     });
   };
 
-  const renderRaw = (el, text) => {
-    if (el) el.innerHTML = parseEvents(text).map(e => e.display).join("");
+  let alignFrame = 0;
+  const alignPairRows = () => {
+    if (!contentA || !contentB) return;
+    const rowsA = [...contentA.querySelectorAll(".compare-pair-row")];
+    const rowsB = [...contentB.querySelectorAll(".compare-pair-row")];
+    rowsA.forEach(row => { row.style.minHeight = ""; });
+    rowsB.forEach(row => { row.style.minHeight = ""; });
+    rowsA.forEach((rowA, index) => {
+      const rowB = rowsB[index];
+      if (!rowB) return;
+      const height = Math.max(rowA.offsetHeight, rowB.offsetHeight);
+      rowA.style.minHeight = `${height}px`;
+      rowB.style.minHeight = `${height}px`;
+    });
+  };
+  const schedulePairAlignment = () => {
+    cancelAnimationFrame(alignFrame);
+    alignFrame = requestAnimationFrame(alignPairRows);
+  };
+
+  const emptyState = message => `<div class="compare-empty-state">${escapeHTML(message)}</div>`;
+  const pairPlaceholder = message => `<div class="compare-pair-placeholder">${escapeHTML(message)}</div>`;
+  const changedEventFields = (left, right) => {
+    const keys = new Set([...Object.keys(left || {}), ...Object.keys(right || {})]);
+    envelopeFields.forEach(key => keys.delete(key));
+    keys.delete("type");
+    keys.delete("token");
+    keys.delete("class");
+    keys.delete("event");
+    return new Set([...keys].filter(key => stableStringify(left?.[key]) !== stableStringify(right?.[key])));
+  };
+  const rowHTML = (item, pair, state, label, changedFields = null) => {
+    const display = item?.event
+      ? renderEventHTML({ ...item.event, idx: item.idx }, changedFields)
+      : item?.display;
+    return `
+    <div class="compare-pair-row ${state}" data-pair="${pair}">
+      ${label ? `<div class="compare-change-label">${escapeHTML(label)}</div>` : ""}
+      ${display || pairPlaceholder("No matching item")}
+    </div>`;
+  };
+
+  const renderSummary = (diff, totalA, totalB) => {
+    const counts = { common: 0, changed: 0, a: 0, b: 0 };
+    diff.forEach(entry => counts[entry.type]++);
+    const changed = counts.changed + counts.a + counts.b;
+    if (diffBtn && activeMode !== "wav") {
+      diffBtn.textContent = diffMode ? `Show all (${counts.common})` : "Only changes";
+      diffBtn.title = diffMode
+        ? `Return to the complete flow (${counts.common} unchanged item(s))`
+        : "Hide unchanged items";
+    }
+    const note = document.getElementById("compare-note");
+    if (!note) return;
+    note.classList.toggle("is-identical", changed === 0);
+    const comparisonHelp = activeMode === "sip"
+      ? "Message bodies and timestamps are ignored."
+      : "Order, timestamps and run metadata are ignored.";
+    if (changed === 0) {
+      note.innerHTML = `<span class="compare-summary-strong">Runs match</span><span class="compare-summary-part">${counts.common} unchanged</span><span class="compare-summary-help">${comparisonHelp}</span>`;
+      return;
+    }
+    note.innerHTML = `<span class="compare-summary-strong">${changed} difference${changed === 1 ? "" : "s"}</span>` +
+      `<span class="compare-summary-part">${counts.changed} changed</span>` +
+      `<span class="compare-summary-part">${counts.a} baseline only</span>` +
+      `<span class="compare-summary-part">${counts.b} current only</span>` +
+      `<span class="compare-summary-part">${counts.common} unchanged</span>` +
+      `<span class="compare-summary-help">Compared ${totalA} to ${totalB}. ${comparisonHelp}</span>`;
   };
 
   let diffWorker = null, generation = 0;
   const renderDiff = async () => {
     const current = generation;
-    const aItems = parseEvents(rawA), bItems = parseEvents(rawB);
-    if (activeMode === "evt") {
-      aItems.sort((a, b) => a.compare.localeCompare(b.compare));
-      bItems.sort((a, b) => a.compare.localeCompare(b.compare));
+    if (!rawA || !rawB) {
+      const message = !rawA && !rawB ? "Choose a baseline and a run to inspect." : "Choose the other run to start comparing.";
+      contentA.innerHTML = emptyState(message);
+      contentB.innerHTML = emptyState(message);
+      const note = document.getElementById("compare-note");
+      if (note) {
+        note.classList.remove("is-identical");
+        note.textContent = message;
+      }
+      return;
     }
+
+    const aItems = parseEvents(rawA), bItems = parseEvents(rawB);
     let diff;
     if (typeof Worker === "function") {
       diffWorker = new Worker(new URL("./diff_worker.js", import.meta.url), { type: "module" });
@@ -209,45 +386,52 @@ export function initCompareWindow(deps) {
           diffWorker.postMessage({ a: aItems, b: bItems });
         });
       } catch (_) {
-        if (current === generation) contentA.textContent = "Comparison failed. Switch to the raw view to inspect the run.";
+        if (current === generation) {
+          contentA.innerHTML = emptyState("Comparison failed.");
+          contentB.innerHTML = emptyState("Comparison failed.");
+        }
         return;
       }
       if (current !== generation) return;
-      diffWorker.terminate(); diffWorker = null;
-    } else diff = computeLCSDiff(aItems, bItems);
-    const note = aItems.length * bItems.length > 2000000
-      ? "Large comparison: all events shown as removed/added; exact alignment skipped to bound memory." : "Comparison ignores envelope timestamps and run IDs; protocol values are preserved.";
-    document.getElementById("compare-note").textContent = note;
+      diffWorker.terminate();
+      diffWorker = null;
+    } else {
+      diff = computeRunDiff(aItems, bItems);
+    }
 
-    if (activeMode === "sip") {
-      const aParts = [];
-      const bParts = [];
-      const placeholder = (label) => `<div class="diff-sip-placeholder">${escapeHTML(label)}</div>`;
-      const ladder = (item, className) => `
-        <div class="diff-sip-ladder ${className}">
-          ${item.display}
-        </div>`;
-
-      diff.forEach((d) => {
-        if (d.type === "common") {
-          const style = d.itemA.contentCompare === d.itemB.contentCompare ? "diff-sip-common" : "diff-sip-changed";
-          aParts.push(ladder(d.itemA, style));
-          bParts.push(ladder(d.itemB, style));
-        } else if (d.type === "a") {
-          aParts.push(ladder(d.itemA, "diff-sip-only-a"));
-          bParts.push(placeholder(`missing ${d.itemA.label || d.itemA.compare || "SIP"}`));
-        } else if (d.type === "b") {
-          aParts.push(placeholder(`missing ${d.itemB.label || d.itemB.compare || "SIP"}`));
-          bParts.push(ladder(d.itemB, "diff-sip-only-b"));
-        }
-      });
-      if (contentA) contentA.innerHTML = aParts.join("") || "<div class='diff-identical'>(no changes)</div>";
-      if (contentB) contentB.innerHTML = bParts.join("") || "<div class='diff-identical'>(no changes)</div>";
+    renderSummary(diff, aItems.length, bItems.length);
+    const visible = diffMode ? diff.filter(entry => entry.type !== "common") : diff;
+    if (!visible.length) {
+      const message = diffMode ? "No differences in this category." : "No items in this category.";
+      contentA.innerHTML = emptyState(message);
+      contentB.innerHTML = emptyState(message);
       return;
     }
 
-    if (contentA) contentA.innerHTML = diff.filter(d => d.type === "a").map(d => `<div class="diff-only-a">${d.text}</div>`).join("") || "(no changes)";
-    if (contentB) contentB.innerHTML = diff.filter(d => d.type === "b").map(d => `<div class="diff-only-b">${d.text}</div>`).join("") || "(no changes)";
+    const aParts = [];
+    const bParts = [];
+    visible.forEach((entry, pair) => {
+      if (entry.type === "common") {
+        aParts.push(rowHTML(entry.itemA, pair, "is-common", ""));
+        bParts.push(rowHTML(entry.itemB, pair, "is-common", ""));
+      } else if (entry.type === "changed") {
+        const changedFields = entry.itemA?.event && entry.itemB?.event
+          ? changedEventFields(entry.itemA.event, entry.itemB.event)
+          : null;
+        const label = entry.itemA?.flow ? "Flow changed" : "Changed";
+        aParts.push(rowHTML(entry.itemA, pair, "is-changed", label, changedFields));
+        bParts.push(rowHTML(entry.itemB, pair, "is-changed", label, changedFields));
+      } else if (entry.type === "a") {
+        aParts.push(rowHTML(entry.itemA, pair, "is-only-a", "Baseline only"));
+        bParts.push(rowHTML(null, pair, "is-only-a", ""));
+      } else {
+        aParts.push(rowHTML(null, pair, "is-only-b", ""));
+        bParts.push(rowHTML(entry.itemB, pair, "is-only-b", "Current only"));
+      }
+    });
+    contentA.innerHTML = aParts.join("");
+    contentB.innerHTML = bParts.join("");
+    schedulePairAlignment();
   };
 
   const applyCurrentMode = () => {
@@ -259,16 +443,24 @@ export function initCompareWindow(deps) {
     if (activeMode === "wav") {
       renderWavs(contentA, wavsA);
       renderWavs(contentB, wavsB);
-    } else if (diffMode) {
-      renderDiff();
+      const note = document.getElementById("compare-note");
+      if (note) {
+        note.classList.remove("is-identical");
+        note.textContent = "Audio recordings are listed by run; use the players and waveforms to inspect them.";
+      }
     } else {
-      renderRaw(contentA, rawA);
-      renderRaw(contentB, rawB);
+      renderDiff();
     }
-    [evtBtn, sipBtn, logBtn, wavBtn].forEach(b => b?.classList.toggle("active", b.id === `compare-${activeMode}`));
+    [evtBtn, sipBtn, logBtn, wavBtn].forEach(b => {
+      const active = b?.id === `compare-${activeMode}`;
+      b?.classList.toggle("active", active);
+      b?.setAttribute("aria-selected", String(active));
+    });
     if (diffBtn) {
+      diffBtn.hidden = activeMode === "wav";
       diffBtn.classList.toggle("active", diffMode);
-      diffBtn.textContent = diffMode ? "Raw" : "Diff";
+      diffBtn.textContent = diffMode ? "Show all" : "Only changes";
+      diffBtn.title = diffMode ? "Include unchanged items" : "Hide unchanged items";
     }
   };
 
@@ -321,20 +513,14 @@ export function initCompareWindow(deps) {
     if (side === "a") {
       rawA = "";
       wavsA = [];
-      if (contentA) {
-        contentA.textContent = "";
-        contentA.removeAttribute("style");
-      }
-      if (headerA) headerA.textContent = "Run A";
+      if (contentA) contentA.textContent = "";
+      if (headerA) headerA.textContent = "Baseline";
       if (selectA) selectA.value = "";
     } else {
       rawB = "";
       wavsB = [];
-      if (contentB) {
-        contentB.textContent = "";
-        contentB.removeAttribute("style");
-      }
-      if (headerB) headerB.textContent = "Run B";
+      if (contentB) contentB.textContent = "";
+      if (headerB) headerB.textContent = "Run to inspect";
       if (selectB) selectB.value = "";
     }
     applyCurrentMode();
@@ -346,77 +532,110 @@ export function initCompareWindow(deps) {
     if (selects.length === 0) return;
     const currentJSON = JSON.stringify(items);
     if (currentJSON === lastRunsJSON) return;
+    const firstPopulation = !lastRunsJSON;
     lastRunsJSON = currentJSON;
 
-    const prevValues = selects.map((s) => s.value);
-    const runs = [...(items || [])].sort((a, b) => a.id - b.id);
-    selects.forEach((sel) => {
-      sel.innerHTML = '<option value="">(select run)</option>';
+    const prevValues = selects.map(sel => sel.value);
+    const runs = [...(items || [])].sort((a, b) => b.id - a.id);
+    selects.forEach((sel, selectIndex) => {
+      sel.innerHTML = `<option value="">${selectIndex === 0 ? "Select baseline run" : "Select run to inspect"}</option>`;
       runs.forEach((r) => {
         const opt = document.createElement("option");
         opt.value = String(r.id);
         const ts = r.created_at ? new Date(r.created_at).toLocaleString() : "";
-        const fileLabel = r.testfile_name ? `${r.testfile_name} / ` : "";
-        opt.textContent = `${fileLabel}#${r.id} run ${r.run_number} [${r.status}] ${ts}`;
-        if (r.failure_reason) opt.title = `Reason: ${r.failure_reason}`;
+        opt.textContent = `#${r.id} · run ${r.run_number} · ${r.status} · ${ts}`;
+        if (r.failure_reason) opt.title = `Failure: ${r.failure_reason}`;
         sel.appendChild(opt);
       });
     });
-    selects.forEach((sel, i) => {
-      sel.value = prevValues[i] || "";
-    });
-    if (selectA && selectA.value) fetchRun(selectA.value, "a");
-    if (selectB && selectB.value) fetchRun(selectB.value, "b");
+
+    const validA = runs.some(run => String(run.id) === prevValues[0]);
+    const validB = runs.some(run => String(run.id) === prevValues[1]);
+    selectA.value = validA ? prevValues[0] : "";
+    selectB.value = validB ? prevValues[1] : "";
+
+    // On first use (or after switching testfiles), inspect the newest run and
+    // use the run immediately before it as the baseline.
+    if (!selectA.value && !selectB.value && runs.length && (firstPopulation || prevValues.some(Boolean))) {
+      const current = runs[0];
+      const baseline = runs[1];
+      if (baseline) selectA.value = String(baseline.id);
+      selectB.value = String(current.id);
+    }
+
+    if (selectA.value) fetchRun(selectA.value, "a");
+    if (selectB.value) fetchRun(selectB.value, "b");
   };
 
   const fetchRun = (id, side) => {
     if (!id) return;
     const selected = () => String(side === "a" ? selectA.value : selectB.value) === String(id);
+    if (side === "a") {
+      rawA = "";
+      wavsA = [];
+      if (headerA) headerA.textContent = "Baseline · loading…";
+    } else {
+      rawB = "";
+      wavsB = [];
+      if (headerB) headerB.textContent = "Run to inspect · loading…";
+    }
+    applyCurrentMode();
+
     fetch(`/api/testrun?id=${id}`)
       .then((r) => r.json())
       .then((j) => {
         if (!selected()) return;
-        if (j.status === "finished") {
-          const label = `#${j.id} run ${j.run_number} [${j.result}] ${j.created_at ? new Date(j.created_at).toLocaleString() : ""}`;
-          const content = base64DecodeUTF8(j.flow_events_b64) || "(decode error)";
-
-          if (side === "a") {
-            headerA && (headerA.textContent = `Run A – ${label}`);
-            rawA = content;
-          } else {
-            headerB && (headerB.textContent = `Run B – ${label}`);
-            rawB = content;
-          }
-          fetch(`/api/testrun/wavs?id=${id}`)
-            .then((r) => r.json())
-            .then((wj) => {
-              if (!selected()) return;
-              if (wj.status === "finished") {
-                const items = wj.items || [];
-                items.sort((a, b) => {
-                  const tsA = (a.filename.match(
-                    /\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/,
-                  ) || [""])[0];
-                  const tsB = (b.filename.match(
-                    /\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/,
-                  ) || [""])[0];
-                  return (
-                    tsA.localeCompare(tsB) || a.filename.localeCompare(b.filename)
-                  );
-                });
-                if (side === "a") wavsA = items;
-                else wavsB = items;
-                applyCurrentMode();
-              }
-            });
-        } else {
+        if (j.status !== "finished") {
           alert(`Error fetching run: ${j.message}`);
+          return;
         }
+
+        const label = `#${j.id} · run ${j.run_number} · ${j.result} · ${j.created_at ? new Date(j.created_at).toLocaleString() : ""}`;
+        const content = base64DecodeUTF8(j.flow_events_b64);
+        if (side === "a") {
+          if (headerA) headerA.textContent = `Baseline · ${label}`;
+          rawA = content || " ";
+        } else {
+          if (headerB) headerB.textContent = `Run to inspect · ${label}`;
+          rawB = content || " ";
+        }
+        applyCurrentMode();
+
+        fetch(`/api/testrun/wavs?id=${id}`)
+          .then((r) => r.json())
+          .then((wj) => {
+            if (!selected() || wj.status !== "finished") return;
+            const items = wj.items || [];
+            items.sort((a, b) => {
+              const tsA = (a.filename.match(/\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/) || [""])[0];
+              const tsB = (b.filename.match(/\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/) || [""])[0];
+              return tsA.localeCompare(tsB) || a.filename.localeCompare(b.filename);
+            });
+            if (side === "a") wavsA = items;
+            else wavsB = items;
+            if (activeMode === "wav") applyCurrentMode();
+          });
+      })
+      .catch(() => {
+        if (!selected()) return;
+        if (side === "a" && headerA) headerA.textContent = "Baseline · failed to load";
+        if (side === "b" && headerB) headerB.textContent = "Run to inspect · failed to load";
       });
   };
 
-  if (selectA) selectA.onchange = () => fetchRun(selectA.value, "a");
-  if (selectB) selectB.onchange = () => fetchRun(selectB.value, "b");
+  if (selectA) selectA.onchange = () => selectA.value ? fetchRun(selectA.value, "a") : clearSide("a");
+  if (selectB) selectB.onchange = () => selectB.value ? fetchRun(selectB.value, "b") : clearSide("b");
+
+  if (swapBtn) {
+    swapBtn.onclick = () => {
+      const valueA = selectA?.value || "";
+      const valueB = selectB?.value || "";
+      if (selectA) selectA.value = valueB;
+      if (selectB) selectB.value = valueA;
+      if (selectA?.value) fetchRun(selectA.value, "a"); else clearSide("a");
+      if (selectB?.value) fetchRun(selectB.value, "b"); else clearSide("b");
+    };
+  }
 
   if (clearBtn)
     clearBtn.onclick = () => {
@@ -424,52 +643,21 @@ export function initCompareWindow(deps) {
       clearSide("b");
     };
 
-  const scrolls = {};
-  const getScrollKey = (m, d) => `${m}${d ? "_diff" : ""}`;
-
-  const switchMode = (mode) => {
-    const key = getScrollKey(activeMode, diffMode);
-    if (!scrolls[key]) scrolls[key] = { a: 0, b: 0 };
-    scrolls[key].a = contentA ? contentA.scrollTop : 0;
-    scrolls[key].b = contentB ? contentB.scrollTop : 0;
-
-    if (mode) activeMode = mode;
+  const switchMode = mode => {
+    activeMode = mode;
     applyCurrentMode();
-
-    const nextKey = getScrollKey(activeMode, diffMode);
-    if (scrolls[nextKey]) {
-      if (contentA) contentA.scrollTop = scrolls[nextKey].a;
-      if (contentB) contentB.scrollTop = scrolls[nextKey].b;
-    }
   };
 
   if (evtBtn) evtBtn.onclick = () => switchMode("evt");
   if (sipBtn) sipBtn.onclick = () => switchMode("sip");
   if (logBtn) logBtn.onclick = () => switchMode("log");
-  if (wavBtn)
-    wavBtn.onclick = () => {
-      activeMode = "wav";
-      diffMode = false;
-      applyCurrentMode();
-    };
+  if (wavBtn) wavBtn.onclick = () => switchMode("wav");
 
-  if (diffBtn)
-    diffBtn.onclick = () => {
-      if (activeMode === "wav") return;
-      const key = getScrollKey(activeMode, diffMode);
-      if (!scrolls[key]) scrolls[key] = { a: 0, b: 0 };
-      scrolls[key].a = contentA ? contentA.scrollTop : 0;
-      scrolls[key].b = contentB ? contentB.scrollTop : 0;
-
-      diffMode = !diffMode;
-      applyCurrentMode();
-
-      const nextKey = getScrollKey(activeMode, diffMode);
-      if (scrolls[nextKey]) {
-        if (contentA) contentA.scrollTop = scrolls[nextKey].a;
-        if (contentB) contentB.scrollTop = scrolls[nextKey].b;
-      }
-    };
+  if (diffBtn) diffBtn.onclick = () => {
+    if (activeMode === "wav") return;
+    diffMode = !diffMode;
+    applyCurrentMode();
+  };
 
   const getEffectiveTestfileAndProject = () => {
     const info = { name: currentTestfile, project: currentProject };
@@ -483,7 +671,6 @@ export function initCompareWindow(deps) {
     return info;
   };
 
-  let needsRefresh = false;
   let refreshTimer = null;
   let activeFetchController = null;
 
@@ -492,11 +679,7 @@ export function initCompareWindow(deps) {
   };
 
   const refreshList = (force = false) => {
-    if (!force && !isCompareVisible()) {
-      needsRefresh = true;
-      return;
-    }
-    needsRefresh = false;
+    if (!force && !isCompareVisible()) return;
 
     if (refreshTimer) {
       clearTimeout(refreshTimer);
@@ -565,8 +748,14 @@ export function initCompareWindow(deps) {
   }
 
   EventBus.on("testfile:changed", (name, project) => {
+    const nextProject = project || "";
+    if (name !== currentTestfile || nextProject !== currentProject) {
+      lastRunsJSON = "";
+      clearSide("a");
+      clearSide("b");
+    }
     currentTestfile = name;
-    currentProject = project || "";
+    currentProject = nextProject;
     refreshList();
   });
 
@@ -601,5 +790,13 @@ export function initCompareWindow(deps) {
       }
     }
   });
+
+  EventBus.on("log-filter:changed", () => {
+    if (activeMode === "log") applyCurrentMode();
+  });
+  loadLogFilters().catch(err => console.warn("Failed to load log filters for comparison:", err));
+
+  window.addEventListener("resize", schedulePairAlignment);
+  applyCurrentMode();
 }
 

@@ -28,16 +28,15 @@ type apiResponse struct {
 type storeHandler func(w http.ResponseWriter, r *http.Request, store *TestStore, ctx context.Context)
 
 func isChangingIdentity(r *http.Request) bool {
-	if r.URL.Path == "/api/maintenance" {
-		return true
+	return r.URL.Path == "/api/maintenance"
+}
+
+func activeRunUsesIdentity(hub *WsHub, file, project string) bool {
+	if hub.runner == nil {
+		return false
 	}
-	if r.URL.Path == "/api/testfile/rename" || r.URL.Path == "/api/projects/rename" {
-		return true
-	}
-	if r.Method == http.MethodDelete && (r.URL.Path == "/api/testfile" || r.URL.Path == "/api/projects") {
-		return true
-	}
-	return false
+	state := hub.runner.Snapshot()
+	return state.Active && state.Project == project && (file == "" || state.File == file)
 }
 
 // withStore wraps a handler to check testStore availability and create a 5s timeout context.
@@ -110,6 +109,10 @@ func HandleAPIProjects(hub *WsHub) http.HandlerFunc {
 				http.Error(w, "name required", http.StatusBadRequest)
 				return
 			}
+			if activeRunUsesIdentity(hub, "", name) {
+				jsonResponse(w, http.StatusConflict, apiResponse{Status: "error", Message: "stop the active run before changing test identities"})
+				return
+			}
 			if err := store.DeleteProject(ctx, name); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -141,6 +144,11 @@ func HandleAPIProjectRename(hub *WsHub) http.HandlerFunc {
 
 		req.OldName = SanitizeName(req.OldName)
 		req.NewName = SanitizeName(req.NewName)
+
+		if activeRunUsesIdentity(hub, "", req.OldName) {
+			jsonResponse(w, http.StatusConflict, apiResponse{Status: "error", Message: "stop the active run before changing test identities"})
+			return
+		}
 
 		if err := store.RenameProject(ctx, req.OldName, req.NewName); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -275,6 +283,10 @@ func HandleAPITestfile(hub *WsHub) http.HandlerFunc {
 				http.Error(w, "name required", http.StatusBadRequest)
 				return
 			}
+			if activeRunUsesIdentity(hub, name, project) {
+				jsonResponse(w, http.StatusConflict, apiResponse{Status: "error", Message: "stop the active run before changing test identities"})
+				return
+			}
 
 			if err := store.Delete(ctx, name, project); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -312,6 +324,11 @@ func HandleAPITestfileRename(hub *WsHub) http.HandlerFunc {
 		req.OldName = SanitizeName(req.OldName)
 		req.NewProject = SanitizeName(req.NewProject)
 		req.NewName = SanitizeName(req.NewName)
+
+		if activeRunUsesIdentity(hub, req.OldName, req.OldProject) {
+			jsonResponse(w, http.StatusConflict, apiResponse{Status: "error", Message: "stop the active run before changing test identities"})
+			return
+		}
 
 		if err := store.Rename(ctx, req.OldName, req.OldProject, req.NewName, req.NewProject); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

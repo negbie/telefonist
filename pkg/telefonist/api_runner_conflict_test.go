@@ -1,5 +1,5 @@
 package telefonist
- 
+
 import (
 	"context"
 	"encoding/base64"
@@ -15,8 +15,10 @@ func TestActiveRunnerIdentityGuard(t *testing.T) {
 	store := prepareTestStore(t)
 	defer store.Close()
 
-	if err := store.SaveProject(ctx, "alpha"); err != nil {
-		t.Fatal(err)
+	for _, project := range []string{"alpha", "beta", "gamma"} {
+		if err := store.SaveProject(ctx, project); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := store.Save(ctx, "test1", "alpha", "dial 100"); err != nil {
 		t.Fatal(err)
@@ -102,8 +104,31 @@ func TestActiveRunnerIdentityGuard(t *testing.T) {
 		}
 	})
 
-	// 5. Deleting project while test is active should be REJECTED with JSON 409 Conflict.
-	t.Run("Delete project blocked with JSON error while test active", func(t *testing.T) {
+	// 5. Renaming an unrelated testfile should remain possible during a run.
+	t.Run("Rename unrelated testfile allowed", func(t *testing.T) {
+		handler := HandleAPITestfileRename(hub)
+		body := `{"old_name":"test2","old_project":"alpha","new_name":"test2_renamed","new_project":"alpha"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/testfile/rename", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		handler(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for renaming unrelated testfile, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	// 6. Deleting an unrelated testfile should remain possible during a run.
+	t.Run("Delete unrelated testfile allowed", func(t *testing.T) {
+		handler := HandleAPITestfile(hub)
+		req := httptest.NewRequest(http.MethodDelete, "/api/testfile?name=test2_renamed&project=alpha", nil)
+		w := httptest.NewRecorder()
+		handler(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for deleting unrelated testfile, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	// 7. Deleting the active test's project should be REJECTED with JSON 409 Conflict.
+	t.Run("Delete active project blocked with JSON error", func(t *testing.T) {
 		handler := HandleAPIProjects(hub)
 		req := httptest.NewRequest(http.MethodDelete, "/api/projects?name=alpha", nil)
 		w := httptest.NewRecorder()
@@ -120,8 +145,8 @@ func TestActiveRunnerIdentityGuard(t *testing.T) {
 		}
 	})
 
-	// 6. Renaming project while test is active should be REJECTED with JSON 409 Conflict.
-	t.Run("Rename project blocked with JSON error while test active", func(t *testing.T) {
+	// 8. Renaming the active test's project should be REJECTED with JSON 409 Conflict.
+	t.Run("Rename active project blocked with JSON error", func(t *testing.T) {
 		handler := HandleAPIProjectRename(hub)
 		body := `{"old_name":"alpha","new_name":"beta"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/projects/rename", strings.NewReader(body))
@@ -136,6 +161,29 @@ func TestActiveRunnerIdentityGuard(t *testing.T) {
 		}
 		if resp.Status != "error" {
 			t.Fatalf("unexpected JSON response: %+v", resp)
+		}
+	})
+
+	// 9. Deleting an unrelated project should remain possible during a run.
+	t.Run("Delete unrelated project allowed", func(t *testing.T) {
+		handler := HandleAPIProjects(hub)
+		req := httptest.NewRequest(http.MethodDelete, "/api/projects?name=beta", nil)
+		w := httptest.NewRecorder()
+		handler(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for deleting unrelated project, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	// 10. Renaming an unrelated project should remain possible during a run.
+	t.Run("Rename unrelated project allowed", func(t *testing.T) {
+		handler := HandleAPIProjectRename(hub)
+		body := `{"old_name":"gamma","new_name":"delta"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/projects/rename", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		handler(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for renaming unrelated project, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 }

@@ -109,6 +109,8 @@ func (r *Runner) StartWithID(batch []TestfileData) (string, bool) {
 	r.state = RunState{
 		Active:    true,
 		BatchID:   id,
+		File:      batch[0].Name,
+		Project:   batch[0].ProjectName,
 		StartedAt: time.Now(),
 		FileTotal: len(batch),
 	}

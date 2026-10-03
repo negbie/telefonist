@@ -21,7 +21,7 @@ import { initCompareWindow } from "./compare_window.js";
 import { initCronManager } from "./cron_manager.js";
 import { initAccountsManager } from "./accounts_manager.js";
 import { initWebhooksManager } from "./webhooks_manager.js";
-import { initLogFilterManager } from "./log_filter_manager.js";
+import { initLogFilterManager, shouldFilterLog } from "./log_filter_manager.js";
 import { initHistoryManager } from "./history_manager.js";
 
 const flowEl = document.getElementById("flow");
@@ -29,6 +29,12 @@ const clearEl = document.getElementById("clear");
 const logoutEl = document.getElementById("logout");
 const logViewEl = document.getElementById("log-view");
 const sipViewEl = document.getElementById("sip-view");
+
+EventBus.on("log-filter:changed", () => {
+  logViewEl?.querySelectorAll(".log-row").forEach(row => {
+    if (shouldFilterLog(row.textContent)) row.remove();
+  });
+});
 
 const onlyTestsEl = document.getElementById("only-tests");
 const autoScrollEl = document.getElementById("autoscroll");

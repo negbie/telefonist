@@ -153,34 +153,41 @@
 
             <div id="compare-panel">
                 <div id="compare-controls">
-                    <label class="hint">Compare runs:</label>
-                    <select id="compare-run-a">
-                        <option value="">(select run A)</option>
-                    </select>
-                    <select id="compare-run-b">
-                        <option value="">(select run B)</option>
-                    </select>
-                    <button type="button" id="compare-clear">Clear</button>
-                    <button type="button" id="compare-evt" title="Show only test events">EVT</button>
-                    <button type="button" id="compare-sip" title="Show only SIP messages">SIP</button>
-                    <button type="button" id="compare-log" title="Show only logger messages">LOG</button>
-                    <button type="button" id="compare-wav" title="Toggle WAV comparison mode">WAV</button>
-                    <button type="button" id="compare-diff" title="Toggle diff view for the selected mode">Diff</button>
-                    <button type="button" id="compare-link" title="Toggle synchronized scrolling" class="active">Scroll:
-                        Link</button>
-                    <button type="button" id="compare-delete-selected"
-                        title="Delete the runs selected in the dropdowns">Delete</button>
-                    <button type="button" id="compare-delete-all"
-                        title="Delete all stored runs for the current testfile">Delete All</button>
+                    <div class="compare-run-selectors">
+                        <label for="compare-run-a">Baseline</label>
+                        <select id="compare-run-a">
+                            <option value="">Select baseline run</option>
+                        </select>
+                        <button type="button" id="compare-swap" title="Swap baseline and current runs" aria-label="Swap runs">⇄</button>
+                        <label for="compare-run-b">Run to inspect</label>
+                        <select id="compare-run-b">
+                            <option value="">Select run to inspect</option>
+                        </select>
+                        <button type="button" id="compare-clear" title="Clear both selections">Reset</button>
+                    </div>
+                    <div class="compare-view-controls">
+                        <div class="compare-mode-tabs" role="tablist" aria-label="Artifact type">
+                            <button type="button" id="compare-evt" role="tab" title="Compare test events">Events</button>
+                            <button type="button" id="compare-sip" role="tab" title="Compare SIP messages">SIP</button>
+                            <button type="button" id="compare-log" role="tab" title="Compare logger messages">Logs</button>
+                            <button type="button" id="compare-wav" role="tab" title="Inspect audio recordings">Audio</button>
+                        </div>
+                        <button type="button" id="compare-diff" title="Hide unchanged items">Only changes</button>
+                        <button type="button" id="compare-link" title="Toggle synchronized scrolling" class="active">Linked scroll</button>
+                        <button type="button" id="compare-delete-selected"
+                            title="Delete the runs selected above">Delete selected</button>
+                        <button type="button" id="compare-delete-all"
+                            title="Delete all stored runs for the current testfile">Delete all runs</button>
+                    </div>
                 </div>
-                <p id="compare-note" role="status"></p>
+                <div id="compare-note" role="status">Choose two runs to compare.</div>
                 <div id="compare-panes">
                     <div class="compare-pane" id="compare-pane-a">
-                        <div class="compare-pane-header" id="compare-header-a">Run A</div>
+                        <div class="compare-pane-header" id="compare-header-a">Baseline</div>
                         <div id="compare-content-a" class="compare-content"></div>
                     </div>
                     <div class="compare-pane" id="compare-pane-b">
-                        <div class="compare-pane-header" id="compare-header-b">Run B</div>
+                        <div class="compare-pane-header" id="compare-header-b">Run to inspect</div>
                         <div id="compare-content-b" class="compare-content"></div>
                     </div>
                 </div>
@@ -385,8 +392,9 @@
                     <textarea id="log-filter-input" spellcheck="false"
                         placeholder="One filter string per line&#10;Example: DEBUG&#10;Example: user-agent-noise"></textarea>
                     <small>
-                        Case-insensitive substring filters. Any LOG message containing one of these strings is suppressed
-                        from live views and test recordings. Event and SIP messages are not affected.
+                        Case-insensitive substring filters. Matching LOG messages are hidden from live views and run
+                        comparisons. Full run evidence and downloads keep them so assertions remain reliable. Event and
+                        SIP messages are not affected.
                     </small>
                     <div id="log-filter-status" class="log-filter-status"></div>
                 </div>
