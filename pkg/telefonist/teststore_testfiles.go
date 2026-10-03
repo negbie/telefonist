@@ -64,17 +64,7 @@ ORDER BY id DESC LIMIT 1;
 		return err
 	}
 
-	if err != nil || lastContent != content {
-		_, err = tx.ExecContext(ctx, `
-INSERT INTO testfile_versions(name, project_name, content, created_at)
-VALUES(?, ?, ?, ?);
-`, name, projectName, content, now)
-		if err != nil {
-			return err
-		}
-	}
-
-	// SQLite UPSERT.
+	// SQLite UPSERT parent testfile first.
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO testfiles(name, project_name, content, created_at, updated_at)
 VALUES(?, ?, ?, ?, ?)
@@ -84,6 +74,16 @@ ON CONFLICT(name, project_name) DO UPDATE SET
 `, name, projectName, content, now, now)
 	if err != nil {
 		return fmt.Errorf("save testfile %q (project %q): %w", name, projectName, err)
+	}
+
+	if err != nil || lastContent != content {
+		_, err = tx.ExecContext(ctx, `
+INSERT INTO testfile_versions(name, project_name, content, created_at)
+VALUES(?, ?, ?, ?);
+`, name, projectName, content, now)
+		if err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

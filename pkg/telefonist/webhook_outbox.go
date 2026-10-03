@@ -44,8 +44,13 @@ func runWebhookWorker(ctx context.Context, s *TestStore) <-chan struct{} {
 					_, _ = s.db.ExecContext(ctx, `DELETE FROM webhook_outbox WHERE id=?`, id)
 				} else {
 					attempts++
-					delay := time.Duration(min(attempts*attempts, 360)) * 10 * time.Second
-					_, _ = s.db.ExecContext(ctx, `UPDATE webhook_outbox SET attempts=?,last_error=?,next_attempt=? WHERE id=?`, attempts, "delivery failed; inspect destination", time.Now().Add(delay).Format(time.RFC3339Nano), id)
+					if attempts >= 50 {
+						log.Printf("webhook %d to %q permanently failed after %d attempts; discarding", id, address, attempts)
+						_, _ = s.db.ExecContext(ctx, `DELETE FROM webhook_outbox WHERE id=?`, id)
+					} else {
+						delay := time.Duration(min(attempts*attempts, 360)) * 10 * time.Second
+						_, _ = s.db.ExecContext(ctx, `UPDATE webhook_outbox SET attempts=?,last_error=?,next_attempt=? WHERE id=?`, attempts, "delivery failed; inspect destination", time.Now().Add(delay).Format(time.RFC3339Nano), id)
+					}
 				}
 			}
 		}

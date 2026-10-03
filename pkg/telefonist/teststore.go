@@ -96,7 +96,7 @@ func OpenTestStore(ctx context.Context, dataDir string) (*TestStore, error) {
 		return nil, err
 	}
 
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", dbPath)
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
@@ -152,21 +152,16 @@ func (s *TestStore) Vacuum(ctx context.Context) error {
 }
 
 // ---------------------------------------------------------------------------
-// Migrations
+// Schema Initialization
 // ---------------------------------------------------------------------------
 
 func migrateTestStore(ctx context.Context, db *sql.DB) error {
-	// 1. Create projects table
-	if _, err := db.ExecContext(ctx, `
+	const schema = `
 CREATE TABLE IF NOT EXISTS projects (
   name TEXT PRIMARY KEY,
   created_at TEXT NOT NULL
-);`); err != nil {
-		return fmt.Errorf("create projects table: %w", err)
-	}
+);
 
-	// 2. Create testfiles table
-	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS testfiles (
   name TEXT NOT NULL,
   project_name TEXT NOT NULL DEFAULT '',
@@ -174,28 +169,9 @@ CREATE TABLE IF NOT EXISTS testfiles (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY(name, project_name)
-);`); err != nil {
-		return fmt.Errorf("create testfiles table: %w", err)
-	}
-
-	// 3. Check if migration for testruns is needed (Foreign Key check)
-	var schema string
-	err := db.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type='table' AND name='testruns'").Scan(&schema)
-	if err == nil {
-		if !strings.Contains(strings.ToLower(schema), "references testfiles") {
-			// Migration needed!
-			if _, err := db.ExecContext(ctx, `
-BEGIN TRANSACTION;
--- 1. Clean up orphan runs that would violate the new FK constraint
-DELETE FROM testruns
-WHERE NOT EXISTS (
-  SELECT 1 FROM testfiles
-  WHERE testfiles.name = testruns.testfile_name
-    AND testfiles.project_name = testruns.project_name
 );
 
--- 2. Create the new table
-CREATE TABLE testruns_new (
+CREATE TABLE IF NOT EXISTS testruns (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   testfile_name TEXT NOT NULL,
   project_name TEXT NOT NULL DEFAULT '',
@@ -204,50 +180,16 @@ CREATE TABLE testruns_new (
   status TEXT NOT NULL,
   flow_events TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  FOREIGN KEY(testfile_name, project_name) REFERENCES testfiles(name, project_name) ON UPDATE CASCADE ON DELETE CASCADE
-);
-
--- 3. Copy data
-INSERT INTO testruns_new (id, testfile_name, project_name, run_number, hash, status, flow_events, created_at)
-SELECT id, testfile_name, project_name, run_number, hash, status, flow_events, created_at FROM testruns;
-
--- 4. Replace old table
-DROP TABLE testruns;
-ALTER TABLE testruns_new RENAME TO testruns;
-CREATE INDEX idx_testruns_testfile_project ON testruns(testfile_name, project_name);
-COMMIT;
-`); err != nil {
-				return fmt.Errorf("migrate testruns table: %w", err)
-			}
-		}
-	} else if errors.Is(err, sql.ErrNoRows) {
-		// table doesn't exist, create it anew
-		if _, err := db.ExecContext(ctx, `
-CREATE TABLE testruns (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  testfile_name TEXT NOT NULL,
-  project_name TEXT NOT NULL DEFAULT '',
-  run_number INTEGER NOT NULL,
-  hash TEXT NOT NULL,
-  status TEXT NOT NULL,
-  flow_events TEXT NOT NULL,
-  created_at TEXT NOT NULL,
+  failure_reason TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  script TEXT NOT NULL DEFAULT '',
+  batch_id TEXT NOT NULL DEFAULT '',
+  finished_at TEXT NOT NULL DEFAULT '',
   FOREIGN KEY(testfile_name, project_name) REFERENCES testfiles(name, project_name) ON UPDATE CASCADE ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_testruns_testfile_project ON testruns(testfile_name, project_name);
-`); err != nil {
-			return fmt.Errorf("create testruns table: %w", err)
-		}
-	} else {
-		return fmt.Errorf("check testruns schema: %w", err)
-	}
+CREATE INDEX IF NOT EXISTS idx_testruns_created_at ON testruns(created_at);
 
-	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_testruns_created_at ON testruns(created_at);`); err != nil {
-		return fmt.Errorf("create testruns created_at index: %w", err)
-	}
-
-	// 5. Create testrun_wavs table (path-based)
-	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS testrun_wavs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   testrun_id INTEGER NOT NULL,
@@ -257,26 +199,16 @@ CREATE TABLE IF NOT EXISTS testrun_wavs (
   FOREIGN KEY(testrun_id) REFERENCES testruns(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_testrun_wavs_testrun_id ON testrun_wavs(testrun_id);
-`); err != nil {
-		return fmt.Errorf("create testrun_wavs table: %w", err)
-	}
 
-	// 6. Create cronjobs table
-	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS cronjobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project TEXT NOT NULL,
-	testfile TEXT NOT NULL DEFAULT '',
-	cron_expr TEXT NOT NULL,
-	active BOOLEAN NOT NULL DEFAULT 1,
-	created_at TEXT NOT NULL
+  testfile TEXT NOT NULL DEFAULT '',
+  cron_expr TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
 );
-	`); err != nil {
-		return fmt.Errorf("create cronjobs table: %w", err)
-	}
 
-	// 7. Create sip_accounts table
-	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS sip_accounts (
   name TEXT PRIMARY KEY,
   sip_uri TEXT NOT NULL,
@@ -285,63 +217,50 @@ CREATE TABLE IF NOT EXISTS sip_accounts (
   addr_params TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);`); err != nil {
-		return fmt.Errorf("create sip_accounts table: %w", err)
-	}
+);
 
-	// 8. Migration: Alter sip_accounts to add uri_params and addr_params columns if missing
-	var saSchema string
-	err = db.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type='table' AND name='sip_accounts'").Scan(&saSchema)
-	if err == nil {
-		saSchemaLower := strings.ToLower(saSchema)
-		if !strings.Contains(saSchemaLower, "uri_params") {
-			if _, err := db.ExecContext(ctx, "ALTER TABLE sip_accounts ADD COLUMN uri_params TEXT NOT NULL DEFAULT '';"); err != nil {
-				return fmt.Errorf("alter sip_accounts table add uri_params: %w", err)
-			}
-		}
-		if !strings.Contains(saSchemaLower, "addr_params") {
-			if _, err := db.ExecContext(ctx, "ALTER TABLE sip_accounts ADD COLUMN addr_params TEXT NOT NULL DEFAULT '';"); err != nil {
-				return fmt.Errorf("alter sip_accounts table add addr_params: %w", err)
-			}
-		}
-	}
-
-	// 9. Create testfile_versions table
-	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS testfile_versions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  project_name TEXT NOT NULL,
+  project_name TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(name, project_name) REFERENCES testfiles(name, project_name) ON UPDATE CASCADE ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS idx_testfile_versions_name_project ON testfile_versions(name, project_name);
-`); err != nil {
-		return fmt.Errorf("create testfile_versions table: %w", err)
-	}
 
-	// 10. Create webhooks table
-	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS webhooks (
   alias TEXT PRIMARY KEY,
   url TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);`); err != nil {
-		return fmt.Errorf("create webhooks table: %w", err)
-	}
+);
 
-	// 11. Create app_settings table for small global UI/runtime settings.
-	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);`); err != nil {
-		return fmt.Errorf("create app_settings table: %w", err)
-	}
-	return migrateRunDetails(ctx, db)
+);
+
+CREATE TABLE IF NOT EXISTS artifact_deletions (
+  file_path TEXT PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS webhook_outbox (
+  id INTEGER PRIMARY KEY,
+  url TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt TEXT NOT NULL,
+  last_error TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_outbox_next_attempt ON webhook_outbox(next_attempt);
+
+UPDATE testruns SET status='ERROR', failure_reason='Server stopped before run finalization' WHERE status='RUNNING';
+`
+	_, err := db.ExecContext(ctx, schema)
+	return err
 }
 
 // ---------------------------------------------------------------------------

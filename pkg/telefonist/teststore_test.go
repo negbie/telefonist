@@ -21,7 +21,7 @@ func prepareTestStore(t *testing.T) *TestStore {
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
 	dbPath := filepath.Join(tmpDir, "test.db")
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", dbPath)
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +145,108 @@ func TestStore_CloneProject(t *testing.T) {
 		if row.Content != content {
 			t.Fatalf("cloned testfile %q content = %q, want %q", name, row.Content, content)
 		}
+	}
+}
+
+func TestStore_DeleteProject_Collision(t *testing.T) {
+	ctx := context.Background()
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	if err := s.SaveProject(ctx, "alpha"); err != nil {
+		t.Fatalf("SaveProject failed: %v", err)
+	}
+	if err := s.Save(ctx, "dup", "", "content default"); err != nil {
+		t.Fatalf("Save in default failed: %v", err)
+	}
+	if err := s.Save(ctx, "dup", "alpha", "content alpha"); err != nil {
+		t.Fatalf("Save in alpha failed: %v", err)
+	}
+	if err := s.Save(ctx, "unique_in_alpha", "alpha", "content unique"); err != nil {
+		t.Fatalf("Save unique in alpha failed: %v", err)
+	}
+
+	if err := s.DeleteProject(ctx, "alpha"); err != nil {
+		t.Fatalf("DeleteProject failed on collision: %v", err)
+	}
+
+	rowDefault, err := s.Load(ctx, "dup", "")
+	if err != nil || rowDefault.Content != "content default" {
+		t.Fatalf("expected original default dup preserved, got content=%q, err=%v", rowDefault.Content, err)
+	}
+
+	rowRenamed, err := s.Load(ctx, "dup_alpha", "")
+	if err != nil || rowRenamed.Content != "content alpha" {
+		t.Fatalf("expected renamed dup_alpha in default, got content=%q, err=%v", rowRenamed.Content, err)
+	}
+
+	rowUnique, err := s.Load(ctx, "unique_in_alpha", "")
+	if err != nil || rowUnique.Content != "content unique" {
+		t.Fatalf("expected unique_in_alpha moved to default, got content=%q, err=%v", rowUnique.Content, err)
+	}
+}
+
+func TestStore_VersionCascade(t *testing.T) {
+	ctx := context.Background()
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	if err := s.Save(ctx, "cascade_test", "", "initial"); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	if err := s.Save(ctx, "cascade_test", "", "updated"); err != nil {
+		t.Fatalf("Save update failed: %v", err)
+	}
+
+	versions, err := s.ListVersions(ctx, "cascade_test", "")
+	if err != nil || len(versions) == 0 {
+		t.Fatalf("expected versions, got: %v (len %d)", err, len(versions))
+	}
+
+	if err := s.Delete(ctx, "cascade_test", ""); err != nil {
+		t.Fatalf("Delete testfile failed: %v", err)
+	}
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM testfile_versions WHERE name='cascade_test' AND project_name=''").Scan(&count); err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 versions after cascade delete, got %d", count)
+	}
+}
+
+func TestStore_PurgeArtifacts_DirCleanup(t *testing.T) {
+	ctx := context.Background()
+	s := prepareTestStore(t)
+	defer s.Close()
+
+	if err := s.Save(ctx, "wav_test", "", "source"); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	runID, err := s.SaveRun(ctx, "wav_test", "", 1, "hash", "PASS", "{}")
+	if err != nil {
+		t.Fatalf("SaveRun failed: %v", err)
+	}
+	if err := s.SaveWav(ctx, runID, "audio.wav", []byte("RIFFwavdata")); err != nil {
+		t.Fatalf("SaveWav failed: %v", err)
+	}
+
+	dir := filepath.Join(s.wavDir, "runs", fmt.Sprintf("%d", runID))
+	filePath := filepath.Join(dir, "audio.wav")
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("expected wav dir to exist: %v", err)
+	}
+
+	if err := s.DeleteRun(ctx, int(runID)); err != nil {
+		t.Fatalf("DeleteRun failed: %v", err)
+	}
+
+	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+		t.Fatalf("expected wav file to be removed, got: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected empty wav run directory to be removed, got: %v", err)
 	}
 }
 

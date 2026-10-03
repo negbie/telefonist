@@ -54,6 +54,50 @@ func (s *TestStore) DeleteProject(ctx context.Context, name string) error {
 		}
 	}()
 
+	// Resolve any name collisions with existing testfiles in project ""
+	rows, err := tx.QueryContext(ctx, `
+		SELECT name FROM testfiles WHERE project_name = ?
+		INTERSECT
+		SELECT name FROM testfiles WHERE project_name = '';
+	`, name)
+	if err != nil {
+		return err
+	}
+	var colliding []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
+			return err
+		}
+		colliding = append(colliding, n)
+	}
+	rows.Close()
+
+	for _, oldTF := range colliding {
+		candidate := fmt.Sprintf("%s_%s", oldTF, name)
+		for i := 1; ; i++ {
+			var exists bool
+			err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM testfiles WHERE name=? AND (project_name='' OR project_name=?));`, candidate, name).Scan(&exists)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				break
+			}
+			candidate = fmt.Sprintf("%s_%s_%d", oldTF, name, i)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE testfiles SET name=? WHERE name=? AND project_name=?;`, candidate, oldTF, name); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE testfile_versions SET name=? WHERE name=? AND project_name=?;`, candidate, oldTF, name); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE cronjobs SET testfile=? WHERE testfile=? AND project=?;`, candidate, oldTF, name); err != nil {
+			return err
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, `UPDATE testfiles SET project_name = '' WHERE project_name = ?;`, name); err != nil {
 		return err
 	}

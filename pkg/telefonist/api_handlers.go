@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -596,11 +595,9 @@ func HandleAPITestrunWav(hub *WsHub) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "audio/wav")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-		w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
-		if _, err := io.Copy(w, file); err != nil {
-			log.Printf("failed to write wav response: %v", err)
-		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", filename))
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		http.ServeContent(w, r, filename, info.ModTime(), file)
 	})
 }
 

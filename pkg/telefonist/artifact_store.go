@@ -66,8 +66,20 @@ func (s *TestStore) purgeArtifacts(ctx context.Context) error {
 		if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
+		dir := filepath.Dir(path)
+		if dir != "" && dir != s.wavDir {
+			_ = os.Remove(dir)
+		}
 		if _, err = s.db.ExecContext(ctx, `DELETE FROM artifact_deletions WHERE file_path=?`, rel); err != nil {
 			return err
+		}
+	}
+	runsDir := filepath.Join(s.wavDir, "runs")
+	if entries, err := os.ReadDir(runsDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				_ = os.Remove(filepath.Join(runsDir, entry.Name()))
+			}
 		}
 	}
 	return nil

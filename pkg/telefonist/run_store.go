@@ -2,47 +2,12 @@ package telefonist
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
 )
-
-func migrateRunDetails(ctx context.Context, db *sql.DB) error {
-	rows, err := db.QueryContext(ctx, `PRAGMA table_info(testruns)`)
-	if err != nil {
-		return err
-	}
-	columns := map[string]bool{}
-	for rows.Next() {
-		var cid, notnull, pk int
-		var name, kind string
-		var def any
-		if err = rows.Scan(&cid, &name, &kind, &notnull, &def, &pk); err != nil {
-			rows.Close()
-			return err
-		}
-		columns[name] = true
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	for _, c := range []struct{ name, ddl string }{{"failure_reason", "TEXT NOT NULL DEFAULT ''"}, {"source", "TEXT NOT NULL DEFAULT ''"}, {"script", "TEXT NOT NULL DEFAULT ''"}, {"batch_id", "TEXT NOT NULL DEFAULT ''"}, {"finished_at", "TEXT NOT NULL DEFAULT ''"}} {
-		if !columns[c.name] {
-			if _, err = db.ExecContext(ctx, `ALTER TABLE testruns ADD COLUMN `+c.name+` `+c.ddl); err != nil {
-				return err
-			}
-		}
-	}
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS artifact_deletions(file_path TEXT PRIMARY KEY);
-CREATE TABLE IF NOT EXISTS webhook_outbox(id INTEGER PRIMARY KEY, url TEXT NOT NULL,payload TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt TEXT NOT NULL,last_error TEXT NOT NULL DEFAULT '');
-UPDATE testruns SET status='ERROR',failure_reason='Server stopped before run finalization' WHERE status='RUNNING';`)
-	return err
-}
 
 func (s *TestStore) BeginRun(ctx context.Context, name, project, source, batch string, repeat int) (int64, error) {
 	if err := validateTestfileName(name); err != nil {

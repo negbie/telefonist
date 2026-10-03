@@ -363,6 +363,8 @@ export function initCompareWindow(deps) {
   let diffWorker = null, generation = 0;
   const renderDiff = async () => {
     const current = generation;
+    if (contentA) contentA.dataset.renderedMode = activeMode;
+    if (contentB) contentB.dataset.renderedMode = activeMode;
     if (!rawA || !rawB) {
       const message = !rawA && !rawB ? "Choose a baseline and a run to inspect." : "Choose the other run to start comparing.";
       contentA.innerHTML = emptyState(message);
@@ -441,8 +443,8 @@ export function initCompareWindow(deps) {
     contentA.scrollTop = 0;
     contentB.scrollTop = 0;
     if (activeMode === "wav") {
-      renderWavs(contentA, wavsA);
-      renderWavs(contentB, wavsB);
+      renderWavs(contentA, wavsA, "a");
+      renderWavs(contentB, wavsB, "b");
       const note = document.getElementById("compare-note");
       if (note) {
         note.classList.remove("is-identical");
@@ -464,19 +466,52 @@ export function initCompareWindow(deps) {
     }
   };
 
-  const renderWavs = (el, wavs) => {
+  const wavAbortControllers = { a: null, b: null };
+  let wavsRunA = null;
+  let wavsRunB = null;
+
+  const renderWavs = (el, wavs, side) => {
     if (!el) return;
-    if (!wavs?.length) return el.innerHTML = "<div class='wav-empty'>No recordings.</div>";
+    const currentRunId = side === "a" ? selectA?.value : selectB?.value;
+    if (!currentRunId || !wavs?.length) {
+      if (wavAbortControllers[side]) {
+        wavAbortControllers[side].abort();
+        wavAbortControllers[side] = null;
+      }
+      el.dataset.renderedMode = "wav";
+      el.dataset.renderedRun = "";
+      el.innerHTML = "<div class='wav-empty'>No recordings.</div>";
+      return;
+    }
+    if (el.dataset.renderedMode === "wav" && el.dataset.renderedRun === String(currentRunId)) {
+      return;
+    }
+    el.dataset.renderedMode = "wav";
+    el.dataset.renderedRun = String(currentRunId);
+
+    if (wavAbortControllers[side]) {
+      wavAbortControllers[side].abort();
+    }
+    const abortCtrl = new AbortController();
+    wavAbortControllers[side] = abortCtrl;
+
     el.innerHTML = `<div class='wav-list'>${wavs.map(w => `
       <div class='wav-item'>
         <div class='wav-info'>${escapeHTML(w.filename)}</div>
-        <canvas id='canvas-wav-${w.id}' class='wav-waveform'></canvas>
-        <audio id='audio-wav-${w.id}' controls src='/api/testrun/wav?id=${w.id}'></audio>
+        <canvas id='canvas-wav-${side}-${w.id}' class='wav-waveform'></canvas>
+        <audio id='audio-wav-${side}-${w.id}' controls preload='none' src='/api/testrun/wav?id=${w.id}'></audio>
       </div>`).join("")}</div>`;
-    wavs.forEach(w => drawWaveform(document.getElementById(`canvas-wav-${w.id}`), `/api/testrun/wav?id=${w.id}`, document.getElementById(`audio-wav-${w.id}`)));
+
+    wavs.forEach(w => {
+      const canvas = document.getElementById(`canvas-wav-${side}-${w.id}`);
+      const audio = document.getElementById(`audio-wav-${side}-${w.id}`);
+      if (canvas && audio) {
+        drawWaveform(canvas, `/api/testrun/wav?id=${w.id}`, audio, abortCtrl.signal);
+      }
+    });
   };
 
-  const drawWaveform = async (canvas, url, audioEl) => {
+  const drawWaveform = async (canvas, url, audioEl, signal) => {
     const ctx = canvas.getContext("2d");
     const { offsetWidth: width = 400, offsetHeight: height = 120 } = canvas;
     canvas.width = width; canvas.height = height;
@@ -499,27 +534,76 @@ export function initCompareWindow(deps) {
 
     draw(null); ctx.fillStyle = "#3b82f6"; ctx.fillText("Loading...", 10, 20);
     try {
-      const resp = await fetch(url), buffer = await resp.arrayBuffer();
-      const audioBuffer = await (new (window.AudioContext || window.webkitAudioContext)()).decodeAudioData(buffer);
+      const resp = await fetch(url, { signal }), buffer = await resp.arrayBuffer();
+      if (signal?.aborted) return;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const audioCtx = new AudioCtx();
+      let audioBuffer;
+      try {
+        audioBuffer = await audioCtx.decodeAudioData(buffer);
+      } finally {
+        if (typeof audioCtx.close === "function") {
+          audioCtx.close().catch(() => {});
+        }
+      }
+      if (signal?.aborted) return;
       const rawData = audioBuffer.getChannelData(0);
       draw(rawData);
       audioEl.ontimeupdate = () => draw(rawData, audioEl.currentTime / audioEl.duration);
     } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
       ctx.fillStyle = "#ef4444"; ctx.fillText("Error", 10, 20);
     }
   };
 
+  const fetchWavs = (side, id) => {
+    if (!id) {
+      if (side === "a") { wavsA = []; wavsRunA = null; }
+      else { wavsB = []; wavsRunB = null; }
+      if (activeMode === "wav") applyCurrentMode();
+      return;
+    }
+    const selected = () => String(side === "a" ? selectA?.value : selectB?.value) === String(id);
+    fetch(`/api/testrun/wavs?id=${id}`)
+      .then((r) => r.json())
+      .then((wj) => {
+        if (!selected() || wj.status !== "finished") return;
+        const items = wj.items || [];
+        items.sort((a, b) => {
+          const tsA = (a.filename.match(/\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/) || [""])[0];
+          const tsB = (b.filename.match(/\d{4}-\d{2}-\d{2}-\d{2}-\d{2}/) || [""])[0];
+          return tsA.localeCompare(tsB) || a.filename.localeCompare(b.filename);
+        });
+        if (side === "a") { wavsA = items; wavsRunA = String(id); }
+        else { wavsB = items; wavsRunB = String(id); }
+        if (activeMode === "wav") applyCurrentMode();
+      })
+      .catch(() => {
+        if (!selected()) return;
+        if (side === "a") { wavsA = []; wavsRunA = null; }
+        else { wavsB = []; wavsRunB = null; }
+        if (activeMode === "wav") applyCurrentMode();
+      });
+  };
+
   const clearSide = (side) => {
+    if (wavAbortControllers[side]) {
+      wavAbortControllers[side].abort();
+      wavAbortControllers[side] = null;
+    }
     if (side === "a") {
       rawA = "";
       wavsA = [];
-      if (contentA) contentA.textContent = "";
+      wavsRunA = null;
+      if (contentA) { contentA.textContent = ""; contentA.dataset.renderedRun = ""; contentA.dataset.renderedMode = ""; }
       if (headerA) headerA.textContent = "Baseline";
       if (selectA) selectA.value = "";
     } else {
       rawB = "";
       wavsB = [];
-      if (contentB) contentB.textContent = "";
+      wavsRunB = null;
+      if (contentB) { contentB.textContent = ""; contentB.dataset.renderedRun = ""; contentB.dataset.renderedMode = ""; }
       if (headerB) headerB.textContent = "Run to inspect";
       if (selectB) selectB.value = "";
     }
@@ -564,19 +648,29 @@ export function initCompareWindow(deps) {
     }
 
     if (selectA.value) fetchRun(selectA.value, "a");
+    else clearSide("a");
     if (selectB.value) fetchRun(selectB.value, "b");
+    else clearSide("b");
   };
 
   const fetchRun = (id, side) => {
     if (!id) return;
+    if (wavAbortControllers[side]) {
+      wavAbortControllers[side].abort();
+      wavAbortControllers[side] = null;
+    }
     const selected = () => String(side === "a" ? selectA.value : selectB.value) === String(id);
     if (side === "a") {
       rawA = "";
       wavsA = [];
+      wavsRunA = null;
+      if (contentA) { contentA.dataset.renderedRun = ""; contentA.dataset.renderedMode = ""; }
       if (headerA) headerA.textContent = "Baseline · loading…";
     } else {
       rawB = "";
       wavsB = [];
+      wavsRunB = null;
+      if (contentB) { contentB.dataset.renderedRun = ""; contentB.dataset.renderedMode = ""; }
       if (headerB) headerB.textContent = "Run to inspect · loading…";
     }
     applyCurrentMode();
@@ -601,20 +695,9 @@ export function initCompareWindow(deps) {
         }
         applyCurrentMode();
 
-        fetch(`/api/testrun/wavs?id=${id}`)
-          .then((r) => r.json())
-          .then((wj) => {
-            if (!selected() || wj.status !== "finished") return;
-            const items = wj.items || [];
-            items.sort((a, b) => {
-              const tsA = (a.filename.match(/\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/) || [""])[0];
-              const tsB = (b.filename.match(/\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}/) || [""])[0];
-              return tsA.localeCompare(tsB) || a.filename.localeCompare(b.filename);
-            });
-            if (side === "a") wavsA = items;
-            else wavsB = items;
-            if (activeMode === "wav") applyCurrentMode();
-          });
+        if (activeMode === "wav") {
+          fetchWavs(side, id);
+        }
       })
       .catch(() => {
         if (!selected()) return;
@@ -645,6 +728,10 @@ export function initCompareWindow(deps) {
 
   const switchMode = mode => {
     activeMode = mode;
+    if (activeMode === "wav") {
+      if (selectA?.value && wavsRunA !== String(selectA.value)) fetchWavs("a", selectA.value);
+      if (selectB?.value && wavsRunB !== String(selectB.value)) fetchWavs("b", selectB.value);
+    }
     applyCurrentMode();
   };
 
